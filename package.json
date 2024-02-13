@@ -1,0 +1,24 @@
+{
+  "name": "robot.ti.jsnode",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node build/index.js",
+    "local": "npm run build && npm run start"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/node": "^20.11.17",
+    "eslint": "^8.56.0",
+    "prettier": "^3.2.5",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.3",
+    "saas-globals": "bitbucket:igorjan94/saas-globals#2023.10.03"
+  }
+}
