@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "debug": "DEBUG=robot.ti.jsnode* node build/index.js",
     "build": "tsc -p tsconfig.json",
     "start": "node build/index.js",
     "local": "npm run build && npm run start",
@@ -16,6 +17,7 @@
     "@types/node": "^20.11.17"
   },
   "dependencies": {
+    "@total-typescript/ts-reset": "github:total-typescript/ts-reset",
     "dotenv": "^16.4.3",
     "saas-globals": "bitbucket:igorjan94/saas-globals#2023.10.03",
     "tinkoff-sdk-grpc-js": "^1.8.2",
