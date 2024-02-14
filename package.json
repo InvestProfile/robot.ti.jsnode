@@ -4,21 +4,21 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc -p tsconfig.json",
     "start": "node build/index.js",
-    "local": "npm run build && npm run start"
+    "local": "npm run build && npm run start",
+    "lint": "eslint . --ext .ts,.tsx"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@types/node": "^20.11.17",
-    "eslint": "^8.56.0",
-    "prettier": "^3.2.5",
-    "typescript": "^5.3.3"
+    "@types/node": "^20.11.17"
   },
   "dependencies": {
     "dotenv": "^16.4.3",
-    "saas-globals": "bitbucket:igorjan94/saas-globals#2023.10.03"
+    "saas-globals": "bitbucket:igorjan94/saas-globals#2023.10.03",
+    "tinkoff-sdk-grpc-js": "^1.8.2",
+    "typescript": "^5.3.3"
   }
 }
