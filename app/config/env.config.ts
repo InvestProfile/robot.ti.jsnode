@@ -11,7 +11,7 @@ interface EnvConfig {
     DB_PORT: string | undefined;
 }
 
-export const getEnv = (): EnvConfig => {
+export const getEnv = () => {
     return {
         INVEST_TOKEN: process.env.INVEST_TOKEN,
         DB_HOST: process.env.DB_HOST,

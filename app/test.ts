@@ -11,7 +11,7 @@ console.log(`The Tinkoff INVEST_TOKEN is: ${envVariables.INVEST_TOKEN}`);
 
 import { createSdk } from 'tinkoff-sdk-grpc-js';
 
-export default class test {
+export default class Test {
     static async example() {
         {
             if (envVariables.INVEST_TOKEN) {

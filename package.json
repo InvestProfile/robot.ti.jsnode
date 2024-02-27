@@ -14,12 +14,16 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
-    "@types/node": "^20.11.17"
+    "@types/node": "^20.11.17",
+    "@types/sequelize": "^4.28.20"
   },
   "dependencies": {
     "@total-typescript/ts-reset": "github:total-typescript/ts-reset",
     "dotenv": "^16.4.3",
+    "pg": "^8.11.3",
+    "pg-hstore": "^2.3.4",
     "saas-globals": "bitbucket:igorjan94/saas-globals#2023.10.03",
+    "sequelize": "^6.37.1",
     "tinkoff-sdk-grpc-js": "^1.8.2",
     "typescript": "^5.3.3"
   }
