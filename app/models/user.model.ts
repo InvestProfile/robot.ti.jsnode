@@ -1,16 +1,16 @@
 // user.ts
 import { Model, DataTypes } from 'sequelize';
-import sequelize from './config/database';
+import sequelize from '../config/database';
 
 // Определяем модель 'User'
-export class User extends Model {
+export class UserModel extends Model {
     public id!: number;
     public name!: string;
     public email!: string;
     // и так далее
 }
 
-User.init({
+UserModel.init({
     id: {
         type: DataTypes.INTEGER,
         autoIncrement: true,
@@ -31,4 +31,4 @@ User.init({
     timestamps: false, // включите или отключите временные метки в зависимости от вашего проекта
 });
 
-export default User;
+export default UserModel;
