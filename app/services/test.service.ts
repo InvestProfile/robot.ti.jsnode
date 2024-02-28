@@ -3,7 +3,7 @@
 // const debug = initDebug(__filename)
 // debug('hui')
 
-import { getEnv } from './config/env.config';
+import { getEnv } from '../config/env.config';
 
 const envVariables = getEnv();
 
@@ -11,7 +11,7 @@ console.log(`The Tinkoff INVEST_TOKEN is: ${envVariables.INVEST_TOKEN}`);
 
 import { createSdk } from 'tinkoff-sdk-grpc-js';
 
-export default class Test {
+export class TestService {
     static async example() {
         {
             if (envVariables.INVEST_TOKEN) {

@@ -2,8 +2,8 @@
 // tradeService.ts
 import { TradesModel } from '../models/trades.model';
 
-export class TradesService {
-    async createTrades() {
+export default class TradesService {
+    static async createTrades() {
         try {
             await TradesModel.sync();
             // Здесь можно добавить создание записи, если это необходимо
@@ -16,7 +16,7 @@ export class TradesService {
             console.error('Unable to create trade:', error);
         }
     }
-    async findTradeById(id: number) {
+    static async findTradeById(id: number) {
         try {
             const trade = await TradesModel.findByPk(id);
             if (trade) {
@@ -29,6 +29,30 @@ export class TradesService {
         } catch (error) {
             console.error('Error finding trade:', error);
             throw error; // Перебрасываем ошибку дальше
+        }
+    }
+    static async createTrade(
+        figi: string | undefined,
+        quantity: string,
+        price_units: number | undefined,
+        price_nano: number | undefined,
+        instrumentUid: string
+    ) {
+        try {
+            // Создаём новую запись с полем ticker
+            const newTrade = await TradesModel.create({
+                figi,
+                quantity,
+                price_units,
+                price_nano,
+                instrumentUid
+            });
+
+            console.log("New trade created successfully.", newTrade);
+            return newTrade;
+        } catch (error) {
+            console.error('Unable to create new trade:', error);
+            throw error; // Выбрасываем ошибку для дальнейшей обработки
         }
     }
 }

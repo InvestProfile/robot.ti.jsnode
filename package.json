@@ -15,7 +15,8 @@
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^20.11.17",
-    "@types/sequelize": "^4.28.20"
+    "@types/sequelize": "^4.28.20",
+    "@types/uuid": "^9.0.8"
   },
   "dependencies": {
     "@total-typescript/ts-reset": "github:total-typescript/ts-reset",
@@ -25,6 +26,7 @@
     "saas-globals": "bitbucket:igorjan94/saas-globals#2023.10.03",
     "sequelize": "^6.37.1",
     "tinkoff-sdk-grpc-js": "^1.8.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "uuid": "^9.0.1"
   }
 }
