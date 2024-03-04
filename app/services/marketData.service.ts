@@ -11,10 +11,17 @@ export default class MarketDataService {
     ) {
         if (envVariables.INVEST_TOKEN) {
             const {marketData} = createSdk(envVariables.INVEST_TOKEN);
-            return await marketData.getTradingStatus({
-                figi,
-                instrumentId
-            })
+            try {
+                return await marketData.getTradingStatus({
+                    figi,
+                    instrumentId
+                })
+            } catch (error) {
+                console.error('Error while getting trading status:', error);
+                throw error; // Перебрасываем ошибку для дальнейшей обработки
+            }
+        } else {
+            throw new Error('INVEST_TOKEN is not defined.'); // Выброс исключения, если токен не определен
         }
     }
 }

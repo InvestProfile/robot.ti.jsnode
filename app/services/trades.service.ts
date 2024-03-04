@@ -33,19 +33,27 @@ export default class TradesService {
     }
     static async createTrade(
         figi: string | undefined,
-        quantity: string,
+        quantity: string | undefined,
+        direction: string | undefined,
         price_units: number | undefined,
         price_nano: number | undefined,
-        instrumentUid: string
+        instrumentUid: string | undefined,
+        accountId: string | undefined,
+        ticker: string | undefined,
+        name: string | undefined
     ) {
         try {
             // Создаём новую запись с полем ticker
             const newTrade = await TradesModel.create({
                 figi,
                 quantity,
+                direction,
                 price_units,
                 price_nano,
-                instrumentUid
+                instrumentUid,
+                accountId,
+                ticker,
+                name
             });
 
             console.log("New trade created successfully.", newTrade);

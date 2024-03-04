@@ -18,7 +18,7 @@ export default class OrdersService {
     static async postOrder(
         accountId: string,
         direction: number,
-        //quantity: number,
+        quantity: number | undefined,
         price: Price,
         figi: string,
         instrumentId: string
@@ -33,7 +33,7 @@ export default class OrdersService {
                     timeInForce: TimeInForceType.TIME_IN_FORCE_UNSPECIFIED,
                     direction: direction === 2?OrderDirection.ORDER_DIRECTION_SELL:OrderDirection.ORDER_DIRECTION_BUY,
                     orderType: OrderType.ORDER_TYPE_MARKET,
-                    quantity: 1,
+                    quantity,
                     price,
                     figi,
                     instrumentId,
