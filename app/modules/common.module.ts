@@ -27,7 +27,7 @@ export const executeTrades = async (accountId: string) => {
 
 
                 // Ждем n секунд (n * 1000 миллисекунд)
-                await delay(5 * 1000);
+                await delay(2 * 1000);
 
 
                 // getStatus
@@ -55,7 +55,8 @@ export const executeTrades = async (accountId: string) => {
 
 
                 // Сравнение цен
-                if (currentPrice > averagePositionPrice * 1.01 && tradingStatus?.tradingStatus === 5) {
+                if (currentPrice > averagePositionPrice * 1.005 && tradingStatus?.tradingStatus === 5) {
+                // if (currentPrice > averagePositionPrice && tradingStatus?.tradingStatus === 5) {
                     console.log('averagePositionPrice is less than currentPrice: ', position);
 
                     try {
@@ -71,8 +72,6 @@ export const executeTrades = async (accountId: string) => {
 
                         // Временно выводим результат в консоль для отладки
                         console.log(orderResult);
-
-                        // await InstrumentsService.getShares()
 
                         if (orderResult) {
 
@@ -90,9 +89,11 @@ export const executeTrades = async (accountId: string) => {
                                     position?.currentPrice?.units,
                                     position?.currentPrice?.nano,
                                     position?.instrumentUid,
+                                    position?.instrumentUid,
                                     accountId,
                                     instrument?.ticker,
-                                    instrument?.name
+                                    instrument?.name,
+                                    position?.quantityLots?.units
                                 )
                             }
 

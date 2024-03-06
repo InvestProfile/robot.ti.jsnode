@@ -18,6 +18,12 @@ export default class MarketDataService {
                 })
             } catch (error) {
                 console.error('Error while getting trading status:', error);
+                // Используем утверждение типа для error
+                const grpcError = error as { code?: string };
+                if (grpcError.code === 'UNAVAILABLE') {
+                    // Обработка ошибки отсутствия соединения
+                    throw new Error('Сервер недоступен. Пожалуйста, проверьте ваше соединение и попробуйте снова.');
+                }
                 throw error; // Перебрасываем ошибку для дальнейшей обработки
             }
         } else {

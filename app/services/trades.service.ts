@@ -37,10 +37,12 @@ export default class TradesService {
         direction: string | undefined,
         price_units: number | undefined,
         price_nano: number | undefined,
+        uid: string | undefined,
         instrumentUid: string | undefined,
         accountId: string | undefined,
         ticker: string | undefined,
-        name: string | undefined
+        name: string | undefined,
+        lot: number | undefined
     ) {
         try {
             // Создаём новую запись с полем ticker
@@ -50,10 +52,12 @@ export default class TradesService {
                 direction,
                 price_units,
                 price_nano,
+                uid,
                 instrumentUid,
                 accountId,
                 ticker,
-                name
+                name,
+                lot
             });
 
             console.log("New trade created successfully.", newTrade);
