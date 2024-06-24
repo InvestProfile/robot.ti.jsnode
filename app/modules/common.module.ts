@@ -27,7 +27,7 @@ export const executeTrades = async (accountId: string) => {
 
 
                 // Ждем n секунд (n * 1000 миллисекунд)
-                await delay(2 * 1000);
+                await delay(3 * 1000);
 
 
                 // getStatus
@@ -35,7 +35,6 @@ export const executeTrades = async (accountId: string) => {
                     position.figi,
                     position.instrumentUid,
                 )
-
 
                 // instruments
                 const shares = await InstrumentsService.getShares()
@@ -45,7 +44,10 @@ export const executeTrades = async (accountId: string) => {
                     console.log(
                         "Check || " +
                         "FIGI(position): " + position?.figi + ", " +
-                        "status(position): " + tradingStatus?.tradingStatus + " || " +
+                        "status(position): " + tradingStatus?.tradingStatus + ", " +
+                        "averagePositionPrice(position):" + averagePositionPrice + ", " +
+                        "currentPrice(position): " + currentPrice +
+                        " || " +
                         "FIGI(instrument): " + instrument?.figi + ", " +
                         "ticker(instrument): " + instrument?.name + ", " +
                         "ticker(instrument): " + instrument?.name)
