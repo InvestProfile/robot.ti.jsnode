@@ -1,6 +1,7 @@
 
 import { getEnv } from '../config/env.config';
-import { createSdk } from 'tinkoff-sdk-grpc-js';
+// import { createSdk } from 'tinkoff-sdk-grpc-js';
+import {getSdk} from './get-sdk';
 
 const envVariables = getEnv();
 
@@ -10,7 +11,7 @@ export default class MarketDataService {
         instrumentId: string
     ) {
         if (envVariables.INVEST_TOKEN) {
-            const {marketData} = createSdk(envVariables.INVEST_TOKEN);
+            const {marketData} = getSdk(envVariables.INVEST_TOKEN);
             try {
                 return await marketData.getTradingStatus({
                     figi,

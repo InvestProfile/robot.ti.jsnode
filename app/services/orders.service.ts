@@ -1,5 +1,6 @@
 import {getEnv} from '../config/env.config';
-import {createSdk} from 'tinkoff-sdk-grpc-js';
+// import {createSdk} from 'tinkoff-sdk-grpc-js';
+import {getSdk} from './get-sdk';
 
 import { v4 as uuidv4 } from 'uuid';
 
@@ -24,7 +25,7 @@ export default class OrdersService {
         instrumentId: string
     ) {
         if (envVariables.INVEST_TOKEN) {
-            const {orders} = createSdk(envVariables.INVEST_TOKEN);
+            const {orders} = getSdk(envVariables.INVEST_TOKEN);
 
             try {
                 return await orders.postOrder({
