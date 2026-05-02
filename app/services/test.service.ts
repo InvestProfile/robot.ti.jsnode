@@ -9,13 +9,13 @@ const envVariables = getEnv();
 
 console.log(`The Tinkoff INVEST_TOKEN is: ${envVariables.INVEST_TOKEN}`);
 
-import { createSdk } from 'tinkoff-sdk-grpc-js';
+import {getSdk} from './get-sdk';
 
 export class TestService {
     static async example() {
         {
             if (envVariables.INVEST_TOKEN) {
-                const {users, operations} = createSdk(envVariables.INVEST_TOKEN);
+                const {users, operations} = getSdk(envVariables.INVEST_TOKEN);
 
                 const userInfo = await users.getInfo({});
                 const accounts = await users.getAccounts({});

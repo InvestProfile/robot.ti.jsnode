@@ -1,5 +1,4 @@
 import {getEnv} from '../config/env.config';
-// import {createSdk} from 'tinkoff-sdk-grpc-js';
 import {getSdk} from './get-sdk';
 
 import { v4 as uuidv4 } from 'uuid';

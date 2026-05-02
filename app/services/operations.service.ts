@@ -1,7 +1,6 @@
 
 import { getEnv } from '../config/env.config';
-// import { createSdk } from 'tinkoff-sdk-grpc-js';
-import {getSdk} from './get-sdk';
+import { getSdk } from './get-sdk';
 
 const envVariables = getEnv();
 
