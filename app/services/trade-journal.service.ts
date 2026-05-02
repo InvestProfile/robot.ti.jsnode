@@ -11,6 +11,7 @@ interface TradeDecisionLog {
     ticker?: string;
     name?: string;
     status: TradeDecisionStatus;
+    signalSource?: string;
     reason: string;
     averagePrice?: number;
     currentPrice?: number;
@@ -36,6 +37,7 @@ export default class TradeJournalService {
             ticker: decision.ticker,
             name: decision.name,
             status: decision.status,
+            signalSource: decision.signalSource,
             reason: decision.reason,
             averagePrice: decision.averagePrice,
             currentPrice: decision.currentPrice,

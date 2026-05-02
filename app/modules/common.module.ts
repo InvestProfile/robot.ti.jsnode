@@ -6,6 +6,7 @@ import orderService from '../services/orders.service';
 import RiskManagerService from '../services/risk-manager.service';
 import TradeJournalService from '../services/trade-journal.service';
 import TradesService from '../services/trades.service';
+import ProfitTakeStrategy from '../strategies/profit-take.strategy';
 import { quotationToNumber } from '../utils/money';
 
 const delay = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -90,11 +91,17 @@ export const executeTrades = async (
         }
 
         const tradingStatus = await marketData.getStatus(position.figi, position.instrumentUid);
-        const risk = RiskManagerService.evaluateProfitSell({
+        const signal = ProfitTakeStrategy.evaluate({
+            averagePrice,
+            currentPrice,
+            quantityLots: position.quantityLots?.units
+        }, config);
+        const risk = RiskManagerService.evaluateSignal({
             averagePrice,
             currentPrice,
             quantityLots: position.quantityLots?.units,
-            tradingStatus: tradingStatus?.tradingStatus
+            tradingStatus: tradingStatus?.tradingStatus,
+            signal
         }, config);
 
         if (!risk.allowed) {
@@ -107,6 +114,7 @@ export const executeTrades = async (
                 ticker: instrument?.ticker,
                 name: instrument?.name,
                 status: 'skip',
+                signalSource: signal?.source,
                 reason: risk.reason,
                 averagePrice,
                 currentPrice,
@@ -126,6 +134,7 @@ export const executeTrades = async (
                 ticker: instrument?.ticker,
                 name: instrument?.name,
                 status: 'dry-run',
+                signalSource: signal?.source,
                 reason: accountMode === 'observe' ? 'observe-only: ' + risk.reason : risk.reason,
                 averagePrice,
                 currentPrice,
@@ -154,6 +163,7 @@ export const executeTrades = async (
                 ticker: instrument?.ticker,
                 name: instrument?.name,
                 status: 'order-failed',
+                signalSource: signal?.source,
                 reason: 'postOrder returned empty result',
                 averagePrice,
                 currentPrice,
@@ -186,6 +196,7 @@ export const executeTrades = async (
             ticker: instrument?.ticker,
             name: instrument?.name,
             status: 'order-posted',
+            signalSource: signal?.source,
             reason: risk.reason,
             averagePrice,
             currentPrice,

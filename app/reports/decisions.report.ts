@@ -41,6 +41,7 @@ const printRows = (rows: TradeDecisionModel[]) => {
         pad('Account', 20),
         pad('Mode', 8),
         pad('Ticker', 10),
+        pad('Source', 12),
         pad('Status', 10),
         pad('P/L', 9),
         'Reason'
@@ -56,6 +57,7 @@ const printRows = (rows: TradeDecisionModel[]) => {
             pad(valueOrDash(data.accountAlias ?? data.accountId), 20),
             pad(valueOrDash(data.accountMode), 8),
             pad(valueOrDash(data.ticker ?? data.figi), 10),
+            pad(valueOrDash(data.signalSource), 12),
             pad(valueOrDash(data.status), 10),
             pad(formatPercent(data.profitPercent), 9),
             valueOrDash(data.reason)

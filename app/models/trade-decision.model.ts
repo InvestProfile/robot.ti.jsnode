@@ -11,6 +11,7 @@ export class TradeDecisionModel extends Model {
     public ticker!: string;
     public name!: string;
     public status!: string;
+    public signalSource!: string;
     public reason!: string;
     public averagePrice!: number;
     public currentPrice!: number;
@@ -56,6 +57,10 @@ TradeDecisionModel.init({
     status: {
         type: DataTypes.STRING,
         allowNull: false,
+    },
+    signalSource: {
+        type: DataTypes.STRING,
+        allowNull: true,
     },
     reason: {
         type: DataTypes.STRING,

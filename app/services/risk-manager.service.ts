@@ -1,10 +1,12 @@
 import { RobotConfig } from '../config/robot.config';
+import { TradeSignal } from '../strategies/trade-signal';
 
 interface RiskInput {
     averagePrice: number;
     currentPrice: number;
     quantityLots?: number;
     tradingStatus?: number;
+    signal?: TradeSignal;
 }
 
 interface RiskResult {
@@ -17,7 +19,7 @@ interface RiskResult {
 const NORMAL_TRADING_STATUS = 5;
 
 export default class RiskManagerService {
-    static evaluateProfitSell(input: RiskInput, config: RobotConfig): RiskResult {
+    static evaluateSignal(input: RiskInput, config: RobotConfig): RiskResult {
         const profitPercent = ((input.currentPrice - input.averagePrice) / input.averagePrice) * 100;
 
         if (!Number.isFinite(input.averagePrice) || input.averagePrice <= 0) {
@@ -32,24 +34,28 @@ export default class RiskManagerService {
             return { allowed: false, reason: 'instrument is not in normal trading status', profitPercent };
         }
 
-        if (input.currentPrice <= input.averagePrice * config.minProfitMultiplier) {
+        if (!input.signal) {
             return {
                 allowed: false,
-                reason: `profit is below ${config.minProfitPercent}% threshold`,
+                reason: 'no strategy signal',
                 profitPercent
             };
         }
 
-        const availableLots = Math.trunc(input.quantityLots ?? 0);
-        if (availableLots <= 0) {
+        if (input.signal.action !== 'sell') {
+            return { allowed: false, reason: `unsupported signal action: ${input.signal.action}`, profitPercent };
+        }
+
+        const signalLots = Math.trunc(input.signal.quantityLots ?? 0);
+        if (signalLots <= 0) {
             return { allowed: false, reason: 'quantityLots is empty or zero', profitPercent };
         }
 
         return {
             allowed: true,
-            reason: 'profit sell rule passed',
-            quantity: Math.min(availableLots, config.maxLotsPerOrder),
-            profitPercent
+            reason: `${input.signal.source}: ${input.signal.reason}`,
+            quantity: Math.min(signalLots, config.maxLotsPerOrder),
+            profitPercent: input.signal.profitPercent
         };
     }
 }
