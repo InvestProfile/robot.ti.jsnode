@@ -44,7 +44,7 @@ export const executeTrades = async (
         const instrument = findInstrument(instruments ?? [], position?.figi, position?.instrumentUid);
 
         if (averagePrice === undefined || currentPrice === undefined) {
-            TradeJournalService.logDecision({
+            await TradeJournalService.logDecision({
                 accountId,
                 figi: position?.figi,
                 instrumentUid: position?.instrumentUid,
@@ -57,7 +57,7 @@ export const executeTrades = async (
         }
         const orderPrice = position.currentPrice;
         if (!orderPrice) {
-            TradeJournalService.logDecision({
+            await TradeJournalService.logDecision({
                 accountId,
                 figi: position?.figi,
                 instrumentUid: position?.instrumentUid,
@@ -82,7 +82,7 @@ export const executeTrades = async (
         }, config);
 
         if (!risk.allowed) {
-            TradeJournalService.logDecision({
+            await TradeJournalService.logDecision({
                 accountId,
                 figi: position?.figi,
                 instrumentUid: position?.instrumentUid,
@@ -99,7 +99,7 @@ export const executeTrades = async (
         }
 
         if (config.dryRun) {
-            TradeJournalService.logDecision({
+            await TradeJournalService.logDecision({
                 accountId,
                 figi: position?.figi,
                 instrumentUid: position?.instrumentUid,
@@ -125,7 +125,7 @@ export const executeTrades = async (
         );
 
         if (!orderResult) {
-            TradeJournalService.logDecision({
+            await TradeJournalService.logDecision({
                 accountId,
                 figi: position?.figi,
                 instrumentUid: position?.instrumentUid,
@@ -155,7 +155,7 @@ export const executeTrades = async (
             risk.quantity
         );
 
-        TradeJournalService.logDecision({
+        await TradeJournalService.logDecision({
             accountId,
             figi: position?.figi,
             instrumentUid: position?.instrumentUid,

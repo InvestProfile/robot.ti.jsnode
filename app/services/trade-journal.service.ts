@@ -1,3 +1,5 @@
+import { TradeDecisionModel } from '../models/trade-decision.model';
+
 export type TradeDecisionStatus = 'skip' | 'dry-run' | 'order-posted' | 'order-failed';
 
 interface TradeDecisionLog {
@@ -15,12 +17,26 @@ interface TradeDecisionLog {
 }
 
 export default class TradeJournalService {
-    static logDecision(decision: TradeDecisionLog) {
+    static async logDecision(decision: TradeDecisionLog) {
         const payload = {
             at: new Date().toISOString(),
             ...decision
         };
 
         console.log('TRADE_DECISION ' + JSON.stringify(payload));
+
+        await TradeDecisionModel.create({
+            accountId: decision.accountId,
+            figi: decision.figi,
+            instrumentUid: decision.instrumentUid,
+            ticker: decision.ticker,
+            name: decision.name,
+            status: decision.status,
+            reason: decision.reason,
+            averagePrice: decision.averagePrice,
+            currentPrice: decision.currentPrice,
+            profitPercent: decision.profitPercent,
+            quantityLots: decision.quantityLots
+        });
     }
 }
