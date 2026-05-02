@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  robot:
+    image: node:20.0.0-slim
+    container_name: robot_ti_jsnode
+    restart: always
+    working_dir: /code
+    env_file: ./.env
+    command: bash -c 'npm run start'
+    volumes:
+      - .:/code
+      - robot_ti_node_modules:/code/node_modules
+
+volumes:
+  robot_ti_node_modules:

@@ -40,9 +40,40 @@ To check readiness before running live:
 npm run preflight
 ```
 
+## Server Run
+
+The server currently runs Docker with project folders mounted into Node
+containers. Keep production secrets in `.env` on the server; do not put tokens
+into `docker-compose.yml`.
+
+First install dependencies and build inside the same Linux container volume:
+
+```bash
+docker compose run --rm robot npm ci
+docker compose run --rm robot npm run build
+```
+
+Then start or restart the long-running robot:
+
+```bash
+docker compose up -d
+docker logs -f robot_ti_jsnode
+```
+
+Useful checks:
+
+```bash
+docker compose run --rm robot npm run preflight
+docker compose run --rm robot npm run decisions -- 50
+```
+
+The compose file does not publish a port because the robot is a background
+trading process, not a web server.
+
 ## Required Environment
 
-Keep these values in `.env`; the file is ignored by git.
+Keep these values in `.env`; the file is ignored by git. Use `.env.example` as
+a non-secret template.
 
 ```env
 INVEST_TOKEN=
