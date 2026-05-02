@@ -54,7 +54,10 @@ ROBOT_PROTECTED_ACCOUNT_IDS=2002465405,2006532697,2091363693,2045881687,20512516
 ROBOT_DRY_RUN=true
 ROBOT_INTERVAL_MS=60000
 ROBOT_POSITION_DELAY_MS=1000
+ROBOT_ENABLED_STRATEGIES=stop-loss,trailing-stop,profit-take
 ROBOT_MIN_PROFIT_PERCENT=0.5
+ROBOT_STOP_LOSS_PERCENT=3
+ROBOT_TRAILING_STOP_PERCENT=2
 ROBOT_MAX_LOTS_PER_ORDER=1
 ROBOT_LIVE_CONFIRMATION=
 ```
@@ -73,3 +76,17 @@ Do not enable live mode until dry-run decisions in `trade_decisions` look correc
 `ROBOT_OBSERVE_ACCOUNT_IDS` is read-only from the robot's point of view. The
 robot may write analysis into `trade_decisions`, but order execution is only
 allowed for `ROBOT_ACCOUNT_IDS`, and only after live mode is explicitly enabled.
+
+## Strategies
+
+Enabled strategies are configured by `ROBOT_ENABLED_STRATEGIES`.
+
+- `profit-take` sends a sell signal when current price is above average price by `ROBOT_MIN_PROFIT_PERCENT`.
+- `stop-loss` sends a sell signal when current price is below average price by `ROBOT_STOP_LOSS_PERCENT`.
+- `trailing-stop` tracks the highest observed price in `position_states` and sends a sell signal when current price falls by `ROBOT_TRAILING_STOP_PERCENT` from that high.
+
+Signal execution priority is:
+
+```text
+stop-loss -> trailing-stop -> profit-take
+```

@@ -6,7 +6,7 @@ import orderService from '../services/orders.service';
 import RiskManagerService from '../services/risk-manager.service';
 import TradeJournalService from '../services/trade-journal.service';
 import TradesService from '../services/trades.service';
-import ProfitTakeStrategy from '../strategies/profit-take.strategy';
+import StrategyEngine from '../strategies/strategy-engine';
 import { quotationToNumber } from '../utils/money';
 
 const delay = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
@@ -91,7 +91,10 @@ export const executeTrades = async (
         }
 
         const tradingStatus = await marketData.getStatus(position.figi, position.instrumentUid);
-        const signal = ProfitTakeStrategy.evaluate({
+        const signal = await StrategyEngine.evaluate({
+            accountId,
+            figi: position.figi,
+            instrumentUid: position.instrumentUid,
             averagePrice,
             currentPrice,
             quantityLots: position.quantityLots?.units
@@ -242,6 +245,9 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
     console.log('Protected accounts: ' + (config.protectedAccountIds.join(', ') || '<none>'));
     console.log('Interval: ' + config.intervalMs + ' ms');
     console.log('Min profit: ' + config.minProfitPercent + '%');
+    console.log('Stop loss: ' + config.stopLossPercent + '%');
+    console.log('Trailing stop: ' + config.trailingStopPercent + '%');
+    console.log('Strategies: ' + config.enabledStrategies.join(', '));
     console.log('Max lots per order: ' + config.maxLotsPerOrder);
     console.log('Dry run: ' + config.dryRun);
     console.log('Live confirmation required: ' + config.liveConfirmationRequired);

@@ -1,5 +1,5 @@
 export type TradeAction = 'sell';
-export type TradeSignalSource = 'profit-take';
+export type TradeSignalSource = 'profit-take' | 'stop-loss' | 'trailing-stop';
 
 export interface TradeSignal {
     action: TradeAction;
@@ -8,4 +8,13 @@ export interface TradeSignal {
     reason: string;
     quantityLots?: number;
     profitPercent: number;
+}
+
+export interface PositionStrategyInput {
+    accountId: string;
+    figi?: string;
+    instrumentUid: string;
+    averagePrice: number;
+    currentPrice: number;
+    quantityLots?: number;
 }
