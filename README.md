@@ -27,6 +27,13 @@ For the long-running robot process:
 npm run robot
 ```
 
+To inspect recent decisions:
+
+```bash
+npm run decisions
+npm run decisions -- 50
+```
+
 ## Required Environment
 
 Keep these values in `.env`; the file is ignored by git.

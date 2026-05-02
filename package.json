@@ -9,6 +9,7 @@
     "start": "node build/index.js",
     "local": "npm run build && npm run start",
     "robot": "npm run build && npm run start",
+    "decisions": "npm run build && node build/reports/decisions.report.js",
     "prod": "npm run robot",
     "lint": "eslint . --ext .ts,.tsx"
   },
