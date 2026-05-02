@@ -49,22 +49,22 @@ into `docker-compose.yml`.
 First install dependencies and build inside the same Linux container volume:
 
 ```bash
-docker compose run --rm robot npm ci
-docker compose run --rm robot npm run build
+docker-compose run --rm robot npm ci
+docker-compose run --rm robot npm run build
 ```
 
 Then start or restart the long-running robot:
 
 ```bash
-docker compose up -d
+docker-compose up -d
 docker logs -f robot_ti_jsnode
 ```
 
 Useful checks:
 
 ```bash
-docker compose run --rm robot npm run preflight
-docker compose run --rm robot npm run decisions -- 50
+docker-compose run --rm robot npm run preflight
+docker-compose run --rm robot npm run decisions -- 50
 ```
 
 The compose file does not publish a port because the robot is a background

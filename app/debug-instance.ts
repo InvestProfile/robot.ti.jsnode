@@ -1,3 +1,5 @@
-import {setupDebug} from 'saas-globals'
-
-export default setupDebug({name: 'robot.ti.jsnode', root: __filename})
+export default (...args: unknown[]) => {
+    if (process.env.DEBUG?.includes('robot.ti.jsnode')) {
+        console.debug('[robot.ti.jsnode]', ...args);
+    }
+};
