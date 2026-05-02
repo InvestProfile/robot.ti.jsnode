@@ -36,7 +36,14 @@ export const executeTrades = async (
     console.log('accountId: ' + accountId);
 
     const portfolio = await operationService.getPortfolio(accountId);
-    if (!portfolio?.positions?.length) return;
+    if (!portfolio?.positions?.length) {
+        await TradeJournalService.logDecision({
+            accountId,
+            status: 'skip',
+            reason: 'portfolio has no positions'
+        });
+        return;
+    }
 
     for (const position of portfolio.positions) {
         const averagePrice = quotationToNumber(position?.averagePositionPrice);
