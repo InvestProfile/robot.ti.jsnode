@@ -9,11 +9,19 @@ interface RiskInput {
     signal?: TradeSignal;
 }
 
+interface BuyRiskInput {
+    availableCashRub: number;
+    dailyOrdersCount: number;
+    signal?: TradeSignal;
+    tradingStatus?: number;
+}
+
 interface RiskResult {
     allowed: boolean;
     reason: string;
     quantity?: number;
     profitPercent: number;
+    estimatedOrderRub?: number;
 }
 
 const NORMAL_TRADING_STATUS = 5;
@@ -56,6 +64,45 @@ export default class RiskManagerService {
             reason: `${input.signal.source}: ${input.signal.reason}`,
             quantity: Math.min(signalLots, config.maxLotsPerOrder),
             profitPercent: input.signal.profitPercent
+        };
+    }
+
+    static evaluateBuySignal(input: BuyRiskInput, config: RobotConfig): RiskResult {
+        if (input.tradingStatus !== NORMAL_TRADING_STATUS) {
+            return { allowed: false, reason: 'instrument is not in normal trading status', profitPercent: 0 };
+        }
+
+        if (!input.signal) {
+            return { allowed: false, reason: 'no buy strategy signal', profitPercent: 0 };
+        }
+
+        if (input.signal.action !== 'buy') {
+            return { allowed: false, reason: `unsupported signal action: ${input.signal.action}`, profitPercent: 0 };
+        }
+
+        if (input.dailyOrdersCount >= config.maxDailyOrders) {
+            return { allowed: false, reason: 'daily order limit reached', profitPercent: 0 };
+        }
+
+        const estimatedOrderRub = input.signal.estimatedOrderRub ?? 0;
+        if (estimatedOrderRub <= 0) {
+            return { allowed: false, reason: 'estimated order amount is empty', profitPercent: 0 };
+        }
+
+        if (estimatedOrderRub > config.maxOrderRub) {
+            return { allowed: false, reason: 'estimated order amount is above max order RUB', profitPercent: 0 };
+        }
+
+        if (estimatedOrderRub > input.availableCashRub) {
+            return { allowed: false, reason: 'not enough cash for buy signal', profitPercent: 0 };
+        }
+
+        return {
+            allowed: true,
+            reason: `${input.signal.source}: ${input.signal.reason}`,
+            quantity: Math.trunc(input.signal.quantityLots ?? 1),
+            profitPercent: 0,
+            estimatedOrderRub
         };
     }
 }

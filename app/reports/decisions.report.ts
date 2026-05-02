@@ -44,6 +44,7 @@ const printRows = (rows: TradeDecisionModel[]) => {
         pad('Source', 12),
         pad('Status', 10),
         pad('P/L', 9),
+        pad('Amount', 10),
         'Reason'
     ].join('  ');
 
@@ -60,6 +61,7 @@ const printRows = (rows: TradeDecisionModel[]) => {
             pad(valueOrDash(data.signalSource), 12),
             pad(valueOrDash(data.status), 10),
             pad(formatPercent(data.profitPercent), 9),
+            pad(typeof data.estimatedOrderRub === 'number' ? data.estimatedOrderRub.toFixed(2) : '-', 10),
             valueOrDash(data.reason)
         ].join('  ');
 

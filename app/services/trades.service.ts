@@ -1,6 +1,7 @@
 
 // tradeService.ts
 import { TradesModel } from '../models/trades.model';
+import { Op } from 'sequelize';
 
 export default class TradesService {
     static async createTrades() {
@@ -66,5 +67,21 @@ export default class TradesService {
             console.error('Unable to create new trade:', error);
             throw error; // Выбрасываем ошибку для дальнейшей обработки
         }
+    }
+
+    static async countTodayTrades(accountId: string | undefined) {
+        if (!accountId) return 0;
+
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        return await TradesModel.count({
+            where: {
+                accountId,
+                createdAt: {
+                    [Op.gte]: startOfDay
+                }
+            } as any
+        });
     }
 }

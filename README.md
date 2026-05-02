@@ -55,6 +55,9 @@ ROBOT_DRY_RUN=true
 ROBOT_INTERVAL_MS=60000
 ROBOT_POSITION_DELAY_MS=1000
 ROBOT_ENABLED_STRATEGIES=stop-loss,trailing-stop,profit-take
+ROBOT_BUY_TICKERS=SBER,T,YDEX
+ROBOT_MAX_ORDER_RUB=1000
+ROBOT_MAX_DAILY_ORDERS=3
 ROBOT_MIN_PROFIT_PERCENT=0.5
 ROBOT_STOP_LOSS_PERCENT=3
 ROBOT_TRAILING_STOP_PERCENT=2
@@ -85,6 +88,7 @@ Enabled strategies are configured by `ROBOT_ENABLED_STRATEGIES`.
 - `profit-take` sends a sell signal when current price is above average price by `ROBOT_MIN_PROFIT_PERCENT`.
 - `stop-loss` sends a sell signal when current price is below average price by `ROBOT_STOP_LOSS_PERCENT`.
 - `trailing-stop` tracks the highest observed price in `position_states` and sends a sell signal when current price falls by `ROBOT_TRAILING_STOP_PERCENT` from that high.
+- `watchlist-buy` sends a buy signal for tickers listed in `ROBOT_BUY_TICKERS` when the instrument is not already in the portfolio and the estimated order fits risk limits.
 
 `ROBOT_TRAILING_BASELINE` controls how the first `highestPrice` is initialized:
 
@@ -97,3 +101,9 @@ Signal execution priority is:
 ```text
 stop-loss -> trailing-stop -> profit-take
 ```
+
+Buy-side risk limits:
+
+- `ROBOT_MAX_ORDER_RUB` caps a single estimated order amount;
+- `ROBOT_MAX_DAILY_ORDERS` caps accepted buy orders per account per day;
+- the robot refuses buy signals when there is not enough available RUB cash.

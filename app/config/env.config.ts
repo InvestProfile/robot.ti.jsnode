@@ -23,6 +23,9 @@ interface EnvConfig {
     ROBOT_TRAILING_STOP_PERCENT: string | undefined;
     ROBOT_TRAILING_BASELINE: string | undefined;
     ROBOT_MAX_LOTS_PER_ORDER: string | undefined;
+    ROBOT_BUY_TICKERS: string | undefined;
+    ROBOT_MAX_ORDER_RUB: string | undefined;
+    ROBOT_MAX_DAILY_ORDERS: string | undefined;
 }
 
 export const getEnv = () => {
@@ -47,6 +50,9 @@ export const getEnv = () => {
         ROBOT_STOP_LOSS_PERCENT: process.env.ROBOT_STOP_LOSS_PERCENT,
         ROBOT_TRAILING_STOP_PERCENT: process.env.ROBOT_TRAILING_STOP_PERCENT,
         ROBOT_TRAILING_BASELINE: process.env.ROBOT_TRAILING_BASELINE,
-        ROBOT_MAX_LOTS_PER_ORDER: process.env.ROBOT_MAX_LOTS_PER_ORDER
+        ROBOT_MAX_LOTS_PER_ORDER: process.env.ROBOT_MAX_LOTS_PER_ORDER,
+        ROBOT_BUY_TICKERS: process.env.ROBOT_BUY_TICKERS,
+        ROBOT_MAX_ORDER_RUB: process.env.ROBOT_MAX_ORDER_RUB,
+        ROBOT_MAX_DAILY_ORDERS: process.env.ROBOT_MAX_DAILY_ORDERS
     };
 };

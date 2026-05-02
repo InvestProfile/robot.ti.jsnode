@@ -61,4 +61,23 @@ export default class MarketDataService {
 
         return Math.max(...highs);
     }
+
+    static async getLastPrices(instrumentIds: string[]) {
+        if (!envVariables.INVEST_TOKEN) {
+            throw new Error('INVEST_TOKEN is not defined.');
+        }
+
+        if (instrumentIds.length === 0) return new Map<string, number>();
+
+        const {marketData} = getSdk(envVariables.INVEST_TOKEN);
+        const response = await marketData.getLastPrices({
+            instrumentId: instrumentIds
+        });
+
+        return new Map(
+            response.lastPrices
+                ?.map(lastPrice => [lastPrice.instrumentUid, quotationToNumber(lastPrice.price)] as const)
+                .filter((entry): entry is readonly [string, number] => Boolean(entry[0]) && entry[1] !== undefined && Number.isFinite(entry[1]))
+        );
+    }
 }

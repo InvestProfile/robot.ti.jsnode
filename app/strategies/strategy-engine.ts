@@ -2,7 +2,8 @@ import { RobotConfig } from '../config/robot.config';
 import ProfitTakeStrategy from './profit-take.strategy';
 import StopLossStrategy from './stop-loss.strategy';
 import TrailingStopStrategy from './trailing-stop.strategy';
-import { PositionStrategyInput, TradeSignal } from './trade-signal';
+import WatchlistBuyStrategy from './watchlist-buy.strategy';
+import { BuyStrategyInput, PositionStrategyInput, TradeSignal } from './trade-signal';
 
 export default class StrategyEngine {
     static async evaluate(input: PositionStrategyInput, config: RobotConfig): Promise<TradeSignal | undefined> {
@@ -24,5 +25,9 @@ export default class StrategyEngine {
         }
 
         return undefined;
+    }
+
+    static evaluateBuy(input: BuyStrategyInput, config: RobotConfig): TradeSignal | undefined {
+        return WatchlistBuyStrategy.evaluate(input, config);
     }
 }

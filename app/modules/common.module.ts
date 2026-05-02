@@ -7,7 +7,7 @@ import RiskManagerService from '../services/risk-manager.service';
 import TradeJournalService from '../services/trade-journal.service';
 import TradesService from '../services/trades.service';
 import StrategyEngine from '../strategies/strategy-engine';
-import { quotationToNumber } from '../utils/money';
+import { numberToQuotation, quotationToNumber } from '../utils/money';
 
 const delay = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
 
@@ -28,6 +28,159 @@ const findInstrument = (
 ) => {
     return instruments.find(instrument => instrument?.figi === figi && instrument?.uid === instrumentUid)
         ?? instruments.find(instrument => instrument?.figi === figi);
+};
+
+const executeBuySignals = async (
+    accountId: string,
+    config: RobotConfig,
+    instruments: ShareInstrument[]
+) => {
+    if (config.buyTickers.length === 0) return;
+
+    const accountAlias = config.accountAliases[accountId];
+    const portfolio = await operationService.getPortfolio(accountId);
+    let remainingCashRub = quotationToNumber(portfolio?.totalAmountCurrencies) ?? 0;
+    const portfolioInstrumentIds = new Set(
+        portfolio?.positions
+            ?.map(position => position.instrumentUid)
+            .filter(Boolean) ?? []
+    );
+    let dailyOrdersCount = await TradesService.countTodayTrades(accountId);
+    const buyInstruments = config.buyTickers
+        .map(ticker => instruments.find(instrument => instrument.ticker?.toUpperCase() === ticker))
+        .filter((instrument): instrument is ShareInstrument => Boolean(instrument?.uid && instrument?.figi));
+    const lastPrices = await marketData.getLastPrices(buyInstruments.map(instrument => instrument.uid));
+
+    for (const instrument of buyInstruments) {
+        const lastPrice = lastPrices.get(instrument.uid);
+        if (!lastPrice) {
+            await TradeJournalService.logDecision({
+                accountId,
+                accountAlias,
+                accountMode: 'trade',
+                figi: instrument.figi,
+                instrumentUid: instrument.uid,
+                ticker: instrument.ticker,
+                name: instrument.name,
+                status: 'skip',
+                signalSource: 'watchlist-buy',
+                reason: 'last price is empty'
+            });
+            continue;
+        }
+
+        const estimatedOrderRub = lastPrice * Math.max(1, instrument.lot ?? 1);
+        const alreadyInPortfolio = portfolioInstrumentIds.has(instrument.uid);
+        const skipReason = alreadyInPortfolio
+            ? 'instrument is already in portfolio'
+            : estimatedOrderRub > config.maxOrderRub
+                ? 'estimated lot is above max order RUB'
+                : estimatedOrderRub > remainingCashRub
+                    ? 'not enough cash for estimated lot'
+                    : undefined;
+        const tradingStatus = await marketData.getStatus(instrument.figi, instrument.uid);
+        const signal = StrategyEngine.evaluateBuy({
+            accountId,
+            figi: instrument.figi,
+            instrumentUid: instrument.uid,
+            ticker: instrument.ticker,
+            name: instrument.name,
+            lot: instrument.lot ?? 1,
+            lastPrice,
+            availableCashRub: remainingCashRub,
+            alreadyInPortfolio
+        }, config);
+        const risk = RiskManagerService.evaluateBuySignal({
+            availableCashRub: remainingCashRub,
+            dailyOrdersCount,
+            signal,
+            tradingStatus: tradingStatus?.tradingStatus
+        }, config);
+
+        if (!risk.allowed) {
+            await TradeJournalService.logDecision({
+                accountId,
+                accountAlias,
+                accountMode: 'trade',
+                figi: instrument.figi,
+                instrumentUid: instrument.uid,
+                ticker: instrument.ticker,
+                name: instrument.name,
+                status: 'skip',
+                signalSource: signal?.source ?? 'watchlist-buy',
+                reason: skipReason ?? risk.reason,
+                currentPrice: lastPrice,
+                estimatedOrderRub: signal?.estimatedOrderRub ?? estimatedOrderRub
+            });
+            continue;
+        }
+
+        if (config.dryRun) {
+            await TradeJournalService.logDecision({
+                accountId,
+                accountAlias,
+                accountMode: 'trade',
+                figi: instrument.figi,
+                instrumentUid: instrument.uid,
+                ticker: instrument.ticker,
+                name: instrument.name,
+                status: 'dry-run',
+                signalSource: signal?.source,
+                reason: risk.reason,
+                currentPrice: lastPrice,
+                quantityLots: risk.quantity,
+                estimatedOrderRub: risk.estimatedOrderRub
+            });
+            dailyOrdersCount += 1;
+            remainingCashRub -= risk.estimatedOrderRub ?? 0;
+            continue;
+        }
+
+        const orderResult = await orderService.postOrder(
+            accountId,
+            1,
+            risk.quantity,
+            numberToQuotation(lastPrice),
+            instrument.figi,
+            instrument.uid
+        );
+
+        if (!orderResult) {
+            await TradeJournalService.logDecision({
+                accountId,
+                accountAlias,
+                accountMode: 'trade',
+                figi: instrument.figi,
+                instrumentUid: instrument.uid,
+                ticker: instrument.ticker,
+                name: instrument.name,
+                status: 'order-failed',
+                signalSource: signal?.source,
+                reason: 'postOrder returned empty result',
+                currentPrice: lastPrice,
+                quantityLots: risk.quantity,
+                estimatedOrderRub: risk.estimatedOrderRub
+            });
+            continue;
+        }
+
+        dailyOrdersCount += 1;
+        remainingCashRub -= risk.estimatedOrderRub ?? 0;
+
+        await TradesService.createTrade(
+            instrument.figi,
+            '1',
+            '1',
+            Math.trunc(lastPrice),
+            Math.round((lastPrice - Math.trunc(lastPrice)) * 1e9),
+            instrument.uid,
+            instrument.uid,
+            accountId,
+            instrument.ticker,
+            instrument.name,
+            risk.quantity
+        );
+    }
 };
 
 export const executeTrades = async (
@@ -231,6 +384,7 @@ const executeRobotTick = async (config: RobotConfig) => {
 
         for (const accountId of config.accountIds) {
             await executeTrades(accountId, config, instruments, 'trade');
+            await executeBuySignals(accountId, config, instruments);
         }
     } catch (error) {
         console.error('Error occurred in trading tick:', error);
@@ -252,6 +406,9 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
     console.log('Trailing baseline: ' + config.trailingBaseline);
     console.log('Strategies: ' + config.enabledStrategies.join(', '));
     console.log('Max lots per order: ' + config.maxLotsPerOrder);
+    console.log('Max order RUB: ' + config.maxOrderRub);
+    console.log('Max daily orders: ' + config.maxDailyOrders);
+    console.log('Buy tickers: ' + (config.buyTickers.join(', ') || '<none>'));
     console.log('Dry run: ' + config.dryRun);
     console.log('Live confirmation required: ' + config.liveConfirmationRequired);
 

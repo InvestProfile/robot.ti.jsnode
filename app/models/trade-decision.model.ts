@@ -17,6 +17,7 @@ export class TradeDecisionModel extends Model {
     public currentPrice!: number;
     public profitPercent!: number;
     public quantityLots!: number;
+    public estimatedOrderRub!: number;
 }
 
 TradeDecisionModel.init({
@@ -80,6 +81,10 @@ TradeDecisionModel.init({
     },
     quantityLots: {
         type: DataTypes.INTEGER,
+        allowNull: true,
+    },
+    estimatedOrderRub: {
+        type: DataTypes.DOUBLE,
         allowNull: true,
     },
 }, {

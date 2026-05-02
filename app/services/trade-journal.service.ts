@@ -17,6 +17,7 @@ interface TradeDecisionLog {
     currentPrice?: number;
     profitPercent?: number;
     quantityLots?: number;
+    estimatedOrderRub?: number;
 }
 
 export default class TradeJournalService {
@@ -42,7 +43,8 @@ export default class TradeJournalService {
             averagePrice: decision.averagePrice,
             currentPrice: decision.currentPrice,
             profitPercent: decision.profitPercent,
-            quantityLots: decision.quantityLots
+            quantityLots: decision.quantityLots,
+            estimatedOrderRub: decision.estimatedOrderRub
         });
     }
 }
