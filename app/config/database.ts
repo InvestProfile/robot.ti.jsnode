@@ -13,6 +13,10 @@ const dbHost = envVariables.DB_HOST || '';
 const dbDialect = envVariables.DB_DIALECT || '';
 const dbPort = parseInt(envVariables.DB_PORT || '', 10);
 
+if (!dbName || !dbUser || !dbHost || !dbDialect || !Number.isFinite(dbPort)) {
+    throw new Error('Database config is incomplete. Check DB_NAME, DB_USER, DB_HOST, DB_DIALECT and DB_PORT.');
+}
+
 // Создаем новый экземпляр Sequelize
 const sequelize = new Sequelize(dbName, dbUser, dbPassword, {
     host: dbHost,

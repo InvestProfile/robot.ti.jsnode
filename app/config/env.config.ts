@@ -9,6 +9,14 @@ interface EnvConfig {
     DB_NAME: string | undefined;
     DB_DIALECT: string | undefined;
     DB_PORT: string | undefined;
+    ROBOT_ACCOUNT_IDS: string | undefined;
+    ROBOT_PROTECTED_ACCOUNT_IDS: string | undefined;
+    ROBOT_DRY_RUN: string | undefined;
+    ROBOT_LIVE_CONFIRMATION: string | undefined;
+    ROBOT_INTERVAL_MS: string | undefined;
+    ROBOT_POSITION_DELAY_MS: string | undefined;
+    ROBOT_MIN_PROFIT_PERCENT: string | undefined;
+    ROBOT_MAX_LOTS_PER_ORDER: string | undefined;
 }
 
 export const getEnv = () => {
@@ -19,6 +27,14 @@ export const getEnv = () => {
         DB_PASSWORD: process.env.DB_PASSWORD,
         DB_NAME: process.env.DB_NAME,
         DB_DIALECT: process.env.DB_DIALECT,
-        DB_PORT: process.env.DB_PORT
+        DB_PORT: process.env.DB_PORT,
+        ROBOT_ACCOUNT_IDS: process.env.ROBOT_ACCOUNT_IDS,
+        ROBOT_PROTECTED_ACCOUNT_IDS: process.env.ROBOT_PROTECTED_ACCOUNT_IDS,
+        ROBOT_DRY_RUN: process.env.ROBOT_DRY_RUN,
+        ROBOT_LIVE_CONFIRMATION: process.env.ROBOT_LIVE_CONFIRMATION,
+        ROBOT_INTERVAL_MS: process.env.ROBOT_INTERVAL_MS,
+        ROBOT_POSITION_DELAY_MS: process.env.ROBOT_POSITION_DELAY_MS,
+        ROBOT_MIN_PROFIT_PERCENT: process.env.ROBOT_MIN_PROFIT_PERCENT,
+        ROBOT_MAX_LOTS_PER_ORDER: process.env.ROBOT_MAX_LOTS_PER_ORDER
     };
 };
