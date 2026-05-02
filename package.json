@@ -10,6 +10,7 @@
     "local": "npm run build && npm run start",
     "robot": "npm run build && npm run start",
     "decisions": "npm run build && node build/reports/decisions.report.js",
+    "preflight": "npm run build && node build/reports/preflight.report.js",
     "prod": "npm run robot",
     "lint": "eslint . --ext .ts,.tsx"
   },

@@ -34,6 +34,12 @@ npm run decisions
 npm run decisions -- 50
 ```
 
+To check readiness before running live:
+
+```bash
+npm run preflight
+```
+
 ## Required Environment
 
 Keep these values in `.env`; the file is ignored by git.
