@@ -2,6 +2,9 @@ import { getEnv } from './env.config';
 
 const LIVE_CONFIRMATION = 'I_UNDERSTAND_THIS_TRADES_REAL_MONEY';
 const DEFAULT_STRATEGIES = ['stop-loss', 'trailing-stop', 'profit-take'];
+const TRAILING_BASELINES = ['observed', 'history_30d', 'history_90d'] as const;
+
+export type TrailingBaseline = typeof TRAILING_BASELINES[number];
 
 const parseBoolean = (value: string | undefined, defaultValue: boolean) => {
     if (value === undefined) return defaultValue;
@@ -71,6 +74,17 @@ const parseStrategies = (value: string | undefined) => {
     return strategies.length > 0 ? strategies : DEFAULT_STRATEGIES;
 };
 
+const parseTrailingBaseline = (value: string | undefined): TrailingBaseline => {
+    if (!value) return 'observed';
+
+    const normalized = value.trim();
+    if (TRAILING_BASELINES.includes(normalized as TrailingBaseline)) {
+        return normalized as TrailingBaseline;
+    }
+
+    throw new Error(`Unsupported ROBOT_TRAILING_BASELINE=${value}. Use: ${TRAILING_BASELINES.join(', ')}`);
+};
+
 export interface RobotConfig {
     accountIds: string[];
     observeAccountIds: string[];
@@ -85,6 +99,7 @@ export interface RobotConfig {
     minProfitPercent: number;
     stopLossPercent: number;
     trailingStopPercent: number;
+    trailingBaseline: TrailingBaseline;
     maxLotsPerOrder: number;
 }
 
@@ -121,6 +136,7 @@ export const getRobotConfig = (): RobotConfig => {
         minProfitPercent,
         stopLossPercent: parseNumber(env.ROBOT_STOP_LOSS_PERCENT, 3),
         trailingStopPercent: parseNumber(env.ROBOT_TRAILING_STOP_PERCENT, 2),
+        trailingBaseline: parseTrailingBaseline(env.ROBOT_TRAILING_BASELINE),
         maxLotsPerOrder: Math.max(1, Math.trunc(parseNumber(env.ROBOT_MAX_LOTS_PER_ORDER, 1)))
     };
 };

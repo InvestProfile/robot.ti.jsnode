@@ -249,6 +249,7 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
     console.log('Min profit: ' + config.minProfitPercent + '%');
     console.log('Stop loss: ' + config.stopLossPercent + '%');
     console.log('Trailing stop: ' + config.trailingStopPercent + '%');
+    console.log('Trailing baseline: ' + config.trailingBaseline);
     console.log('Strategies: ' + config.enabledStrategies.join(', '));
     console.log('Max lots per order: ' + config.maxLotsPerOrder);
     console.log('Dry run: ' + config.dryRun);

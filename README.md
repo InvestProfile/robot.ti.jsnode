@@ -58,6 +58,7 @@ ROBOT_ENABLED_STRATEGIES=stop-loss,trailing-stop,profit-take
 ROBOT_MIN_PROFIT_PERCENT=0.5
 ROBOT_STOP_LOSS_PERCENT=3
 ROBOT_TRAILING_STOP_PERCENT=2
+ROBOT_TRAILING_BASELINE=observed
 ROBOT_MAX_LOTS_PER_ORDER=1
 ROBOT_LIVE_CONFIRMATION=
 ```
@@ -84,6 +85,12 @@ Enabled strategies are configured by `ROBOT_ENABLED_STRATEGIES`.
 - `profit-take` sends a sell signal when current price is above average price by `ROBOT_MIN_PROFIT_PERCENT`.
 - `stop-loss` sends a sell signal when current price is below average price by `ROBOT_STOP_LOSS_PERCENT`.
 - `trailing-stop` tracks the highest observed price in `position_states` and sends a sell signal when current price falls by `ROBOT_TRAILING_STOP_PERCENT` from that high.
+
+`ROBOT_TRAILING_BASELINE` controls how the first `highestPrice` is initialized:
+
+- `observed` starts from the first price seen by the robot;
+- `history_30d` starts from the max daily candle high over the last 30 days;
+- `history_90d` starts from the max daily candle high over the last 90 days.
 
 Signal execution priority is:
 

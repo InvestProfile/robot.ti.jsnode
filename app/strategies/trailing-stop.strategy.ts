@@ -12,7 +12,8 @@ export default class TrailingStopStrategy {
             instrumentUid: input.instrumentUid,
             ticker: input.ticker,
             name: input.name,
-            currentPrice: input.currentPrice
+            currentPrice: input.currentPrice,
+            trailingBaseline: config.trailingBaseline
         });
 
         if (state.highestPrice <= 0) return undefined;
@@ -27,7 +28,7 @@ export default class TrailingStopStrategy {
             action: 'sell',
             source: 'trailing-stop',
             confidence: 1,
-            reason: `current price is ${drawdownPercent.toFixed(2)}% below observed high ${state.highestPrice.toFixed(2)}`,
+            reason: `current price is ${drawdownPercent.toFixed(2)}% below ${config.trailingBaseline} high ${state.highestPrice.toFixed(2)}`,
             quantityLots: Math.min(availableLots, config.maxLotsPerOrder),
             profitPercent: input.averagePrice > 0
                 ? ((input.currentPrice - input.averagePrice) / input.averagePrice) * 100

@@ -1,4 +1,6 @@
 import { PositionStateModel } from '../models/position-state.model';
+import marketData from './marketData.service';
+import { TrailingBaseline } from '../config/robot.config';
 
 interface UpdateInput {
     accountId: string;
@@ -7,10 +9,37 @@ interface UpdateInput {
     ticker?: string;
     name?: string;
     currentPrice: number;
+    trailingBaseline: TrailingBaseline;
 }
 
 export default class PositionStateService {
+    private static async getInitialHighestPrice(input: UpdateInput) {
+        if (input.trailingBaseline === 'observed') {
+            return input.currentPrice;
+        }
+
+        const days = input.trailingBaseline === 'history_30d' ? 30 : 90;
+
+        try {
+            const historyHigh = await marketData.getHighestDailyCandlePrice(input.instrumentUid, days);
+            if (historyHigh && historyHigh > 0) {
+                return Math.max(historyHigh, input.currentPrice);
+            }
+        } catch (error) {
+            console.error('Unable to load trailing history baseline:', {
+                accountId: input.accountId,
+                ticker: input.ticker,
+                instrumentUid: input.instrumentUid,
+                trailingBaseline: input.trailingBaseline,
+                error
+            });
+        }
+
+        return input.currentPrice;
+    }
+
     static async updateHighWaterMark(input: UpdateInput) {
+        const initialHighestPrice = await PositionStateService.getInitialHighestPrice(input);
         const [state] = await PositionStateModel.findOrCreate({
             where: {
                 accountId: input.accountId,
@@ -22,7 +51,7 @@ export default class PositionStateService {
                 instrumentUid: input.instrumentUid,
                 ticker: input.ticker,
                 name: input.name,
-                highestPrice: input.currentPrice,
+                highestPrice: initialHighestPrice,
                 lastPrice: input.currentPrice
             }
         });
