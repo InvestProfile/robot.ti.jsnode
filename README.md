@@ -20,10 +20,10 @@ npm run build
 npm run start
 ```
 
-For a server process:
+For the long-running robot process:
 
 ```bash
-npm run prod
+npm run robot
 ```
 
 ## Required Environment
