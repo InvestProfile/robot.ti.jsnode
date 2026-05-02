@@ -6,6 +6,8 @@ export class PositionStateModel extends Model {
     public accountId!: string;
     public figi!: string;
     public instrumentUid!: string;
+    public ticker!: string;
+    public name!: string;
     public highestPrice!: number;
     public lastPrice!: number;
 }
@@ -27,6 +29,14 @@ PositionStateModel.init({
     instrumentUid: {
         type: DataTypes.STRING,
         allowNull: false,
+    },
+    ticker: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    name: {
+        type: DataTypes.STRING,
+        allowNull: true,
     },
     highestPrice: {
         type: DataTypes.DOUBLE,

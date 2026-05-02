@@ -4,6 +4,8 @@ interface UpdateInput {
     accountId: string;
     figi?: string;
     instrumentUid: string;
+    ticker?: string;
+    name?: string;
     currentPrice: number;
 }
 
@@ -18,6 +20,8 @@ export default class PositionStateService {
                 accountId: input.accountId,
                 figi: input.figi,
                 instrumentUid: input.instrumentUid,
+                ticker: input.ticker,
+                name: input.name,
                 highestPrice: input.currentPrice,
                 lastPrice: input.currentPrice
             }
@@ -27,6 +31,8 @@ export default class PositionStateService {
 
         await state.update({
             figi: input.figi,
+            ticker: input.ticker,
+            name: input.name,
             highestPrice,
             lastPrice: input.currentPrice
         });

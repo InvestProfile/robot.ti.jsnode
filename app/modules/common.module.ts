@@ -95,6 +95,8 @@ export const executeTrades = async (
             accountId,
             figi: position.figi,
             instrumentUid: position.instrumentUid,
+            ticker: instrument?.ticker,
+            name: instrument?.name,
             averagePrice,
             currentPrice,
             quantityLots: position.quantityLots?.units

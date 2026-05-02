@@ -10,6 +10,8 @@ export default class TrailingStopStrategy {
             accountId: input.accountId,
             figi: input.figi,
             instrumentUid: input.instrumentUid,
+            ticker: input.ticker,
+            name: input.name,
             currentPrice: input.currentPrice
         });
 

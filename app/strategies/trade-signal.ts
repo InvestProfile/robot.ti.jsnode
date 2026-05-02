@@ -14,6 +14,8 @@ export interface PositionStrategyInput {
     accountId: string;
     figi?: string;
     instrumentUid: string;
+    ticker?: string;
+    name?: string;
     averagePrice: number;
     currentPrice: number;
     quantityLots?: number;
