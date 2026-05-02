@@ -7,6 +7,7 @@ TypeScript robot for T-Invest.
 The runtime is intentionally conservative:
 
 - trades only accounts listed in `ROBOT_ACCOUNT_IDS`;
+- observes accounts listed in `ROBOT_OBSERVE_ACCOUNT_IDS`;
 - refuses to trade accounts listed in `ROBOT_PROTECTED_ACCOUNT_IDS`;
 - starts in `ROBOT_DRY_RUN=true` by default;
 - requires an explicit live confirmation phrase before real-money trading can start;
@@ -40,6 +41,8 @@ DB_DIALECT=postgres
 DB_PORT=3579
 
 ROBOT_ACCOUNT_IDS=2054310628
+ROBOT_OBSERVE_ACCOUNT_IDS=2002465405,2006532697,2201800992
+ROBOT_ACCOUNT_ALIASES=2054310628:торговый счет,2002465405:долгосрочный счет,2006532697:ИИС,2201800992:Инвесткопилка
 ROBOT_PROTECTED_ACCOUNT_IDS=2002465405,2006532697,2091363693,2045881687,2051251635,2201800992,2011287614
 ROBOT_DRY_RUN=true
 ROBOT_INTERVAL_MS=60000
@@ -59,3 +62,7 @@ ROBOT_LIVE_CONFIRMATION=I_UNDERSTAND_THIS_TRADES_REAL_MONEY
 ```
 
 Do not enable live mode until dry-run decisions in `trade_decisions` look correct.
+
+`ROBOT_OBSERVE_ACCOUNT_IDS` is read-only from the robot's point of view. The
+robot may write analysis into `trade_decisions`, but order execution is only
+allowed for `ROBOT_ACCOUNT_IDS`, and only after live mode is explicitly enabled.

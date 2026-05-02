@@ -4,6 +4,8 @@ export type TradeDecisionStatus = 'skip' | 'dry-run' | 'order-posted' | 'order-f
 
 interface TradeDecisionLog {
     accountId: string;
+    accountAlias?: string;
+    accountMode?: string;
     figi?: string;
     instrumentUid?: string;
     ticker?: string;
@@ -27,6 +29,8 @@ export default class TradeJournalService {
 
         await TradeDecisionModel.create({
             accountId: decision.accountId,
+            accountAlias: decision.accountAlias,
+            accountMode: decision.accountMode ?? 'trade',
             figi: decision.figi,
             instrumentUid: decision.instrumentUid,
             ticker: decision.ticker,

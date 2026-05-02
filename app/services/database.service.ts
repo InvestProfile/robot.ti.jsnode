@@ -6,7 +6,7 @@ export default class DatabaseService {
     static async init() {
         await sequelize.authenticate();
         await TradesModel.sync();
-        await TradeDecisionModel.sync();
+        await TradeDecisionModel.sync({ alter: true });
 
         console.log('Database connection: OK');
         console.log('Database models: trades, trade_decisions synced');

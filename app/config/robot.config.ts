@@ -40,8 +40,29 @@ const parseOptionalAccountIds = (value: string | undefined) => {
         .filter(Boolean);
 };
 
+const parseAccountAliases = (value: string | undefined) => {
+    if (!value) return {};
+
+    return value
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean)
+        .reduce<Record<string, string>>((aliases, item) => {
+            const [accountId, ...aliasParts] = item.split(':');
+            const alias = aliasParts.join(':').trim();
+
+            if (accountId?.trim() && alias) {
+                aliases[accountId.trim()] = alias;
+            }
+
+            return aliases;
+        }, {});
+};
+
 export interface RobotConfig {
     accountIds: string[];
+    observeAccountIds: string[];
+    accountAliases: Record<string, string>;
     protectedAccountIds: string[];
     dryRun: boolean;
     liveConfirmationRequired: boolean;
@@ -56,6 +77,8 @@ export const getRobotConfig = (): RobotConfig => {
     const env = getEnv();
     const minProfitPercent = parseNumber(env.ROBOT_MIN_PROFIT_PERCENT, 0.5);
     const accountIds = parseAccountIds(env.ROBOT_ACCOUNT_IDS, 'ROBOT_ACCOUNT_IDS');
+    const observeAccountIds = parseOptionalAccountIds(env.ROBOT_OBSERVE_ACCOUNT_IDS);
+    const accountAliases = parseAccountAliases(env.ROBOT_ACCOUNT_ALIASES);
     const protectedAccountIds = parseOptionalAccountIds(env.ROBOT_PROTECTED_ACCOUNT_IDS);
     const protectedAccountIdSet = new Set(protectedAccountIds);
     const forbiddenAccountIds = accountIds.filter(accountId => protectedAccountIdSet.has(accountId));
@@ -71,6 +94,8 @@ export const getRobotConfig = (): RobotConfig => {
 
     return {
         accountIds,
+        observeAccountIds,
+        accountAliases,
         protectedAccountIds,
         dryRun,
         liveConfirmationRequired: !dryRun,

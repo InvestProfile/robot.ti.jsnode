@@ -10,6 +10,8 @@ interface EnvConfig {
     DB_DIALECT: string | undefined;
     DB_PORT: string | undefined;
     ROBOT_ACCOUNT_IDS: string | undefined;
+    ROBOT_OBSERVE_ACCOUNT_IDS: string | undefined;
+    ROBOT_ACCOUNT_ALIASES: string | undefined;
     ROBOT_PROTECTED_ACCOUNT_IDS: string | undefined;
     ROBOT_DRY_RUN: string | undefined;
     ROBOT_LIVE_CONFIRMATION: string | undefined;
@@ -29,6 +31,8 @@ export const getEnv = () => {
         DB_DIALECT: process.env.DB_DIALECT,
         DB_PORT: process.env.DB_PORT,
         ROBOT_ACCOUNT_IDS: process.env.ROBOT_ACCOUNT_IDS,
+        ROBOT_OBSERVE_ACCOUNT_IDS: process.env.ROBOT_OBSERVE_ACCOUNT_IDS,
+        ROBOT_ACCOUNT_ALIASES: process.env.ROBOT_ACCOUNT_ALIASES,
         ROBOT_PROTECTED_ACCOUNT_IDS: process.env.ROBOT_PROTECTED_ACCOUNT_IDS,
         ROBOT_DRY_RUN: process.env.ROBOT_DRY_RUN,
         ROBOT_LIVE_CONFIRMATION: process.env.ROBOT_LIVE_CONFIRMATION,

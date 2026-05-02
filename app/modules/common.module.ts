@@ -12,6 +12,7 @@ const delay = (milliseconds: number) => new Promise(resolve => setTimeout(resolv
 
 type SharesResponse = Awaited<ReturnType<typeof InstrumentsService.getShares>>;
 type ShareInstrument = NonNullable<NonNullable<SharesResponse>['instruments']>[number];
+type AccountMode = 'trade' | 'observe';
 
 let isTickRunning = false;
 
@@ -31,14 +32,18 @@ const findInstrument = (
 export const executeTrades = async (
     accountId: string,
     config: RobotConfig = getRobotConfig(),
-    instruments?: ShareInstrument[]
+    instruments?: ShareInstrument[],
+    accountMode: AccountMode = 'trade'
 ) => {
-    console.log('accountId: ' + accountId);
+    const accountAlias = config.accountAliases[accountId];
+    console.log(`accountId: ${accountId}${accountAlias ? ' (' + accountAlias + ')' : ''} mode=${accountMode}`);
 
     const portfolio = await operationService.getPortfolio(accountId);
     if (!portfolio?.positions?.length) {
         await TradeJournalService.logDecision({
             accountId,
+            accountAlias,
+            accountMode,
             status: 'skip',
             reason: 'portfolio has no positions'
         });
@@ -53,6 +58,8 @@ export const executeTrades = async (
         if (averagePrice === undefined || currentPrice === undefined) {
             await TradeJournalService.logDecision({
                 accountId,
+                accountAlias,
+                accountMode,
                 figi: position?.figi,
                 instrumentUid: position?.instrumentUid,
                 ticker: instrument?.ticker,
@@ -66,6 +73,8 @@ export const executeTrades = async (
         if (!orderPrice) {
             await TradeJournalService.logDecision({
                 accountId,
+                accountAlias,
+                accountMode,
                 figi: position?.figi,
                 instrumentUid: position?.instrumentUid,
                 ticker: instrument?.ticker,
@@ -91,6 +100,8 @@ export const executeTrades = async (
         if (!risk.allowed) {
             await TradeJournalService.logDecision({
                 accountId,
+                accountAlias,
+                accountMode,
                 figi: position?.figi,
                 instrumentUid: position?.instrumentUid,
                 ticker: instrument?.ticker,
@@ -105,15 +116,17 @@ export const executeTrades = async (
             continue;
         }
 
-        if (config.dryRun) {
+        if (config.dryRun || accountMode === 'observe') {
             await TradeJournalService.logDecision({
                 accountId,
+                accountAlias,
+                accountMode,
                 figi: position?.figi,
                 instrumentUid: position?.instrumentUid,
                 ticker: instrument?.ticker,
                 name: instrument?.name,
                 status: 'dry-run',
-                reason: risk.reason,
+                reason: accountMode === 'observe' ? 'observe-only: ' + risk.reason : risk.reason,
                 averagePrice,
                 currentPrice,
                 profitPercent: risk.profitPercent,
@@ -134,6 +147,8 @@ export const executeTrades = async (
         if (!orderResult) {
             await TradeJournalService.logDecision({
                 accountId,
+                accountAlias,
+                accountMode,
                 figi: position?.figi,
                 instrumentUid: position?.instrumentUid,
                 ticker: instrument?.ticker,
@@ -164,6 +179,8 @@ export const executeTrades = async (
 
         await TradeJournalService.logDecision({
             accountId,
+            accountAlias,
+            accountMode,
             figi: position?.figi,
             instrumentUid: position?.instrumentUid,
             ticker: instrument?.ticker,
@@ -192,8 +209,12 @@ const executeRobotTick = async (config: RobotConfig) => {
         const shares = await InstrumentsService.getShares();
         const instruments = shares?.instruments ?? [];
 
+        for (const accountId of config.observeAccountIds) {
+            await executeTrades(accountId, config, instruments, 'observe');
+        }
+
         for (const accountId of config.accountIds) {
-            await executeTrades(accountId, config, instruments);
+            await executeTrades(accountId, config, instruments, 'trade');
         }
     } catch (error) {
         console.error('Error occurred in trading tick:', error);
@@ -206,6 +227,7 @@ const executeRobotTick = async (config: RobotConfig) => {
 export function startTradingProcess(config: RobotConfig = getRobotConfig()): TradingProcess {
     console.log('Trading process started.');
     console.log('Accounts: ' + config.accountIds.join(', '));
+    console.log('Observe accounts: ' + (config.observeAccountIds.join(', ') || '<none>'));
     console.log('Protected accounts: ' + (config.protectedAccountIds.join(', ') || '<none>'));
     console.log('Interval: ' + config.intervalMs + ' ms');
     console.log('Min profit: ' + config.minProfitPercent + '%');

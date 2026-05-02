@@ -4,6 +4,8 @@ import sequelize from '../config/database';
 export class TradeDecisionModel extends Model {
     public id!: number;
     public accountId!: string;
+    public accountAlias!: string;
+    public accountMode!: string;
     public figi!: string;
     public instrumentUid!: string;
     public ticker!: string;
@@ -25,6 +27,15 @@ TradeDecisionModel.init({
     accountId: {
         type: DataTypes.STRING,
         allowNull: false,
+    },
+    accountAlias: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    accountMode: {
+        type: DataTypes.STRING,
+        allowNull: false,
+        defaultValue: 'trade',
     },
     figi: {
         type: DataTypes.STRING,
