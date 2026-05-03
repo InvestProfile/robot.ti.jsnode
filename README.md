@@ -60,6 +60,17 @@ docker-compose up -d
 docker logs -f robot_ti_jsnode
 ```
 
+The read-only dashboard is served by the same process. The default compose file
+publishes it on `5757:3000`; protect it with:
+
+```env
+ROBOT_WEB_USERNAME=robot
+ROBOT_WEB_PASSWORD=
+```
+
+The dashboard and API are read-only. They do not expose endpoints for posting
+orders, enabling live mode, or stopping the robot.
+
 Useful checks:
 
 ```bash
@@ -101,6 +112,11 @@ ROBOT_TRAILING_STOP_PERCENT=2
 ROBOT_TRAILING_BASELINE=observed
 ROBOT_MAX_LOTS_PER_ORDER=1
 ROBOT_LIVE_CONFIRMATION=
+
+ROBOT_HTTP_ENABLED=true
+ROBOT_HTTP_PORT=3000
+ROBOT_WEB_USERNAME=robot
+ROBOT_WEB_PASSWORD=
 ```
 
 ## Live Trading

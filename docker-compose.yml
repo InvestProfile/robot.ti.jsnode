@@ -8,6 +8,8 @@ services:
     working_dir: /code
     env_file: ./.env
     command: bash -c 'npm run start'
+    ports:
+      - 5757:3000
     volumes:
       - .:/code
       - robot_ti_node_modules:/code/node_modules

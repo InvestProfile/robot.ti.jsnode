@@ -26,6 +26,10 @@ interface EnvConfig {
     ROBOT_BUY_TICKERS: string | undefined;
     ROBOT_MAX_ORDER_RUB: string | undefined;
     ROBOT_MAX_DAILY_ORDERS: string | undefined;
+    ROBOT_HTTP_ENABLED: string | undefined;
+    ROBOT_HTTP_PORT: string | undefined;
+    ROBOT_WEB_USERNAME: string | undefined;
+    ROBOT_WEB_PASSWORD: string | undefined;
 }
 
 export const getEnv = () => {
@@ -53,6 +57,10 @@ export const getEnv = () => {
         ROBOT_MAX_LOTS_PER_ORDER: process.env.ROBOT_MAX_LOTS_PER_ORDER,
         ROBOT_BUY_TICKERS: process.env.ROBOT_BUY_TICKERS,
         ROBOT_MAX_ORDER_RUB: process.env.ROBOT_MAX_ORDER_RUB,
-        ROBOT_MAX_DAILY_ORDERS: process.env.ROBOT_MAX_DAILY_ORDERS
+        ROBOT_MAX_DAILY_ORDERS: process.env.ROBOT_MAX_DAILY_ORDERS,
+        ROBOT_HTTP_ENABLED: process.env.ROBOT_HTTP_ENABLED,
+        ROBOT_HTTP_PORT: process.env.ROBOT_HTTP_PORT,
+        ROBOT_WEB_USERNAME: process.env.ROBOT_WEB_USERNAME,
+        ROBOT_WEB_PASSWORD: process.env.ROBOT_WEB_PASSWORD
     };
 };

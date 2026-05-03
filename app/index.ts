@@ -2,8 +2,11 @@ import sequelize from './config/database';
 import { getRobotConfig } from './config/robot.config';
 import DatabaseService from './services/database.service';
 import { startTradingProcess, TradingProcess } from './modules/common.module';
+import { startReadOnlyHttpServer } from './http/readonly-server';
+import { Server } from 'http';
 
 let tradingProcess: TradingProcess | undefined;
+let httpServer: Server | undefined;
 let isShuttingDown = false;
 
 const shutdown = async (signal: string) => {
@@ -14,6 +17,7 @@ const shutdown = async (signal: string) => {
 
     try {
         tradingProcess?.stop();
+        httpServer?.close();
         await sequelize.close();
         console.log('Shutdown complete.');
         process.exit(0);
@@ -30,6 +34,7 @@ const main = async () => {
     const config = getRobotConfig();
 
     await DatabaseService.init();
+    httpServer = startReadOnlyHttpServer();
     tradingProcess = startTradingProcess(config);
 };
 

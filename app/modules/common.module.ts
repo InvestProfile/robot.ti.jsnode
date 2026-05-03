@@ -16,10 +16,20 @@ type ShareInstrument = NonNullable<NonNullable<SharesResponse>['instruments']>[n
 type AccountMode = 'trade' | 'observe';
 
 let isTickRunning = false;
+let lastTickStartedAt: string | undefined;
+let lastTickFinishedAt: string | undefined;
+let lastTickError: string | undefined;
 
 export interface TradingProcess {
     stop: () => void;
 }
+
+export const getTradingRuntimeState = () => ({
+    isTickRunning,
+    lastTickStartedAt,
+    lastTickFinishedAt,
+    lastTickError
+});
 
 const findInstrument = (
     instruments: ShareInstrument[],
@@ -371,6 +381,8 @@ const executeRobotTick = async (config: RobotConfig) => {
     }
 
     isTickRunning = true;
+    lastTickStartedAt = new Date().toISOString();
+    lastTickError = undefined;
 
     try {
         console.log('Trading tick started. dryRun=' + config.dryRun);
@@ -388,8 +400,10 @@ const executeRobotTick = async (config: RobotConfig) => {
         }
     } catch (error) {
         console.error('Error occurred in trading tick:', error);
+        lastTickError = error instanceof Error ? error.message : String(error);
     } finally {
         isTickRunning = false;
+        lastTickFinishedAt = new Date().toISOString();
         console.log('Trading tick finished.');
     }
 };
