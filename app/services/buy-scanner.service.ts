@@ -2,6 +2,7 @@ import { getBuyScoreConfigForTicker, RobotConfig } from '../config/robot.config'
 import InstrumentsService from './instruments.service';
 import MarketDataService from './marketData.service';
 import ScoreBuyStrategy, { BuyScoreAnalysis } from '../strategies/score-buy.strategy';
+import MarketRegimeService from './market-regime.service';
 
 type SharesResponse = Awaited<ReturnType<typeof InstrumentsService.getShares>>;
 type ShareInstrument = NonNullable<NonNullable<SharesResponse>['instruments']>[number];
@@ -35,6 +36,7 @@ export default class BuyScannerService {
             !selected.some(instrument => instrument.ticker?.toUpperCase() === ticker)
         );
         const prices = await MarketDataService.getLastPrices(selected.map(instrument => instrument.uid));
+        const marketRegime = await MarketRegimeService.evaluate(config);
         const items: BuyScanItem[] = [];
 
         for (const instrument of selected) {
@@ -79,8 +81,10 @@ export default class BuyScannerService {
                 lastPrice,
                 estimatedOrderRub: lastPrice * Math.max(1, instrument.lot ?? 1),
                 score: analysis?.score,
-                passed: analysis?.passed,
-                reason: analysis?.reason ?? 'score analysis is empty',
+                passed: Boolean(analysis?.passed && marketRegime.passed),
+                reason: analysis?.passed && !marketRegime.passed
+                    ? marketRegime.reason
+                    : analysis?.reason ?? 'score analysis is empty',
                 profile: {
                     trendDays: scanConfig.buyTrendDays,
                     minScore: scanConfig.buyMinScore
@@ -93,6 +97,7 @@ export default class BuyScannerService {
             minScore: config.buyMinScore,
             trendDays: config.buyTrendDays,
             profiles: config.buyScoreProfiles,
+            marketRegime,
             missing,
             items: items.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
         };

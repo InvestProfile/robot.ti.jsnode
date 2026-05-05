@@ -8,6 +8,7 @@ import StrategyEngine from '../strategies/strategy-engine';
 import { TradeSignal } from '../strategies/trade-signal';
 import ScoreBuyStrategy, { BuyScoreAnalysis } from '../strategies/score-buy.strategy';
 import { quotationToNumber } from '../utils/money';
+import MarketRegimeService from './market-regime.service';
 
 type SharesResponse = Awaited<ReturnType<typeof InstrumentsService.getShares>>;
 type ShareInstrument = NonNullable<NonNullable<SharesResponse>['instruments']>[number];
@@ -57,6 +58,7 @@ export default class BuySignalEvaluatorService {
             .map(ticker => allInstruments.find(instrument => instrument.ticker?.toUpperCase() === ticker))
             .filter((instrument): instrument is ShareInstrument => Boolean(instrument?.uid && instrument?.figi));
         const lastPrices = await marketData.getLastPrices(buyInstruments.map(instrument => instrument.uid));
+        const marketRegime = await MarketRegimeService.evaluate(config);
         const previews: BuySignalPreview[] = [];
 
         for (const instrument of buyInstruments) {
@@ -121,7 +123,7 @@ export default class BuySignalEvaluatorService {
                 availableCashRub: remainingCashRub,
                 dailyOrdersCount,
                 dailyOrdersRub,
-                signal,
+                signal: marketRegime.passed ? signal : undefined,
                 tradingStatus: tradingStatus?.tradingStatus
             }, config);
             const skipReason = alreadyInPortfolio
@@ -132,6 +134,8 @@ export default class BuySignalEvaluatorService {
                     ? 'not enough cash for estimated lot'
                     : scoreAnalysis && !scoreAnalysis.passed
                         ? `score-buy blocked: ${scoreAnalysis.reason}`
+                        : !marketRegime.passed
+                            ? marketRegime.reason
                         : undefined;
             const preview: BuySignalPreview = {
                 accountId,

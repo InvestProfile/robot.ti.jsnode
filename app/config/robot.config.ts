@@ -181,6 +181,11 @@ export interface RobotConfig {
     signalCooldownMs: number;
     signalPriceChangePercent: number;
     buySignalJournalIntervalMs: number;
+    marketRegimeEnabled: boolean;
+    marketRegimeTickers: string[];
+    marketRegimeDays: number;
+    marketRegimeMinHealthPercent: number;
+    marketRegimeMinAvgTrendPercent: number;
     paperTradingEnabled: boolean;
     paperTradingIntervalMs: number;
     paperMaxPositions: number;
@@ -245,6 +250,14 @@ export const getRobotConfig = (): RobotConfig => {
         signalCooldownMs: Math.max(0, parseNumber(env.ROBOT_SIGNAL_COOLDOWN_MS, 30 * 60 * 1000)),
         signalPriceChangePercent: Math.max(0, parseNumber(env.ROBOT_SIGNAL_PRICE_CHANGE_PERCENT, 1)),
         buySignalJournalIntervalMs: Math.max(0, parseNumber(env.ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS, 15 * 60 * 1000)),
+        marketRegimeEnabled: parseBoolean(env.ROBOT_MARKET_REGIME_ENABLED, true),
+        marketRegimeTickers: (parseOptionalAccountIds(env.ROBOT_MARKET_REGIME_TICKERS).length > 0
+            ? parseOptionalAccountIds(env.ROBOT_MARKET_REGIME_TICKERS)
+            : ['SBER', 'LKOH', 'GAZP', 'YDEX', 'MOEX']
+        ).map(ticker => ticker.toUpperCase()),
+        marketRegimeDays: Math.max(2, Math.trunc(parseNumber(env.ROBOT_MARKET_REGIME_DAYS, 20))),
+        marketRegimeMinHealthPercent: Math.max(0, Math.min(100, parseNumber(env.ROBOT_MARKET_REGIME_MIN_HEALTH_PERCENT, 40))),
+        marketRegimeMinAvgTrendPercent: parseNumber(env.ROBOT_MARKET_REGIME_MIN_AVG_TREND_PERCENT, -1),
         paperTradingEnabled: parseBoolean(env.ROBOT_PAPER_TRADING_ENABLED, true),
         paperTradingIntervalMs: Math.max(0, parseNumber(env.ROBOT_PAPER_TRADING_INTERVAL_MS, 15 * 60 * 1000)),
         paperMaxPositions: Math.max(1, Math.trunc(parseNumber(env.ROBOT_PAPER_MAX_POSITIONS, 10))),

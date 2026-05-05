@@ -12,6 +12,7 @@
     "decisions": "npm run build && node build/reports/decisions.report.js",
     "scan:buy": "npm run build && node build/reports/buy-scan.report.js",
     "scan:universe": "npm run build && node build/reports/scan-universe.report.js",
+    "market:regime": "npm run build && node build/reports/market-regime.report.js",
     "backtest:buy": "npm run build && node build/reports/buy-backtest.report.js",
     "optimize:buy": "npm run build && node build/reports/buy-optimize.report.js",
     "signals:buy": "npm run build && node build/reports/buy-signals.report.js",

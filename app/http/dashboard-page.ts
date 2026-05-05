@@ -125,6 +125,11 @@ export const dashboardPage = `<!doctype html>
         <h2>Scan Universe</h2>
         <div style="overflow:auto"><table id="scanUniverse"></table></div>
       </section>
+      <section>
+        <h2>Market Regime</h2>
+        <div id="marketRegimeSummary" class="small" style="margin-bottom:10px"></div>
+        <div style="overflow:auto"><table id="marketRegime"></table></div>
+      </section>
     </div>
     <div class="stack">
       <section>
@@ -183,7 +188,7 @@ export const dashboardPage = `<!doctype html>
       return res.json();
     }
     async function load() {
-      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions] = await Promise.all([
+      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions, marketRegime] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
         api('/api/limits'),
@@ -195,7 +200,8 @@ export const dashboardPage = `<!doctype html>
         api('/api/preview'),
         api('/api/buy-signals?limit=30'),
         api('/api/scan-universe'),
-        api('/api/paper-positions?limit=50')
+        api('/api/paper-positions?limit=50'),
+        api('/api/market-regime')
       ]);
       document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString('ru-RU');
       document.getElementById('mode').innerHTML = status.config.dryRun ? '<span class="pill warn">DRY RUN</span>' : '<span class="pill bad">LIVE</span>';
@@ -215,6 +221,7 @@ export const dashboardPage = `<!doctype html>
         'observe accounts: ' + esc(status.config.observeAccountIds.join(', ')),
         'buy tickers: ' + esc(status.config.buyTickers.join(', ')),
         'scan universe: ' + esc(status.config.scanUniverse) + ', limit ' + esc(status.config.scanUniverseLimit) + ', max lot ' + esc(status.config.scanMaxLotRub) + ' RUB',
+        'market regime: ' + esc(status.config.marketRegimeEnabled) + ', tickers ' + esc(status.config.marketRegimeTickers.join(', ')),
         'paper trading: ' + esc(status.config.paperTradingEnabled) + ', max positions ' + esc(status.config.paperMaxPositions) + ', max position ' + esc(status.config.paperMaxPositionRub) + ' RUB',
         'buy score: min ' + esc(status.config.buyMinScore) + ', trend ' + esc(status.config.buyTrendDays) + 'd, +' + esc(status.config.buyMinTrendPercent) + '%, momentum +' + esc(status.config.buyMinMomentumPercent) + '%',
         'max order RUB: ' + esc(status.config.maxOrderRub),
@@ -254,6 +261,15 @@ export const dashboardPage = `<!doctype html>
       );
       document.getElementById('scanUniverse').innerHTML = rows(['Ticker', 'Lot RUB', 'Sector', 'Name'], scanUniverse.items.slice(0, 40), i =>
         '<tr><td>' + esc(i.ticker) + '</td><td class="right">' + money(i.estimatedLotRub) + '</td><td>' + esc(i.sector) + '</td><td>' + esc(i.name) + '</td></tr>'
+      );
+      document.getElementById('marketRegimeSummary').innerHTML = [
+        marketRegime.passed ? '<span class="pill good">PASSED</span>' : '<span class="pill bad">BLOCKED</span>',
+        esc(marketRegime.reason),
+        'health: ' + percent(marketRegime.healthPercent),
+        'avg trend: ' + percent(marketRegime.avgTrendPercent)
+      ].join('<br>');
+      document.getElementById('marketRegime').innerHTML = rows(['Ticker', 'Trend', 'Passed', 'Reason'], marketRegime.items, i =>
+        '<tr><td>' + esc(i.ticker) + '<div class="small">' + esc(i.name) + '</div></td><td class="right">' + percent(i.trendPercent) + '</td><td>' + esc(i.passed) + '</td><td>' + esc(i.reason) + '</td></tr>'
       );
       document.getElementById('decisions').innerHTML = rows(['Time', 'Account', 'Mode', 'Ticker', 'Signal', 'Status', 'P/L', 'Reason'], decisions.decisions, d =>
         '<tr><td>' + time(d.createdAt) + '</td><td>' + esc(d.accountAlias || d.accountId) + '</td><td>' + esc(d.accountMode) + '</td><td>' + esc(d.ticker || d.figi) + '</td><td>' + esc(d.signalSource) + '</td><td>' + esc(d.status) + '</td><td class="right">' + percent(d.profitPercent) + '</td><td>' + esc(d.reason) + '</td></tr>'

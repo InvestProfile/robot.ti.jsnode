@@ -20,6 +20,7 @@ import BuySignalJournalService from '../services/buy-signal-journal.service';
 import ScanUniverseService from '../services/scan-universe.service';
 import ScanTargetsService from '../services/scan-targets.service';
 import PaperTradingService from '../services/paper-trading.service';
+import MarketRegimeService from '../services/market-regime.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -120,6 +121,11 @@ const safeConfig = (config: RobotConfig) => ({
     signalCooldownMs: config.signalCooldownMs,
     signalPriceChangePercent: config.signalPriceChangePercent,
     buySignalJournalIntervalMs: config.buySignalJournalIntervalMs,
+    marketRegimeEnabled: config.marketRegimeEnabled,
+    marketRegimeTickers: config.marketRegimeTickers,
+    marketRegimeDays: config.marketRegimeDays,
+    marketRegimeMinHealthPercent: config.marketRegimeMinHealthPercent,
+    marketRegimeMinAvgTrendPercent: config.marketRegimeMinAvgTrendPercent,
     paperTradingEnabled: config.paperTradingEnabled,
     paperTradingIntervalMs: config.paperTradingIntervalMs,
     paperMaxPositions: config.paperMaxPositions,
@@ -345,6 +351,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/scan-universe') {
         json(res, 200, await ScanUniverseService.build(config));
+        return;
+    }
+
+    if (url.pathname === '/api/market-regime') {
+        json(res, 200, await MarketRegimeService.evaluate(config));
         return;
     }
 

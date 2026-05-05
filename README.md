@@ -37,6 +37,7 @@ To inspect recent decisions:
 npm run decisions
 npm run decisions -- 50
 npm run scan:universe
+npm run market:regime
 npm run scan:buy
 npm run scan:buy -- SBER T YDEX
 npm run backtest:buy
@@ -102,6 +103,7 @@ Read-only endpoints:
 - `/api/positions`
 - `/api/preview`
 - `/api/scan-universe`
+- `/api/market-regime`
 - `/api/buy-scan`
 - `/api/buy-backtest`
 - `/api/buy-optimize`
@@ -165,6 +167,11 @@ ROBOT_MAX_DAILY_RUB=2000
 ROBOT_SIGNAL_COOLDOWN_MS=1800000
 ROBOT_SIGNAL_PRICE_CHANGE_PERCENT=1
 ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS=900000
+ROBOT_MARKET_REGIME_ENABLED=true
+ROBOT_MARKET_REGIME_TICKERS=SBER,LKOH,GAZP,YDEX,MOEX
+ROBOT_MARKET_REGIME_DAYS=20
+ROBOT_MARKET_REGIME_MIN_HEALTH_PERCENT=40
+ROBOT_MARKET_REGIME_MIN_AVG_TREND_PERCENT=-1
 ROBOT_PAPER_TRADING_ENABLED=true
 ROBOT_PAPER_TRADING_INTERVAL_MS=900000
 ROBOT_PAPER_MAX_POSITIONS=10
@@ -262,3 +269,9 @@ paper analytics only: it does not post orders and it is available through
 targets. It opens paper positions from passed buy signals, updates current P/L,
 and closes them by paper stop-loss, trailing-stop, or profit-take. This does not
 post broker orders and is available through `/api/paper-positions`.
+
+`ROBOT_MARKET_REGIME_ENABLED=true` blocks new buy signals when the market
+backdrop is weak. It checks `ROBOT_MARKET_REGIME_TICKERS` against their
+`ROBOT_MARKET_REGIME_DAYS` average and requires at least
+`ROBOT_MARKET_REGIME_MIN_HEALTH_PERCENT` of them to pass. This only blocks new
+buy entries; it does not force-close existing positions.
