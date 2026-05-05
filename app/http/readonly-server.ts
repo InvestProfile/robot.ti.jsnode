@@ -9,6 +9,7 @@ import OperationsService from '../services/operations.service';
 import InstrumentsService from '../services/instruments.service';
 import { quotationToNumber } from '../utils/money';
 import { dashboardPage } from './dashboard-page';
+import { TradesModel } from '../models/trades.model';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -170,6 +171,19 @@ const getDecisionsPayload = async (url: URL) => {
     };
 };
 
+const getTradesPayload = async (url: URL) => {
+    const requestedLimit = Number(url.searchParams.get('limit') ?? 50);
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 50, 1), 500);
+    const trades = await TradesModel.findAll({
+        order: [['createdAt', 'DESC']],
+        limit
+    });
+
+    return {
+        trades: trades.map(trade => trade.toJSON())
+    };
+};
+
 const getPreviewPayload = async (config: RobotConfig) => {
     const previews = [];
 
@@ -224,6 +238,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/decisions') {
         json(res, 200, await getDecisionsPayload(url));
+        return;
+    }
+
+    if (url.pathname === '/api/trades') {
+        json(res, 200, await getTradesPayload(url));
         return;
     }
 

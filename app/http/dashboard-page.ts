@@ -122,6 +122,10 @@ export const dashboardPage = `<!doctype html>
         <div style="overflow:auto"><table id="decisions"></table></div>
       </section>
       <section>
+        <h2>Executed Trades</h2>
+        <div style="overflow:auto"><table id="trades"></table></div>
+      </section>
+      <section>
         <h2>Positions</h2>
         <div style="overflow:auto"><table id="positions"></table></div>
       </section>
@@ -137,16 +141,23 @@ export const dashboardPage = `<!doctype html>
     const time = value => value ? new Date(value).toLocaleString('ru-RU') : '-';
     const esc = value => String(value ?? '-').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
     const rows = (headers, items, render) => '<thead><tr>' + headers.map(h => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>' + items.map(render).join('') + '</tbody>';
+    const tradeDirection = value => String(value) === '2' ? 'sell' : String(value) === '1' ? 'buy' : '-';
+    const tradeAmount = trade => {
+      const price = Number(trade.price_units || 0) + Number(trade.price_nano || 0) / 1e9;
+      const lots = Math.max(1, Number(trade.lot || trade.quantity || 1));
+      return Number.isFinite(price) && Number.isFinite(lots) ? price * lots : undefined;
+    };
     async function api(path) {
       const res = await fetch(path);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     }
     async function load() {
-      const [status, accounts, decisions, positions, preview] = await Promise.all([
+      const [status, accounts, decisions, trades, positions, preview] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
         api('/api/decisions?limit=80'),
+        api('/api/trades?limit=20'),
         api('/api/positions'),
         api('/api/preview')
       ]);
@@ -175,6 +186,9 @@ export const dashboardPage = `<!doctype html>
       );
       document.getElementById('decisions').innerHTML = rows(['Time', 'Account', 'Mode', 'Ticker', 'Signal', 'Status', 'P/L', 'Reason'], decisions.decisions, d =>
         '<tr><td>' + time(d.createdAt) + '</td><td>' + esc(d.accountAlias || d.accountId) + '</td><td>' + esc(d.accountMode) + '</td><td>' + esc(d.ticker || d.figi) + '</td><td>' + esc(d.signalSource) + '</td><td>' + esc(d.status) + '</td><td class="right">' + percent(d.profitPercent) + '</td><td>' + esc(d.reason) + '</td></tr>'
+      );
+      document.getElementById('trades').innerHTML = rows(['Time', 'Account', 'Ticker', 'Side', 'Lots', 'Amount', 'Status', 'Order'], trades.trades, t =>
+        '<tr><td>' + time(t.createdAt) + '</td><td>' + esc(t.accountId) + '</td><td>' + esc(t.ticker || t.figi) + '<div class="small">' + esc(t.name) + '</div></td><td>' + esc(tradeDirection(t.direction)) + '</td><td class="right">' + esc(t.lot || t.quantity) + '</td><td class="right">' + money(tradeAmount(t)) + '</td><td>' + esc(t.status) + '</td><td>' + esc(t.orderId) + '</td></tr>'
       );
       document.getElementById('positions').innerHTML = rows(['Account', 'Ticker', 'Name', 'Lots', 'Average', 'Current', 'P/L'], positions.positions, p =>
         '<tr><td>' + esc(p.accountAlias || p.accountId) + '</td><td>' + esc(p.ticker || p.figi) + '</td><td>' + esc(p.name) + '</td><td class="right">' + esc(p.quantityLots) + '</td><td class="right">' + money(p.averagePrice) + '</td><td class="right">' + money(p.currentPrice) + '</td><td class="right">' + percent(p.profitPercent) + '</td></tr>'

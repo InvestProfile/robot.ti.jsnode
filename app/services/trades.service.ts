@@ -3,6 +3,14 @@
 import { TradesModel } from '../models/trades.model';
 import { Op } from 'sequelize';
 
+export interface TradeOrderMetadata {
+    orderId?: string;
+    orderType?: string;
+    status?: string;
+    tradeDateTime?: string;
+    instrumentId?: string;
+}
+
 export default class TradesService {
     static async createTrades() {
         try {
@@ -43,7 +51,8 @@ export default class TradesService {
         accountId: string | undefined,
         ticker: string | undefined,
         name: string | undefined,
-        lot: number | undefined
+        lot: number | undefined,
+        metadata: TradeOrderMetadata = {}
     ) {
         try {
             // Создаём новую запись с полем ticker
@@ -58,7 +67,12 @@ export default class TradesService {
                 accountId,
                 ticker,
                 name,
-                lot
+                lot,
+                orderId: metadata.orderId,
+                orderType: metadata.orderType,
+                status: metadata.status,
+                tradeDateTime: metadata.tradeDateTime,
+                instrumentId: metadata.instrumentId ?? instrumentUid
             });
 
             console.log("New trade created successfully.", newTrade);

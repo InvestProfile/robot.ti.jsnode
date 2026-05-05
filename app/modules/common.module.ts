@@ -41,6 +41,21 @@ const findInstrument = (
         ?? instruments.find(instrument => instrument?.figi === figi);
 };
 
+const getOrderMetadata = (orderResult: unknown) => {
+    const data = (orderResult ?? {}) as Record<string, unknown>;
+    const getString = (...keys: string[]) => {
+        const value = keys.map(key => data[key]).find(item => item !== undefined && item !== null);
+        return value === undefined || value === null ? undefined : String(value);
+    };
+
+    return {
+        orderId: getString('orderId'),
+        orderType: getString('orderType'),
+        status: getString('executionReportStatus', 'status'),
+        tradeDateTime: getString('tradeDateTime', 'createdAt')
+    };
+};
+
 const executeBuySignals = async (
     accountId: string,
     config: RobotConfig,
@@ -144,8 +159,28 @@ const executeBuySignals = async (
             accountId,
             preview.ticker,
             preview.name,
-            preview.quantityLots
+            preview.quantityLots,
+            {
+                ...getOrderMetadata(orderResult),
+                instrumentId: preview.instrumentUid
+            }
         );
+
+        await TradeJournalService.logDecision({
+            accountId,
+            accountAlias: preview.accountAlias,
+            accountMode: 'trade',
+            figi: preview.figi,
+            instrumentUid: preview.instrumentUid,
+            ticker: preview.ticker,
+            name: preview.name,
+            status: 'order-posted',
+            signalSource: preview.signal?.source,
+            reason: preview.reason,
+            currentPrice: preview.currentPrice,
+            quantityLots: preview.quantityLots,
+            estimatedOrderRub: preview.estimatedOrderRub
+        });
     }
 };
 
@@ -328,7 +363,11 @@ export const executeTrades = async (
             accountId,
             instrument?.ticker,
             instrument?.name,
-            risk.quantity
+            risk.quantity,
+            {
+                ...getOrderMetadata(orderResult),
+                instrumentId: position?.instrumentUid
+            }
         );
 
         await TradeJournalService.logDecision({

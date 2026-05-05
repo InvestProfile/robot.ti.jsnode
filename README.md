@@ -78,6 +78,16 @@ ROBOT_WEB_PASSWORD=
 The dashboard and API are read-only. They do not expose endpoints for posting
 orders, enabling live mode, or stopping the robot.
 
+Read-only endpoints:
+
+- `/api/status`
+- `/api/config`
+- `/api/accounts`
+- `/api/positions`
+- `/api/preview`
+- `/api/decisions`
+- `/api/trades`
+
 Useful checks:
 
 ```bash

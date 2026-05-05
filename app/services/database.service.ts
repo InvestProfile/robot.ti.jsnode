@@ -7,7 +7,7 @@ import { TradesModel } from '../models/trades.model';
 export default class DatabaseService {
     static async init() {
         await sequelize.authenticate();
-        await TradesModel.sync();
+        await TradesModel.sync({ alter: true });
         await TradeDecisionModel.sync({ alter: true });
         await PositionStateModel.sync({ alter: true });
         await SignalStateModel.sync({ alter: true });

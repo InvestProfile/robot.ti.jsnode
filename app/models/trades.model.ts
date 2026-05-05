@@ -101,7 +101,7 @@ TradesModel.init({
         allowNull: true,
     },
     status: {
-        type: DataTypes.BOOLEAN,
+        type: DataTypes.STRING,
         allowNull: true,
     }
     // и так далее
