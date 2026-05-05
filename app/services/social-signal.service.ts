@@ -1,5 +1,23 @@
 import { Op } from 'sequelize';
-import SocialSignalModel from '../models/social-signal.model';
+import SocialSignalModel, { SocialSignalAction } from '../models/social-signal.model';
+
+interface SocialSignalInput {
+    source: string;
+    actorKey: string;
+    actorName?: string;
+    actorReturnPercent?: number;
+    ticker: string;
+    name?: string;
+    figi?: string;
+    instrumentUid?: string;
+    action: SocialSignalAction;
+    confidence?: number;
+    price?: number;
+    reason?: string;
+    sourceUrl?: string;
+    rawPayload?: object;
+    observedAt: Date;
+}
 
 const average = (values: number[]) => values.length > 0
     ? values.reduce((sum, value) => sum + value, 0) / values.length
@@ -8,6 +26,53 @@ const average = (values: number[]) => values.length > 0
 const clampLimit = (limit: number) => Math.min(Math.max(Math.trunc(limit), 1), 500);
 
 export default class SocialSignalService {
+    static async upsertSignal(input: SocialSignalInput) {
+        const observedAt = input.observedAt;
+        const [record, created] = await SocialSignalModel.findOrCreate({
+            where: {
+                source: input.source,
+                actorKey: input.actorKey,
+                ticker: input.ticker,
+                action: input.action,
+                observedAt
+            },
+            defaults: {
+                source: input.source,
+                actorKey: input.actorKey,
+                actorName: input.actorName,
+                actorReturnPercent: input.actorReturnPercent,
+                ticker: input.ticker.toUpperCase(),
+                name: input.name,
+                figi: input.figi,
+                instrumentUid: input.instrumentUid,
+                action: input.action,
+                confidence: input.confidence,
+                price: input.price,
+                reason: input.reason,
+                sourceUrl: input.sourceUrl,
+                rawPayload: input.rawPayload,
+                observedAt
+            }
+        });
+
+        if (!created) {
+            await record.update({
+                actorName: input.actorName,
+                actorReturnPercent: input.actorReturnPercent,
+                name: input.name,
+                figi: input.figi,
+                instrumentUid: input.instrumentUid,
+                confidence: input.confidence,
+                price: input.price,
+                reason: input.reason,
+                sourceUrl: input.sourceUrl,
+                rawPayload: input.rawPayload
+            });
+        }
+
+        return { record, created };
+    }
+
     static async list(limit = 100) {
         const safeLimit = clampLimit(limit);
         const signals = await SocialSignalModel.findAll({

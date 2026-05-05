@@ -466,10 +466,12 @@ export const dashboardPage = `<!doctype html>
         'profiles: ' + esc(socialCollector.health.activeProfiles) + ' / configured ' + esc(socialCollector.config.configuredProfiles),
         'pending auth: ' + esc(socialCollector.health.pendingAuth),
         'stale: ' + esc(socialCollector.health.staleProfiles),
-        'auth cookie: ' + esc(socialCollector.config.hasAuthCookie)
+        'auth cookie: ' + esc(socialCollector.config.hasAuthCookie),
+        'session id: ' + esc(socialCollector.config.hasSessionId),
+        'delay: ' + esc(socialCollector.config.requestMinDelayMs) + '-' + esc(socialCollector.config.requestMaxDelayMs) + ' ms'
       ].join('<br>');
-      document.getElementById('socialProfiles').innerHTML = rows(['Status', 'Profile', 'Return', 'Checked', 'Error'], socialCollector.profiles, p =>
-        '<tr><td>' + (p.status === 'ready' ? pill('good', p.status) : pill('warn', p.status)) + '</td><td>' + esc(p.displayName || p.profileKey) + '<div class="small">' + esc(p.profileUrl) + '</div></td><td class="right">' + percent(p.lastReturnPercent) + '</td><td class="nowrap">' + time(p.lastCheckedAt) + '</td><td class="reason">' + esc(p.lastError) + '</td></tr>'
+      document.getElementById('socialProfiles').innerHTML = rows(['Status', 'Profile', 'UID', 'Activity', 'Return', 'Checked', 'Error'], socialCollector.profiles, p =>
+        '<tr><td>' + (p.status === 'ready' ? pill('good', p.status) : pill('warn', p.status)) + '</td><td>' + esc(p.displayName || p.profileKey) + '<div class="small">' + esc(p.profileUrl) + '</div></td><td>' + esc(p.profileUid) + '</td><td class="right">' + esc(p.activity) + '</td><td class="right">' + percent(p.lastReturnPercent) + '</td><td class="nowrap">' + time(p.lastCheckedAt) + '</td><td class="reason">' + esc(p.lastError) + '</td></tr>'
       );
       document.getElementById('socialTickers').innerHTML = rows(['Ticker', 'Signals', 'Buy', 'Sell', 'Watch', 'Hold'], socialSignals.summary.topTickers, s =>
         '<tr><td>' + esc(s.ticker) + '</td><td class="right">' + esc(s.count) + '</td><td class="right">' + esc(s.buy) + '</td><td class="right">' + esc(s.sell) + '</td><td class="right">' + esc(s.watch) + '</td><td class="right">' + esc(s.hold) + '</td></tr>'

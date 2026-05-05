@@ -182,6 +182,11 @@ ROBOT_SOCIAL_PROFILE_URLS=
 ROBOT_SOCIAL_MIN_RETURN_PERCENT=100
 ROBOT_SOCIAL_COLLECTOR_INTERVAL_MS=900000
 ROBOT_SOCIAL_AUTH_COOKIE=
+ROBOT_SOCIAL_SESSION_ID=
+ROBOT_SOCIAL_REQUEST_MIN_DELAY_MS=5000
+ROBOT_SOCIAL_REQUEST_MAX_DELAY_MS=10000
+ROBOT_SOCIAL_INSTRUMENT_LIMIT=100
+ROBOT_SOCIAL_OPERATION_LIMIT=1
 ROBOT_MIN_PROFIT_PERCENT=0.5
 ROBOT_STOP_LOSS_PERCENT=3
 ROBOT_TRAILING_STOP_PERCENT=2
@@ -295,6 +300,12 @@ process. It only writes social profile/signal data and is intentionally not part
 of the main trading loop. In Docker it can be started separately with
 `docker-compose up -d social_collector`; the normal robot deploy command starts
 only the `robot` service.
+The collector accepts either plain profile URLs or direct social API profile
+descriptors in `uid|url|name|confidence|activity|description` format. The old
+Pulse parser used the internal `invest-gw/social/v1/profile/{uid}` endpoints
+with `sessionId=psid`, `limit=100` for instruments, `limit=1` for the latest
+operation, and a random 5-10 second delay before requests; those controls are
+kept as explicit environment settings.
 
 `ROBOT_MARKET_REGIME_ENABLED=true` blocks new buy signals when the market
 backdrop is weak. It checks `ROBOT_MARKET_REGIME_TICKERS` against their

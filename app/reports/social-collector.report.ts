@@ -11,17 +11,22 @@ const printResult = (result: Awaited<ReturnType<typeof SocialCollectorService.co
     console.log(`Configured profiles: ${result.config.configuredProfiles}`);
     console.log(`Min return: ${result.config.minReturnPercent}%`);
     console.log(`Auth cookie: ${result.config.hasAuthCookie ? 'yes' : 'no'}`);
+    console.log(`Session ID: ${result.config.hasSessionId ? 'yes' : 'no'}`);
+    console.log(`Request delay: ${result.config.requestMinDelayMs}-${result.config.requestMaxDelayMs} ms`);
+    console.log(`Limits: instruments=${result.config.instrumentLimit}, operations=${result.config.operationLimit}`);
     console.log(`Sync: configured=${result.sync.configured} created=${result.sync.created} updated=${result.sync.updated}`);
     console.log(`Checked: ${result.checked}`);
     console.log(`Signals 30d: ${result.signalsSummary.signals}`);
     console.log('');
-    console.log('Status        Key                         Return   Checked                 Error');
-    console.log('------------  --------------------------  -------  ----------------------  ----------------------------------------');
+    console.log('Status        Key                         UID                                   Act  Return   Checked                 Error');
+    console.log('------------  --------------------------  ------------------------------------  ---  -------  ----------------------  ----------------------------------------');
 
     for (const profile of result.profiles) {
         console.log([
             String(profile.status ?? '-').padEnd(12),
             String(profile.profileKey ?? '-').padEnd(26),
+            String(profile.profileUid ?? '-').padEnd(36),
+            String(profile.activity ?? '-').padStart(3),
             (typeof profile.lastReturnPercent === 'number' ? profile.lastReturnPercent.toFixed(2) + '%' : '-').padStart(7),
             String(profile.lastCheckedAt ?? '-').padEnd(22),
             profile.lastError ?? '-'

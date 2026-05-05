@@ -7,8 +7,12 @@ export class SocialProfileModel extends Model {
     public id!: number;
     public source!: string;
     public profileKey!: string;
+    public profileUid!: string | null;
     public profileUrl!: string;
     public displayName!: string | null;
+    public confidence!: number | null;
+    public activity!: number;
+    public description!: string | null;
     public minReturnPercent!: number;
     public lastReturnPercent!: number | null;
     public status!: SocialProfileStatus;
@@ -32,11 +36,28 @@ SocialProfileModel.init({
         allowNull: false,
         unique: true,
     },
+    profileUid: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
     profileUrl: {
         type: DataTypes.STRING,
         allowNull: false,
     },
     displayName: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    confidence: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+    },
+    activity: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 1,
+    },
+    description: {
         type: DataTypes.STRING,
         allowNull: true,
     },
