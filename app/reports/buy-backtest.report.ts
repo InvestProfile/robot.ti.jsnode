@@ -1,6 +1,7 @@
 import sequelize from '../config/database';
 import { getRobotConfig } from '../config/robot.config';
 import BuyBacktestService from '../services/buy-backtest.service';
+import ScanTargetsService from '../services/scan-targets.service';
 
 const format = (value: number | undefined, digits = 2) => {
     if (value === undefined || !Number.isFinite(value)) return '-';
@@ -24,10 +25,12 @@ const main = async () => {
     const config = getRobotConfig();
     const days = parseDays(args);
     const tickers = parseTickers(args);
-    const result = await BuyBacktestService.run(config, tickers.length > 0 ? tickers : config.scanTickers, days);
+    const targets = await ScanTargetsService.resolve(config, tickers);
+    const result = await BuyBacktestService.run(config, targets.tickers, days);
 
     console.log('Buy Backtest');
     console.log('============');
+    console.log(`Targets: ${targets.mode}, ${targets.tickers.length} tickers`);
     console.log(`Min score: ${result.minScore}`);
     console.log(`Trend days: ${result.trendDays}`);
     console.log(`History days: ${result.days}`);

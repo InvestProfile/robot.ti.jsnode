@@ -18,6 +18,7 @@ import BuyBacktestService from '../services/buy-backtest.service';
 import BuyOptimizerService from '../services/buy-optimizer.service';
 import BuySignalJournalService from '../services/buy-signal-journal.service';
 import ScanUniverseService from '../services/scan-universe.service';
+import ScanTargetsService from '../services/scan-targets.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -329,7 +330,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
             ?.split(',')
             .map(ticker => ticker.trim().toUpperCase())
             .filter(Boolean);
-        json(res, 200, await BuyScannerService.scan(config, tickers?.length ? tickers : config.scanTickers));
+        const targets = await ScanTargetsService.resolve(config, tickers);
+        json(res, 200, {
+            targets,
+            ...await BuyScannerService.scan(config, targets.tickers)
+        });
         return;
     }
 
@@ -344,9 +349,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
             .map(ticker => ticker.trim().toUpperCase())
             .filter(Boolean);
         const days = Number(url.searchParams.get('days') ?? 180);
+        const targets = await ScanTargetsService.resolve(config, tickers);
         json(res, 200, await BuyBacktestService.run(
             config,
-            tickers?.length ? tickers : config.scanTickers,
+            targets.tickers,
             Number.isFinite(days) && days > 0 ? Math.trunc(days) : 180
         ));
         return;
@@ -361,10 +367,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
         const windows = BuyOptimizerService.parseWindows(url.searchParams.get('windows') ?? undefined);
         const thresholds = BuyOptimizerService.parseThresholds(url.searchParams.get('thresholds') ?? undefined);
         const horizons = BuyOptimizerService.parseHorizons(url.searchParams.get('horizons') ?? undefined);
+        const targets = await ScanTargetsService.resolve(config, tickers);
 
         json(res, 200, await BuyOptimizerService.optimize(
             config,
-            tickers?.length ? tickers : config.scanTickers,
+            targets.tickers,
             Number.isFinite(days) && days > 0 ? Math.trunc(days) : 180,
             windows,
             thresholds,

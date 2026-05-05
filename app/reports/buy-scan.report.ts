@@ -1,6 +1,7 @@
 import sequelize from '../config/database';
 import { getRobotConfig } from '../config/robot.config';
 import BuyScannerService from '../services/buy-scanner.service';
+import ScanTargetsService from '../services/scan-targets.service';
 
 const formatNumber = (value: number | undefined, digits = 2) => {
     if (value === undefined || !Number.isFinite(value)) return '-';
@@ -10,10 +11,12 @@ const formatNumber = (value: number | undefined, digits = 2) => {
 const main = async () => {
     const config = getRobotConfig();
     const tickers = process.argv.slice(2).map(ticker => ticker.toUpperCase()).filter(Boolean);
-    const result = await BuyScannerService.scan(config, tickers.length > 0 ? tickers : config.scanTickers);
+    const targets = await ScanTargetsService.resolve(config, tickers);
+    const result = await BuyScannerService.scan(config, targets.tickers);
 
     console.log('Buy Scan');
     console.log('========');
+    console.log(`Targets: ${targets.mode}, ${targets.tickers.length} tickers`);
     console.log(`Min score: ${result.minScore}`);
     console.log(`Trend days: ${result.trendDays}`);
     console.log(`Missing: ${result.missing.join(', ') || '-'}`);

@@ -1,6 +1,7 @@
 import sequelize from '../config/database';
 import { getRobotConfig } from '../config/robot.config';
 import BuyOptimizerService from '../services/buy-optimizer.service';
+import ScanTargetsService from '../services/scan-targets.service';
 
 const format = (value: number | undefined, digits = 2) => {
     if (value === undefined || !Number.isFinite(value)) return '-';
@@ -47,9 +48,10 @@ const main = async () => {
     const thresholds = BuyOptimizerService.parseThresholds(getArgValue(args, '--thresholds'));
     const horizons = BuyOptimizerService.parseHorizons(getArgValue(args, '--horizons'));
     const tickers = parseTickers(args);
+    const targets = await ScanTargetsService.resolve(config, tickers);
     const result = await BuyOptimizerService.optimize(
         config,
-        tickers.length > 0 ? tickers : config.scanTickers,
+        targets.tickers,
         days,
         windows,
         thresholds,
@@ -58,6 +60,7 @@ const main = async () => {
 
     console.log('Buy Optimize');
     console.log('============');
+    console.log(`Targets: ${targets.mode}, ${targets.tickers.length} tickers`);
     console.log(`Days: ${result.days}`);
     console.log(`Windows: ${result.windows.join(', ')}`);
     console.log(`Thresholds: ${result.thresholds.join(', ')}`);
