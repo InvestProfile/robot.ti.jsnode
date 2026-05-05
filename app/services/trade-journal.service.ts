@@ -36,10 +36,17 @@ export default class TradeJournalService {
         return [
             decision.status,
             decision.signalSource ?? '',
-            decision.reason,
+            this.normalizeReason(decision.reason),
             decision.quantityLots ?? '',
             decision.estimatedOrderRub ? Math.round(decision.estimatedOrderRub) : ''
         ].join('|');
+    }
+
+    private static normalizeReason(reason: string) {
+        return reason
+            .replace(/[+-]?\d+(?:[.,]\d+)?%/g, '<percent>')
+            .replace(/[+-]?\d+(?:[.,]\d+)?\s*RUB/g, '<money>')
+            .replace(/[+-]?\d+(?:[.,]\d+)?/g, '<number>');
     }
 
     private static getDecisionPrice(decision: TradeDecisionLog) {
