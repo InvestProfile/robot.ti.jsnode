@@ -26,6 +26,9 @@
     "cleanup:decisions": "npm run build && node build/reports/cleanup-decisions.report.js",
     "preflight": "npm run build && node build/reports/preflight.report.js",
     "preflight:live": "npm run build && node build/reports/preflight.report.js --live",
+    "ui:dev": "vite --host 0.0.0.0",
+    "ui:build": "vite build",
+    "ui:preview": "vite preview --host 0.0.0.0",
     "prod": "npm run robot",
     "lint": "eslint . --ext .ts,.tsx"
   },
@@ -34,13 +37,20 @@
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^20.11.17",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@types/sequelize": "^4.28.20",
-    "@types/uuid": "^9.0.8"
+    "@types/uuid": "^9.0.8",
+    "@vitejs/plugin-react": "^6.0.1",
+    "vite": "^8.0.10"
   },
   "dependencies": {
     "dotenv": "^16.4.3",
+    "lucide-react": "^1.14.0",
     "pg": "^8.11.3",
     "pg-hstore": "^2.3.4",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
     "sequelize": "^6.37.1",
     "tinkoff-sdk-grpc-js": "^1.8.2",
     "typescript": "^5.3.3",

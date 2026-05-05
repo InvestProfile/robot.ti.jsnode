@@ -1,6 +1,7 @@
 import http, { IncomingMessage, ServerResponse } from 'http';
 import { URL } from 'url';
-import { readFile, writeFile } from 'fs/promises';
+import path from 'path';
+import { readFile, stat, writeFile } from 'fs/promises';
 import { getEnv } from '../config/env.config';
 import { getRobotConfig, RobotConfig } from '../config/robot.config';
 import { getTradingRuntimeState } from '../modules/common.module';
@@ -56,6 +57,41 @@ const text = (res: ServerResponse, statusCode: number, body: string, contentType
         'cache-control': 'no-store'
     });
     res.end(body);
+};
+
+const staticRoot = path.resolve(process.cwd(), 'public');
+const mimeTypes: Record<string, string> = {
+    '.css': 'text/css; charset=utf-8',
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.png': 'image/png',
+    '.svg': 'image/svg+xml',
+    '.txt': 'text/plain; charset=utf-8',
+    '.webp': 'image/webp'
+};
+
+const serveStatic = async (res: ServerResponse, pathname: string) => {
+    try {
+        const normalizedPath = pathname === '/' ? '/index.html' : pathname;
+        const decodedPath = decodeURIComponent(normalizedPath);
+        const filePath = path.resolve(staticRoot, `.${decodedPath}`);
+
+        if (filePath !== staticRoot && !filePath.startsWith(staticRoot + path.sep)) return false;
+
+        const fileStat = await stat(filePath);
+        if (!fileStat.isFile()) return false;
+
+        const body = await readFile(filePath);
+        res.writeHead(200, {
+            'content-type': mimeTypes[path.extname(filePath)] ?? 'application/octet-stream',
+            'cache-control': filePath.endsWith('index.html') ? 'no-store' : 'public, max-age=31536000, immutable'
+        });
+        res.end(body);
+        return true;
+    } catch {
+        return false;
+    }
 };
 
 const SOCIAL_COOKIE_ALLOWLIST = ['investpublicPsid', 'navi_token', 'psid', 'sso_api_session'];
@@ -394,6 +430,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
     const config = getRobotConfig();
 
     if (url.pathname === '/') {
+        if (await serveStatic(res, url.pathname)) return;
         text(res, 200, dashboardPage, 'text/html; charset=utf-8');
         return;
     }
@@ -567,6 +604,10 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/positions') {
         json(res, 200, await getPositionsPayload(config, url.searchParams.get('accountId')));
+        return;
+    }
+
+    if (!url.pathname.startsWith('/api/') && await serveStatic(res, url.pathname)) {
         return;
     }
 
