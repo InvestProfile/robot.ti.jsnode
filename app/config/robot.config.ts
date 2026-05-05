@@ -164,6 +164,7 @@ export interface RobotConfig {
     maxDailyRub: number;
     signalCooldownMs: number;
     signalPriceChangePercent: number;
+    buySignalJournalIntervalMs: number;
 }
 
 export const getRobotConfig = (): RobotConfig => {
@@ -219,7 +220,8 @@ export const getRobotConfig = (): RobotConfig => {
         maxDailyOrders: Math.max(0, Math.trunc(parseNumber(env.ROBOT_MAX_DAILY_ORDERS, 3))),
         maxDailyRub: Math.max(0, parseNumber(env.ROBOT_MAX_DAILY_RUB, 2_000)),
         signalCooldownMs: Math.max(0, parseNumber(env.ROBOT_SIGNAL_COOLDOWN_MS, 30 * 60 * 1000)),
-        signalPriceChangePercent: Math.max(0, parseNumber(env.ROBOT_SIGNAL_PRICE_CHANGE_PERCENT, 1))
+        signalPriceChangePercent: Math.max(0, parseNumber(env.ROBOT_SIGNAL_PRICE_CHANGE_PERCENT, 1)),
+        buySignalJournalIntervalMs: Math.max(0, parseNumber(env.ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS, 15 * 60 * 1000))
     };
 };
 

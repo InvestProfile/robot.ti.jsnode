@@ -13,6 +13,7 @@
     "scan:buy": "npm run build && node build/reports/buy-scan.report.js",
     "backtest:buy": "npm run build && node build/reports/buy-backtest.report.js",
     "optimize:buy": "npm run build && node build/reports/buy-optimize.report.js",
+    "signals:buy": "npm run build && node build/reports/buy-signals.report.js",
     "cleanup:decisions": "npm run build && node build/reports/cleanup-decisions.report.js",
     "preflight": "npm run build && node build/reports/preflight.report.js",
     "preflight:live": "npm run build && node build/reports/preflight.report.js --live",

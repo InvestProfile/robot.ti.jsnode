@@ -16,6 +16,7 @@ import PerformanceService from '../services/performance.service';
 import BuyScannerService from '../services/buy-scanner.service';
 import BuyBacktestService from '../services/buy-backtest.service';
 import BuyOptimizerService from '../services/buy-optimizer.service';
+import BuySignalJournalService from '../services/buy-signal-journal.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -112,6 +113,7 @@ const safeConfig = (config: RobotConfig) => ({
     maxDailyRub: config.maxDailyRub,
     signalCooldownMs: config.signalCooldownMs,
     signalPriceChangePercent: config.signalPriceChangePercent,
+    buySignalJournalIntervalMs: config.buySignalJournalIntervalMs,
     snapshotIntervalMs: config.snapshotIntervalMs
 });
 
@@ -358,6 +360,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
             windows,
             thresholds,
             horizons
+        ));
+        return;
+    }
+
+    if (url.pathname === '/api/buy-signals') {
+        const requestedLimit = Number(url.searchParams.get('limit') ?? 100);
+        json(res, 200, await BuySignalJournalService.list(
+            Number.isFinite(requestedLimit) ? requestedLimit : 100
         ));
         return;
     }

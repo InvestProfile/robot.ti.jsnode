@@ -39,6 +39,7 @@ interface EnvConfig {
     ROBOT_MAX_DAILY_RUB: string | undefined;
     ROBOT_SIGNAL_COOLDOWN_MS: string | undefined;
     ROBOT_SIGNAL_PRICE_CHANGE_PERCENT: string | undefined;
+    ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS: string | undefined;
     ROBOT_HTTP_ENABLED: string | undefined;
     ROBOT_HTTP_PORT: string | undefined;
     ROBOT_WEB_USERNAME: string | undefined;
@@ -84,6 +85,7 @@ export const getEnv = () => {
         ROBOT_MAX_DAILY_RUB: process.env.ROBOT_MAX_DAILY_RUB,
         ROBOT_SIGNAL_COOLDOWN_MS: process.env.ROBOT_SIGNAL_COOLDOWN_MS,
         ROBOT_SIGNAL_PRICE_CHANGE_PERCENT: process.env.ROBOT_SIGNAL_PRICE_CHANGE_PERCENT,
+        ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS: process.env.ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS,
         ROBOT_HTTP_ENABLED: process.env.ROBOT_HTTP_ENABLED,
         ROBOT_HTTP_PORT: process.env.ROBOT_HTTP_PORT,
         ROBOT_WEB_USERNAME: process.env.ROBOT_WEB_USERNAME,

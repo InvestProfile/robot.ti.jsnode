@@ -42,6 +42,8 @@ npm run backtest:buy
 npm run backtest:buy -- --days 120 SBER T YDEX
 npm run optimize:buy
 npm run optimize:buy -- --days 120 --windows 10,20,30 --thresholds 60,65,70 SBER T YDEX
+npm run signals:buy
+npm run signals:buy -- --capture
 ```
 
 To estimate or apply a safe cleanup of noisy `dry-run` / `skip` decisions:
@@ -99,6 +101,7 @@ Read-only endpoints:
 - `/api/buy-scan`
 - `/api/buy-backtest`
 - `/api/buy-optimize`
+- `/api/buy-signals`
 - `/api/decisions`
 - `/api/trades`
 - `/api/snapshots`
@@ -153,6 +156,7 @@ ROBOT_MAX_DAILY_ORDERS=3
 ROBOT_MAX_DAILY_RUB=2000
 ROBOT_SIGNAL_COOLDOWN_MS=1800000
 ROBOT_SIGNAL_PRICE_CHANGE_PERCENT=1
+ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS=900000
 ROBOT_MIN_PROFIT_PERCENT=0.5
 ROBOT_STOP_LOSS_PERCENT=3
 ROBOT_TRAILING_STOP_PERCENT=2
@@ -233,3 +237,8 @@ Decision logging is de-duplicated through `signal_states`. Repeated decisions
 with the same account, instrument, source, status, and reason are suppressed
 until `ROBOT_SIGNAL_COOLDOWN_MS` passes or price changes by at least
 `ROBOT_SIGNAL_PRICE_CHANGE_PERCENT`.
+
+Passed buy signals from `ROBOT_SCAN_TICKERS` are stored in `buy_signal_journal`.
+The robot updates their 1/3/5/10 trading-day returns from daily candles on the
+`ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS` interval. This is paper analytics only:
+it does not post orders and it is available through `/api/buy-signals`.

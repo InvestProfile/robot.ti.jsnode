@@ -128,6 +128,10 @@ export const dashboardPage = `<!doctype html>
         <div style="overflow:auto"><table id="preview"></table></div>
       </section>
       <section>
+        <h2>Buy Signal Journal</h2>
+        <div style="overflow:auto"><table id="buySignals"></table></div>
+      </section>
+      <section>
         <h2>Latest Decisions</h2>
         <div style="overflow:auto"><table id="decisions"></table></div>
       </section>
@@ -170,7 +174,7 @@ export const dashboardPage = `<!doctype html>
       return res.json();
     }
     async function load() {
-      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview] = await Promise.all([
+      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
         api('/api/limits'),
@@ -179,7 +183,8 @@ export const dashboardPage = `<!doctype html>
         api('/api/trades?limit=20'),
         api('/api/snapshots?limit=20'),
         api('/api/positions'),
-        api('/api/preview')
+        api('/api/preview'),
+        api('/api/buy-signals?limit=30')
       ]);
       document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString('ru-RU');
       document.getElementById('mode').innerHTML = status.config.dryRun ? '<span class="pill warn">DRY RUN</span>' : '<span class="pill bad">LIVE</span>';
@@ -210,6 +215,9 @@ export const dashboardPage = `<!doctype html>
       ].join('<br>');
       document.getElementById('preview').innerHTML = rows(['Ticker', 'Status', 'Price', 'Amount', 'Reason'], preview.previews, p =>
         '<tr><td>' + esc(p.ticker || p.figi) + '<div class="small">' + esc(p.name) + '</div></td><td>' + esc(p.status) + '</td><td class="right">' + money(p.currentPrice) + '</td><td class="right">' + money(p.estimatedOrderRub) + '</td><td>' + esc(p.reason) + '</td></tr>'
+      );
+      document.getElementById('buySignals').innerHTML = rows(['Time', 'Ticker', 'Profile', 'Score', 'Price', '1d', '3d', '5d', '10d'], buySignals.signals, s =>
+        '<tr><td>' + time(s.signaledAt) + '</td><td>' + esc(s.ticker) + '<div class="small">' + esc(s.name) + '</div></td><td class="right">' + esc(s.profileTrendDays) + '/' + esc(s.profileMinScore) + '</td><td class="right">' + esc(s.signalScore) + '</td><td class="right">' + money(s.signalPrice) + '</td><td class="right">' + percent(s.return1dPercent) + '</td><td class="right">' + percent(s.return3dPercent) + '</td><td class="right">' + percent(s.return5dPercent) + '</td><td class="right">' + percent(s.return10dPercent) + '</td></tr>'
       );
       document.getElementById('accounts').innerHTML = rows(['Account', 'Mode', 'Cash RUB', 'Total', 'Positions'], accounts.accounts, a =>
         '<tr><td>' + esc(a.alias || a.accountId) + '<div class="small">' + esc(a.accountId) + '</div></td><td>' + esc(a.mode) + '</td><td class="right">' + money(a.cashRub) + '</td><td class="right">' + money(a.totalRub) + '</td><td class="right">' + esc(a.positionsCount) + '</td></tr>'

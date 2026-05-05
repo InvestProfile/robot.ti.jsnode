@@ -9,6 +9,7 @@ import TradeJournalService from '../services/trade-journal.service';
 import TradesService from '../services/trades.service';
 import OrderReconciliationService from '../services/order-reconciliation.service';
 import PortfolioSnapshotService from '../services/portfolio-snapshot.service';
+import BuySignalJournalService from '../services/buy-signal-journal.service';
 import StrategyEngine from '../strategies/strategy-engine';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
 import { normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
@@ -26,6 +27,7 @@ let lastTickError: string | undefined;
 let consecutiveTickErrors = 0;
 let circuitBreakerOpen = false;
 let circuitBreakerReason: string | undefined;
+let isBuySignalJournalRunning = false;
 
 export interface TradingProcess {
     stop: () => void;
@@ -525,6 +527,24 @@ const executeRobotTick = async (config: RobotConfig) => {
     }
 };
 
+const executeBuySignalJournalTick = async (config: RobotConfig) => {
+    if (isBuySignalJournalRunning) {
+        console.log('Buy signal journal tick is still running, skip this interval.');
+        return;
+    }
+
+    isBuySignalJournalRunning = true;
+
+    try {
+        const result = await BuySignalJournalService.capture(config);
+        console.log(`Buy signal journal tick finished. captured=${result.captured} updated=${result.updated}`);
+    } catch (error) {
+        console.error('Error occurred in buy signal journal tick:', error);
+    } finally {
+        isBuySignalJournalRunning = false;
+    }
+};
+
 export function startTradingProcess(config: RobotConfig = getRobotConfig()): TradingProcess {
     console.log('Trading process started.');
     console.log('Accounts: ' + config.accountIds.join(', '));
@@ -548,13 +568,22 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
     console.log('Trading paused: ' + config.tradingPaused);
     console.log('Max consecutive tick errors: ' + config.maxConsecutiveTickErrors);
     console.log('Snapshot interval: ' + config.snapshotIntervalMs + ' ms');
+    console.log('Buy signal journal interval: ' + config.buySignalJournalIntervalMs + ' ms');
 
     void executeRobotTick(config);
     const interval = setInterval(() => void executeRobotTick(config), config.intervalMs);
+    const buySignalJournalInterval = config.buySignalJournalIntervalMs > 0
+        ? setInterval(() => void executeBuySignalJournalTick(config), config.buySignalJournalIntervalMs)
+        : undefined;
+
+    if (config.buySignalJournalIntervalMs > 0) {
+        void executeBuySignalJournalTick(config);
+    }
 
     return {
         stop: () => {
             clearInterval(interval);
+            if (buySignalJournalInterval) clearInterval(buySignalJournalInterval);
             console.log('Trading process stopped.');
         }
     };
