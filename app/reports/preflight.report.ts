@@ -9,6 +9,10 @@ import marketData from '../services/marketData.service';
 import operationService from '../services/operations.service';
 import { quotationToNumber } from '../utils/money';
 import { isFinalOrderStatus } from '../utils/order-status';
+import MarketRegimeService from '../services/market-regime.service';
+import PaperTradingService from '../services/paper-trading.service';
+import BuySignalEvaluatorService from '../services/buy-signal-evaluator.service';
+import TradesService from '../services/trades.service';
 
 const ok = (label: string, details = '') => console.log(`OK    ${label}${details ? ': ' + details : ''}`);
 const warn = (label: string, details = '') => console.log(`WARN  ${label}${details ? ': ' + details : ''}`);
@@ -59,6 +63,8 @@ const main = async () => {
     console.log(`Max order: ${money(config.maxOrderRub)}`);
     console.log(`Max daily orders: ${config.maxDailyOrders}`);
     console.log(`Buy score: min ${config.buyMinScore}, trend ${config.buyTrendDays}d, min trend ${config.buyMinTrendPercent}%, min momentum ${config.buyMinMomentumPercent}%`);
+    console.log(`Market regime: ${config.marketRegimeEnabled ? 'enabled' : 'disabled'}`);
+    console.log(`Paper trading: ${config.paperTradingEnabled ? 'enabled' : 'disabled'}`);
 
     if (config.dryRun) {
         const message = 'ROBOT_DRY_RUN=true';
@@ -145,6 +151,61 @@ const main = async () => {
     if (openOrderCount > 0) {
         warnings.push(`${openOrderCount} open broker orders are tracked`);
         warn('Open broker orders', String(openOrderCount));
+    }
+
+    console.log('');
+    console.log('Market Regime');
+    console.log('-------------');
+
+    const marketRegime = await MarketRegimeService.evaluate(config);
+    console.log(`Enabled: ${marketRegime.enabled}`);
+    console.log(`Passed: ${marketRegime.passed}`);
+    console.log(`Reason: ${marketRegime.reason}`);
+
+    for (const item of marketRegime.items) {
+        const trend = item.trendPercent !== undefined ? `${item.trendPercent.toFixed(2)}%` : '-';
+        console.log(`  ${item.ticker}: ${trend} ${item.passed ? 'OK' : 'BLOCKED'}`);
+    }
+
+    if (!marketRegime.passed) {
+        const message = marketRegime.reason;
+        if (strictLive && config.liveAllowedActions.includes('buy')) {
+            failures.push(message);
+            fail('Market regime', message);
+        } else {
+            warnings.push(message);
+            warn('Market regime', message);
+        }
+    } else {
+        ok('Market regime', marketRegime.reason);
+    }
+
+    console.log('');
+    console.log('Paper Portfolio');
+    console.log('---------------');
+
+    const paper = await PaperTradingService.list(100);
+    console.log(`Open: ${paper.summary.open}`);
+    console.log(`Closed: ${paper.summary.closed}`);
+    console.log(`Open P/L: ${money(paper.summary.openProfitRub)}`);
+    console.log(`Closed P/L: ${money(paper.summary.closedProfitRub)}`);
+    console.log(`Total P/L: ${money(paper.summary.totalProfitRub)}`);
+    console.log(`Avg open P/L: ${paper.summary.averageOpenProfitPercent !== undefined ? paper.summary.averageOpenProfitPercent.toFixed(2) + '%' : '-'}`);
+    console.log(`Closed win-rate: ${paper.summary.closedWinRatePercent !== undefined ? paper.summary.closedWinRatePercent.toFixed(0) + '%' : '-'}`);
+
+    if (paper.summary.open === 0 && paper.summary.closed === 0) {
+        warnings.push('Paper portfolio has no positions yet');
+        warn('Paper portfolio', 'empty');
+    }
+
+    if (paper.summary.closed === 0) {
+        warnings.push('Paper portfolio has no closed trades yet');
+        warn('Paper closed trades', 'empty');
+    }
+
+    if (strictLive && paper.summary.closed < 3) {
+        failures.push('Need at least 3 closed paper trades before live expansion');
+        fail('Paper evidence', 'less than 3 closed trades');
     }
 
     const shares = await InstrumentsService.getShares();
@@ -242,6 +303,37 @@ const main = async () => {
         if (strictLive && blockedReason) {
             failures.push(`${instrument.ticker} is blocked: ${blockedReason}`);
             fail('Buy readiness', `${instrument.ticker}: ${blockedReason}`);
+        }
+    }
+
+    console.log('');
+    console.log('Buy Preview');
+    console.log('-----------');
+
+    for (const accountId of config.accountIds) {
+        const alias = config.accountAliases[accountId] ?? accountId;
+        const ordersUsed = await TradesService.countTodayTrades(accountId);
+        const rubUsed = await TradesService.sumTodayBuyTradesRub(accountId);
+        const previews = await BuySignalEvaluatorService.evaluateAccount(accountId, config, instruments as any);
+
+        console.log(`${alias} (${accountId})`);
+        console.log(`  Daily orders: ${ordersUsed}/${config.maxDailyOrders}`);
+        console.log(`  Daily RUB: ${money(rubUsed)}/${money(config.maxDailyRub)}`);
+
+        for (const preview of previews) {
+            console.log(`  ${preview.ticker ?? preview.figi}: ${preview.status} ${preview.currentPrice ? money(preview.currentPrice) : '-'} ${preview.reason}`);
+        }
+
+        const allowed = previews.filter(preview => preview.status === 'allowed');
+        if (allowed.length === 0 && config.liveAllowedActions.includes('buy')) {
+            const message = `${alias}: no allowed buy previews`;
+            if (strictLive) {
+                failures.push(message);
+                fail('Buy preview', message);
+            } else {
+                warnings.push(message);
+                warn('Buy preview', message);
+            }
         }
     }
 
