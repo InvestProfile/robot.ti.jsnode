@@ -1,5 +1,5 @@
 export type TradeAction = 'buy' | 'sell';
-export type TradeSignalSource = 'profit-take' | 'stop-loss' | 'trailing-stop' | 'watchlist-buy';
+export type TradeSignalSource = 'profit-take' | 'stop-loss' | 'trailing-stop' | 'watchlist-buy' | 'trend-follow-buy';
 
 export interface TradeSignal {
     action: TradeAction;
@@ -32,4 +32,5 @@ export interface BuyStrategyInput {
     lastPrice: number;
     availableCashRub: number;
     alreadyInPortfolio: boolean;
+    dailyCloses?: number[];
 }

@@ -80,6 +80,9 @@ export default class BuySignalEvaluatorService {
             const estimatedOrderRub = lastPrice * Math.max(1, instrument.lot ?? 1);
             const alreadyInPortfolio = portfolioInstrumentIds.has(instrument.uid);
             const tradingStatus = await marketData.getStatus(instrument.figi, instrument.uid);
+            const dailyCloses = config.enabledStrategies.includes('trend-follow-buy')
+                ? await marketData.getDailyClosePrices(instrument.uid, config.buyTrendDays)
+                : undefined;
             const signal = StrategyEngine.evaluateBuy({
                 accountId,
                 figi: instrument.figi,
@@ -89,7 +92,8 @@ export default class BuySignalEvaluatorService {
                 lot: instrument.lot ?? 1,
                 lastPrice,
                 availableCashRub: remainingCashRub,
-                alreadyInPortfolio
+                alreadyInPortfolio,
+                dailyCloses
             }, config);
             const risk = RiskManagerService.evaluateBuySignal({
                 availableCashRub: remainingCashRub,

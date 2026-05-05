@@ -1,7 +1,7 @@
 import { getEnv } from './env.config';
 
 const LIVE_CONFIRMATION = 'I_UNDERSTAND_THIS_TRADES_REAL_MONEY';
-const DEFAULT_STRATEGIES = ['stop-loss', 'trailing-stop', 'profit-take', 'watchlist-buy'];
+const DEFAULT_STRATEGIES = ['stop-loss', 'trailing-stop', 'profit-take', 'trend-follow-buy', 'watchlist-buy'];
 const TRAILING_BASELINES = ['observed', 'history_30d', 'history_90d'] as const;
 const LIVE_ACTIONS = ['buy', 'sell'] as const;
 
@@ -119,6 +119,9 @@ export interface RobotConfig {
     trailingBaseline: TrailingBaseline;
     maxLotsPerOrder: number;
     buyTickers: string[];
+    buyTrendDays: number;
+    buyMinTrendPercent: number;
+    buyMinMomentumPercent: number;
     maxOrderRub: number;
     maxDailyOrders: number;
     maxDailyRub: number;
@@ -166,6 +169,9 @@ export const getRobotConfig = (): RobotConfig => {
         trailingBaseline: parseTrailingBaseline(env.ROBOT_TRAILING_BASELINE),
         maxLotsPerOrder: Math.max(1, Math.trunc(parseNumber(env.ROBOT_MAX_LOTS_PER_ORDER, 1))),
         buyTickers: parseOptionalAccountIds(env.ROBOT_BUY_TICKERS).map(ticker => ticker.toUpperCase()),
+        buyTrendDays: Math.max(2, Math.trunc(parseNumber(env.ROBOT_BUY_TREND_DAYS, 20))),
+        buyMinTrendPercent: parseNumber(env.ROBOT_BUY_MIN_TREND_PERCENT, 0.5),
+        buyMinMomentumPercent: parseNumber(env.ROBOT_BUY_MIN_MOMENTUM_PERCENT, 0),
         maxOrderRub: parseNumber(env.ROBOT_MAX_ORDER_RUB, 1_000),
         maxDailyOrders: Math.max(0, Math.trunc(parseNumber(env.ROBOT_MAX_DAILY_ORDERS, 3))),
         maxDailyRub: Math.max(0, parseNumber(env.ROBOT_MAX_DAILY_RUB, 2_000)),

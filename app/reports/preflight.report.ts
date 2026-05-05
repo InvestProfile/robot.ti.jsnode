@@ -58,6 +58,7 @@ const main = async () => {
     console.log(`Observe accounts: ${config.observeAccountIds.join(', ') || '<none>'}`);
     console.log(`Max order: ${money(config.maxOrderRub)}`);
     console.log(`Max daily orders: ${config.maxDailyOrders}`);
+    console.log(`Buy trend: ${config.buyTrendDays}d, min trend ${config.buyMinTrendPercent}%, min momentum ${config.buyMinMomentumPercent}%`);
 
     if (config.dryRun) {
         const message = 'ROBOT_DRY_RUN=true';

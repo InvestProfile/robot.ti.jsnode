@@ -1,6 +1,7 @@
 import { RobotConfig } from '../config/robot.config';
 import ProfitTakeStrategy from './profit-take.strategy';
 import StopLossStrategy from './stop-loss.strategy';
+import TrendFollowBuyStrategy from './trend-follow-buy.strategy';
 import TrailingStopStrategy from './trailing-stop.strategy';
 import WatchlistBuyStrategy from './watchlist-buy.strategy';
 import { BuyStrategyInput, PositionStrategyInput, TradeSignal } from './trade-signal';
@@ -28,6 +29,13 @@ export default class StrategyEngine {
     }
 
     static evaluateBuy(input: BuyStrategyInput, config: RobotConfig): TradeSignal | undefined {
+        const trendSignal = TrendFollowBuyStrategy.evaluate(input, config);
+        if (trendSignal) return trendSignal;
+
+        if (config.enabledStrategies.includes('trend-follow-buy')) {
+            return undefined;
+        }
+
         return WatchlistBuyStrategy.evaluate(input, config);
     }
 }

@@ -541,6 +541,7 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
     console.log('Max daily orders: ' + config.maxDailyOrders);
     console.log('Max daily RUB: ' + config.maxDailyRub);
     console.log('Buy tickers: ' + (config.buyTickers.join(', ') || '<none>'));
+    console.log(`Buy trend: ${config.buyTrendDays}d, min trend ${config.buyMinTrendPercent}%, min momentum ${config.buyMinMomentumPercent}%`);
     console.log('Dry run: ' + config.dryRun);
     console.log('Live allowed actions: ' + config.liveAllowedActions.join(', '));
     console.log('Live confirmation required: ' + config.liveConfirmationRequired);
