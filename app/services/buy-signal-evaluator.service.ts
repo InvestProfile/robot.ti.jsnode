@@ -6,6 +6,7 @@ import RiskManagerService from './risk-manager.service';
 import TradesService from './trades.service';
 import StrategyEngine from '../strategies/strategy-engine';
 import { TradeSignal } from '../strategies/trade-signal';
+import ScoreBuyStrategy, { BuyScoreAnalysis } from '../strategies/score-buy.strategy';
 import { quotationToNumber } from '../utils/money';
 
 type SharesResponse = Awaited<ReturnType<typeof InstrumentsService.getShares>>;
@@ -24,6 +25,7 @@ export interface BuySignalPreview {
     status: 'allowed' | 'blocked';
     reason: string;
     signal?: TradeSignal;
+    scoreAnalysis?: BuyScoreAnalysis;
     tradingStatus?: number;
     alreadyInPortfolio?: boolean;
     remainingCashRub: number;
@@ -99,6 +101,21 @@ export default class BuySignalEvaluatorService {
                 dailyCloses,
                 dailyCandles
             }, config);
+            const scoreAnalysis = config.enabledStrategies.includes('score-buy')
+                ? ScoreBuyStrategy.analyze({
+                    accountId,
+                    figi: instrument.figi,
+                    instrumentUid: instrument.uid,
+                    ticker: instrument.ticker,
+                    name: instrument.name,
+                    lot: instrument.lot ?? 1,
+                    lastPrice,
+                    availableCashRub: remainingCashRub,
+                    alreadyInPortfolio,
+                    dailyCloses,
+                    dailyCandles
+                }, config)
+                : undefined;
             const risk = RiskManagerService.evaluateBuySignal({
                 availableCashRub: remainingCashRub,
                 dailyOrdersCount,
@@ -110,8 +127,10 @@ export default class BuySignalEvaluatorService {
                 ? 'instrument is already in portfolio'
                 : estimatedOrderRub > config.maxOrderRub
                     ? 'estimated lot is above max order RUB'
-                    : estimatedOrderRub > remainingCashRub
-                        ? 'not enough cash for estimated lot'
+                : estimatedOrderRub > remainingCashRub
+                    ? 'not enough cash for estimated lot'
+                    : scoreAnalysis && !scoreAnalysis.passed
+                        ? `score-buy blocked: ${scoreAnalysis.reason}`
                         : undefined;
             const preview: BuySignalPreview = {
                 accountId,
@@ -126,6 +145,7 @@ export default class BuySignalEvaluatorService {
                 status: risk.allowed ? 'allowed' : 'blocked',
                 reason: risk.allowed ? risk.reason : skipReason ?? risk.reason,
                 signal,
+                scoreAnalysis,
                 tradingStatus: tradingStatus?.tradingStatus,
                 alreadyInPortfolio,
                 remainingCashRub,

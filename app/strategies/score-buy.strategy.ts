@@ -16,11 +16,17 @@ const getStandardDeviation = (values: number[]) => {
     return Math.sqrt(variance);
 };
 
+export interface BuyScoreAnalysis {
+    score: number;
+    passed: boolean;
+    reason: string;
+    estimatedOrderRub?: number;
+    factors: Record<string, number>;
+}
+
 export default class ScoreBuyStrategy {
-    static evaluate(input: BuyStrategyInput, config: RobotConfig): TradeSignal | undefined {
-        if (!config.enabledStrategies.includes('score-buy')) return undefined;
+    static analyze(input: BuyStrategyInput, config: RobotConfig): BuyScoreAnalysis | undefined {
         if (!config.buyTickers.includes(input.ticker.toUpperCase())) return undefined;
-        if (input.alreadyInPortfolio) return undefined;
         if (!Number.isFinite(input.lastPrice) || input.lastPrice <= 0) return undefined;
 
         const candles = input.dailyCandles
@@ -35,7 +41,14 @@ export default class ScoreBuyStrategy {
             )
             .slice(-config.buyTrendDays);
 
-        if (!candles || candles.length < config.buyTrendDays) return undefined;
+        if (!candles || candles.length < config.buyTrendDays) {
+            return {
+                score: 0,
+                passed: false,
+                reason: `not enough daily candles: ${candles?.length ?? 0}/${config.buyTrendDays}`,
+                factors: {}
+            };
+        }
 
         const closes = candles.map(candle => candle.close);
         const highs = candles.map(candle => candle.high);
@@ -70,34 +83,76 @@ export default class ScoreBuyStrategy {
                     : 0;
         const volumeScore = averageVolume > 0 ? 15 : 0;
         const score = Math.round(trendScore + momentumScore + pullbackScore + volatilityScore + volumeScore);
-
-        if (score < config.buyMinScore) return undefined;
-
         const estimatedLotRub = input.lastPrice * Math.max(1, input.lot);
-        if (estimatedLotRub > config.maxOrderRub) return undefined;
-        if (estimatedLotRub > input.availableCashRub) return undefined;
+        const factors = {
+            trendScore,
+            momentumScore,
+            pullbackScore,
+            volatilityScore,
+            volumeScore,
+            trendPercent,
+            momentumPercent,
+            belowHighPercent,
+            volatilityPercent,
+            averageVolume
+        };
+
+        if (score < config.buyMinScore) {
+            return {
+                score,
+                passed: false,
+                reason: `score ${score}/${config.buyMinScore}: trend ${trendPercent.toFixed(2)}%, momentum ${momentumPercent.toFixed(2)}%, below high ${belowHighPercent.toFixed(2)}%, volatility ${volatilityPercent.toFixed(2)}%`,
+                estimatedOrderRub: estimatedLotRub,
+                factors
+            };
+        }
+
+        if (estimatedLotRub > config.maxOrderRub) {
+            return {
+                score,
+                passed: false,
+                reason: 'estimated lot is above max order RUB',
+                estimatedOrderRub: estimatedLotRub,
+                factors
+            };
+        }
+
+        if (estimatedLotRub > input.availableCashRub) {
+            return {
+                score,
+                passed: false,
+                reason: 'not enough cash for estimated lot',
+                estimatedOrderRub: estimatedLotRub,
+                factors
+            };
+        }
+
+        return {
+            score,
+            passed: true,
+            reason: `score ${score}/${config.buyMinScore}: trend ${trendPercent.toFixed(2)}%, momentum ${momentumPercent.toFixed(2)}%, below high ${belowHighPercent.toFixed(2)}%, volatility ${volatilityPercent.toFixed(2)}%`,
+            estimatedOrderRub: estimatedLotRub,
+            factors
+        };
+    }
+
+    static evaluate(input: BuyStrategyInput, config: RobotConfig): TradeSignal | undefined {
+        if (!config.enabledStrategies.includes('score-buy')) return undefined;
+        if (input.alreadyInPortfolio) return undefined;
+
+        const analysis = this.analyze(input, config);
+        if (!analysis?.passed || analysis.estimatedOrderRub === undefined) return undefined;
 
         return {
             action: 'buy',
             source: 'score-buy',
-            confidence: clamp(score / 100, 0.1, 1),
-            reason: `score ${score}/${config.buyMinScore}: trend ${trendPercent.toFixed(2)}%, momentum ${momentumPercent.toFixed(2)}%, below high ${belowHighPercent.toFixed(2)}%, volatility ${volatilityPercent.toFixed(2)}%`,
+            confidence: clamp(analysis.score / 100, 0.1, 1),
+            reason: analysis.reason,
             quantityLots: 1,
             profitPercent: 0,
-            estimatedOrderRub: estimatedLotRub,
-            score,
-            factors: {
-                trendScore,
-                momentumScore,
-                pullbackScore,
-                volatilityScore,
-                volumeScore,
-                trendPercent,
-                momentumPercent,
-                belowHighPercent,
-                volatilityPercent,
-                averageVolume
-            }
+            estimatedOrderRub: analysis.estimatedOrderRub,
+            score: analysis.score,
+            factors: analysis.factors
         };
     }
 }
