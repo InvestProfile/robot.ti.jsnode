@@ -12,6 +12,7 @@ import { dashboardPage } from './dashboard-page';
 import { TradesModel } from '../models/trades.model';
 import TradesService from '../services/trades.service';
 import { PortfolioSnapshotModel } from '../models/portfolio-snapshot.model';
+import PerformanceService from '../services/performance.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -290,6 +291,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/snapshots') {
         json(res, 200, await getSnapshotsPayload(url));
+        return;
+    }
+
+    if (url.pathname === '/api/performance') {
+        json(res, 200, await PerformanceService.getPerformance(url.searchParams.get('accountId')));
         return;
     }
 

@@ -93,6 +93,7 @@ Read-only endpoints:
 - `/api/decisions`
 - `/api/trades`
 - `/api/snapshots`
+- `/api/performance`
 - `/api/limits`
 
 Useful checks:

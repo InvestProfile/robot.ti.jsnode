@@ -114,6 +114,10 @@ export const dashboardPage = `<!doctype html>
         <div style="overflow:auto"><table id="limits"></table></div>
       </section>
       <section>
+        <h2>Performance</h2>
+        <div style="overflow:auto"><table id="performance"></table></div>
+      </section>
+      <section>
         <h2>Config</h2>
         <div id="config" class="small"></div>
       </section>
@@ -166,10 +170,11 @@ export const dashboardPage = `<!doctype html>
       return res.json();
     }
     async function load() {
-      const [status, accounts, limits, decisions, trades, snapshots, positions, preview] = await Promise.all([
+      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
         api('/api/limits'),
+        api('/api/performance'),
         api('/api/decisions?limit=80'),
         api('/api/trades?limit=20'),
         api('/api/snapshots?limit=20'),
@@ -210,6 +215,9 @@ export const dashboardPage = `<!doctype html>
       );
       document.getElementById('limits').innerHTML = rows(['Account', 'Orders', 'Left', 'RUB used', 'RUB left'], limits.limits, l =>
         '<tr><td>' + esc(l.accountAlias || l.accountId) + '</td><td class="right">' + esc(l.ordersUsed) + ' / ' + esc(l.ordersLimit) + '</td><td class="right">' + esc(l.ordersLeft) + '</td><td class="right">' + money(l.rubUsed) + ' / ' + money(l.rubLimit) + '</td><td class="right">' + money(l.rubLeft) + '</td></tr>'
+      );
+      document.getElementById('performance').innerHTML = rows(['Account', 'Total', 'Change', 'Last', 'Drawdown'], performance.accounts, p =>
+        '<tr><td>' + esc(p.accountAlias || p.accountId) + '<div class="small">' + esc(p.snapshotsCount) + ' snapshots</div></td><td class="right">' + money(p.latestTotalRub) + '</td><td class="right">' + money(p.totalChangeRub) + '<div class="small">' + percent(p.totalChangePercent) + '</div></td><td class="right">' + money(p.periodChangeRub) + '<div class="small">' + percent(p.periodChangePercent) + '</div></td><td class="right">' + money(p.maxDrawdownRub) + '<div class="small">-' + esc((p.maxDrawdownPercent || 0).toFixed(2)) + '%</div></td></tr>'
       );
       document.getElementById('decisions').innerHTML = rows(['Time', 'Account', 'Mode', 'Ticker', 'Signal', 'Status', 'P/L', 'Reason'], decisions.decisions, d =>
         '<tr><td>' + time(d.createdAt) + '</td><td>' + esc(d.accountAlias || d.accountId) + '</td><td>' + esc(d.accountMode) + '</td><td>' + esc(d.ticker || d.figi) + '</td><td>' + esc(d.signalSource) + '</td><td>' + esc(d.status) + '</td><td class="right">' + percent(d.profitPercent) + '</td><td>' + esc(d.reason) + '</td></tr>'
