@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Activity,
@@ -32,8 +32,17 @@ const endpoints = {
   socialConsensus: '/api/social-consensus',
   socialEvidence: '/api/social-evidence?limit=80',
   sellBrain: '/api/sell-brain',
-  buyScan: '/api/buy-scan',
-  scanUniverse: '/api/scan-universe'
+  buyScan: '/api/buy-scan'
+};
+
+const endpointGroups = {
+  core: ['status', 'limits', 'performance', 'paper', 'socialCollector'],
+  overview: ['preview', 'market'],
+  signals: ['buyScan', 'sellBrain'],
+  social: ['socialConsensus', 'socialSignals', 'socialCollector'],
+  evidence: ['strategy', 'socialEvidence'],
+  accounts: ['accounts', 'positions'],
+  logs: ['decisions']
 };
 
 const tabs = [
@@ -105,21 +114,24 @@ const Table = ({ columns, rows, empty = 'No data' }) => (
   </div>
 );
 
-const useDashboardData = () => {
+const useDashboardData = (activeTab) => {
   const [data, setData] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [updatedAt, setUpdatedAt] = useState(null);
+  const activeTabRef = useRef(activeTab);
 
-  const load = async () => {
+  const load = async (keys) => {
     setError('');
     try {
-      const entries = await Promise.all(Object.entries(endpoints).map(async ([key, url]) => {
+      const uniqueKeys = [...new Set(keys)];
+      const entries = await Promise.all(uniqueKeys.map(async (key) => {
+        const url = endpoints[key];
         const response = await fetch(url, { cache: 'no-store' });
         if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
         return [key, await response.json()];
       }));
-      setData(Object.fromEntries(entries));
+      setData((current) => ({ ...current, ...Object.fromEntries(entries) }));
       setUpdatedAt(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -128,13 +140,19 @@ const useDashboardData = () => {
     }
   };
 
+  const loadActiveTab = () => load([...(endpointGroups.core || []), ...(endpointGroups[activeTabRef.current] || [])]);
+
   useEffect(() => {
-    void load();
-    const interval = window.setInterval(() => void load(), 30_000);
+    activeTabRef.current = activeTab;
+    void loadActiveTab();
+  }, [activeTab]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => void load(['status']), 30_000);
     return () => window.clearInterval(interval);
   }, []);
 
-  return { data, loading, error, updatedAt, reload: load };
+  return { data, loading, error, updatedAt, reload: loadActiveTab };
 };
 
 const getReadiness = (data) => {
@@ -393,8 +411,8 @@ function Logs({ data }) {
 }
 
 function App() {
-  const { data, loading, error, updatedAt, reload } = useDashboardData();
   const [activeTab, setActiveTab] = useState('overview');
+  const { data, loading, error, updatedAt, reload } = useDashboardData(activeTab);
   const active = useMemo(() => tabs.find((tab) => tab.id === activeTab) || tabs[0], [activeTab]);
 
   const content = {

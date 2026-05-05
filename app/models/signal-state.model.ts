@@ -52,11 +52,11 @@ SignalStateModel.init({
         allowNull: false,
     },
     reason: {
-        type: DataTypes.STRING,
+        type: DataTypes.TEXT,
         allowNull: false,
     },
     fingerprint: {
-        type: DataTypes.STRING,
+        type: DataTypes.TEXT,
         allowNull: false,
     },
     lastPrice: {
