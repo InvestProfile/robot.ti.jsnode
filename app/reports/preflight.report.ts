@@ -1,13 +1,18 @@
 import sequelize from '../config/database';
 import { getRobotConfig } from '../config/robot.config';
+import { TradeDecisionModel } from '../models/trade-decision.model';
+import { TradesModel } from '../models/trades.model';
+import { Op } from 'sequelize';
 import InstrumentsService from '../services/instruments.service';
 import marketData from '../services/marketData.service';
 import operationService from '../services/operations.service';
 import { quotationToNumber } from '../utils/money';
+import { isFinalOrderStatus } from '../utils/order-status';
 
 const ok = (label: string, details = '') => console.log(`OK    ${label}${details ? ': ' + details : ''}`);
 const warn = (label: string, details = '') => console.log(`WARN  ${label}${details ? ': ' + details : ''}`);
 const fail = (label: string, details = '') => console.log(`FAIL  ${label}${details ? ': ' + details : ''}`);
+const strictLive = process.argv.includes('--live');
 
 const money = (value: number | undefined) => {
     if (value === undefined || !Number.isFinite(value)) return '-';
@@ -19,8 +24,8 @@ const main = async () => {
     const failures: string[] = [];
     const warnings: string[] = [];
 
-    console.log('Preflight');
-    console.log('=========');
+    console.log(strictLive ? 'Live Readiness' : 'Preflight');
+    console.log(strictLive ? '==============' : '=========');
 
     try {
         await sequelize.authenticate();
@@ -45,6 +50,8 @@ const main = async () => {
     console.log(`Dry run: ${config.dryRun}`);
     console.log(`Live enabled: ${!config.dryRun}`);
     console.log(`Live allowed actions: ${config.liveAllowedActions.join(', ')}`);
+    console.log(`Trading paused: ${config.tradingPaused}`);
+    console.log(`Max tick errors: ${config.maxConsecutiveTickErrors}`);
     console.log(`Strategies: ${config.enabledStrategies.join(', ')}`);
     console.log(`Trading accounts: ${config.accountIds.join(', ')}`);
     console.log(`Observe accounts: ${config.observeAccountIds.join(', ') || '<none>'}`);
@@ -52,10 +59,81 @@ const main = async () => {
     console.log(`Max daily orders: ${config.maxDailyOrders}`);
 
     if (config.dryRun) {
-        warnings.push('Dry-run is enabled');
-        warn('Live trading disabled', 'ROBOT_DRY_RUN=true');
+        const message = 'ROBOT_DRY_RUN=true';
+        if (strictLive) {
+            failures.push('Dry-run is enabled');
+            fail('Live trading disabled', message);
+        } else {
+            warnings.push('Dry-run is enabled');
+            warn('Live trading disabled', message);
+        }
     } else {
         ok('Live trading enabled');
+    }
+
+    if (config.tradingPaused) {
+        const message = 'ROBOT_TRADING_PAUSED=true';
+        if (strictLive) {
+            failures.push('Trading is paused');
+            fail('Trading pause', message);
+        } else {
+            warnings.push('Trading is paused');
+            warn('Trading pause', message);
+        }
+    } else {
+        ok('Trading pause', 'not paused');
+    }
+
+    if (config.liveAllowedActions.length === 0) {
+        failures.push('No live actions are enabled');
+        fail('Live allowed actions', 'empty');
+    }
+
+    if (config.maxDailyOrders <= 0) {
+        warnings.push('Daily order limit is zero');
+        warn('Daily order limit', 'ROBOT_MAX_DAILY_ORDERS=0');
+    }
+
+    if (config.maxDailyRub <= 0) {
+        warnings.push('Daily RUB limit is zero');
+        warn('Daily RUB limit', 'ROBOT_MAX_DAILY_RUB=0');
+    }
+
+    console.log('');
+    console.log('Database State');
+    console.log('--------------');
+
+    const decisionCount = await TradeDecisionModel.count();
+    const tradeCount = await TradesModel.count();
+    const latestDecision = await TradeDecisionModel.findOne({ order: [['createdAt', 'DESC']] });
+    const openTrades = await TradesModel.findAll({
+        where: {
+            orderId: {
+                [Op.ne]: null
+            }
+        } as any,
+        order: [['createdAt', 'DESC']],
+        limit: 100
+    });
+    const openOrderCount = openTrades.filter(trade => {
+        const data = trade.get({ plain: true }) as Record<string, unknown>;
+        const status = data.status ? String(data.status) : undefined;
+        return !isFinalOrderStatus(status);
+    }).length;
+
+    console.log(`Decisions: ${decisionCount}`);
+    console.log(`Trades: ${tradeCount}`);
+    console.log(`Open broker orders tracked: ${openOrderCount}`);
+    console.log(`Latest decision: ${latestDecision?.getDataValue('createdAt')?.toISOString?.() ?? '-'}`);
+
+    if (decisionCount === 0) {
+        warnings.push('No decisions have been recorded yet');
+        warn('Decision history', 'empty');
+    }
+
+    if (openOrderCount > 0) {
+        warnings.push(`${openOrderCount} open broker orders are tracked`);
+        warn('Open broker orders', String(openOrderCount));
     }
 
     const shares = await InstrumentsService.getShares();
@@ -80,8 +158,14 @@ const main = async () => {
         console.log(`  Positions: ${positionsCount}`);
 
         if (cashRub <= 0) {
-            warnings.push(`${alias} has no RUB cash`);
-            warn('Cash', `${alias} has no RUB cash`);
+            const message = `${alias} has no RUB cash`;
+            if (strictLive && config.liveAllowedActions.includes('buy')) {
+                failures.push(message);
+                fail('Cash', message);
+            } else {
+                warnings.push(message);
+                warn('Cash', message);
+            }
         }
     }
 
@@ -96,9 +180,26 @@ const main = async () => {
         !buyInstruments.some(instrument => instrument?.ticker?.toUpperCase() === ticker)
     );
 
+    if (config.liveAllowedActions.includes('buy') && config.buyTickers.length === 0) {
+        const message = 'ROBOT_BUY_TICKERS is empty';
+        if (strictLive) {
+            failures.push(message);
+            fail('Buy watchlist', message);
+        } else {
+            warnings.push(message);
+            warn('Buy watchlist', message);
+        }
+    }
+
     for (const ticker of missingTickers) {
-        warnings.push(`Ticker not found: ${ticker}`);
-        warn('Ticker not found', ticker);
+        const message = `Ticker not found: ${ticker}`;
+        if (strictLive && config.liveAllowedActions.includes('buy')) {
+            failures.push(message);
+            fail('Ticker not found', ticker);
+        } else {
+            warnings.push(message);
+            warn('Ticker not found', ticker);
+        }
     }
 
     const lastPrices = await marketData.getLastPrices(
@@ -126,6 +227,11 @@ const main = async () => {
         console.log(
             `${instrument.ticker}: price=${money(lastPrice)} lot=${instrument.lot ?? 1} estimated=${money(estimatedOrderRub)}${blockedReason ? ' blocked=' + blockedReason : ''}`
         );
+
+        if (strictLive && blockedReason) {
+            failures.push(`${instrument.ticker} is blocked: ${blockedReason}`);
+            fail('Buy readiness', `${instrument.ticker}: ${blockedReason}`);
+        }
     }
 
     console.log('');

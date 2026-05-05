@@ -48,6 +48,7 @@ To check readiness before running live:
 
 ```bash
 npm run preflight
+npm run preflight:live
 ```
 
 ## Server Run

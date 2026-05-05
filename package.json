@@ -12,6 +12,7 @@
     "decisions": "npm run build && node build/reports/decisions.report.js",
     "cleanup:decisions": "npm run build && node build/reports/cleanup-decisions.report.js",
     "preflight": "npm run build && node build/reports/preflight.report.js",
+    "preflight:live": "npm run build && node build/reports/preflight.report.js --live",
     "prod": "npm run robot",
     "lint": "eslint . --ext .ts,.tsx"
   },
