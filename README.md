@@ -36,6 +36,7 @@ To inspect recent decisions:
 ```bash
 npm run decisions
 npm run decisions -- 50
+npm run scan:universe
 npm run scan:buy
 npm run scan:buy -- SBER T YDEX
 npm run backtest:buy
@@ -98,6 +99,7 @@ Read-only endpoints:
 - `/api/accounts`
 - `/api/positions`
 - `/api/preview`
+- `/api/scan-universe`
 - `/api/buy-scan`
 - `/api/buy-backtest`
 - `/api/buy-optimize`
@@ -146,6 +148,9 @@ ROBOT_POSITION_DELAY_MS=1000
 ROBOT_ENABLED_STRATEGIES=stop-loss,trailing-stop,profit-take,score-buy,trend-follow-buy,watchlist-buy
 ROBOT_BUY_TICKERS=SBER,T,YDEX
 ROBOT_SCAN_TICKERS=SBER,T,YDEX,GAZP,MOEX,LKOH,ROSN,VTBR,MGNT,NVTK
+ROBOT_SCAN_UNIVERSE=manual
+ROBOT_SCAN_UNIVERSE_LIMIT=150
+ROBOT_SCAN_MAX_LOT_RUB=10000
 ROBOT_BUY_TREND_DAYS=20
 ROBOT_BUY_MIN_TREND_PERCENT=0.5
 ROBOT_BUY_MIN_MOMENTUM_PERCENT=0
@@ -239,6 +244,9 @@ until `ROBOT_SIGNAL_COOLDOWN_MS` passes or price changes by at least
 `ROBOT_SIGNAL_PRICE_CHANGE_PERCENT`.
 
 Passed buy signals from `ROBOT_SCAN_TICKERS` are stored in `buy_signal_journal`.
-The robot updates their 1/3/5/10 trading-day returns from daily candles on the
-`ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS` interval. This is paper analytics only:
-it does not post orders and it is available through `/api/buy-signals`.
+If `ROBOT_SCAN_UNIVERSE=auto`, the journal scans an automatically filtered
+universe of liquid RUB MOEX shares instead of the manual `ROBOT_SCAN_TICKERS`
+list. The robot updates captured signals' 1/3/5/10 trading-day returns from
+daily candles on the `ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS` interval. This is
+paper analytics only: it does not post orders and it is available through
+`/api/buy-signals`.

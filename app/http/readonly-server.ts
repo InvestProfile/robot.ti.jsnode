@@ -17,6 +17,7 @@ import BuyScannerService from '../services/buy-scanner.service';
 import BuyBacktestService from '../services/buy-backtest.service';
 import BuyOptimizerService from '../services/buy-optimizer.service';
 import BuySignalJournalService from '../services/buy-signal-journal.service';
+import ScanUniverseService from '../services/scan-universe.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -103,6 +104,9 @@ const safeConfig = (config: RobotConfig) => ({
     maxLotsPerOrder: config.maxLotsPerOrder,
     buyTickers: config.buyTickers,
     scanTickers: config.scanTickers,
+    scanUniverse: config.scanUniverse,
+    scanUniverseLimit: config.scanUniverseLimit,
+    scanMaxLotRub: config.scanMaxLotRub,
     buyTrendDays: config.buyTrendDays,
     buyMinTrendPercent: config.buyMinTrendPercent,
     buyMinMomentumPercent: config.buyMinMomentumPercent,
@@ -326,6 +330,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
             .map(ticker => ticker.trim().toUpperCase())
             .filter(Boolean);
         json(res, 200, await BuyScannerService.scan(config, tickers?.length ? tickers : config.scanTickers));
+        return;
+    }
+
+    if (url.pathname === '/api/scan-universe') {
+        json(res, 200, await ScanUniverseService.build(config));
         return;
     }
 

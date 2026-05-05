@@ -29,6 +29,9 @@ interface EnvConfig {
     ROBOT_MAX_LOTS_PER_ORDER: string | undefined;
     ROBOT_BUY_TICKERS: string | undefined;
     ROBOT_SCAN_TICKERS: string | undefined;
+    ROBOT_SCAN_UNIVERSE: string | undefined;
+    ROBOT_SCAN_UNIVERSE_LIMIT: string | undefined;
+    ROBOT_SCAN_MAX_LOT_RUB: string | undefined;
     ROBOT_BUY_TREND_DAYS: string | undefined;
     ROBOT_BUY_MIN_TREND_PERCENT: string | undefined;
     ROBOT_BUY_MIN_MOMENTUM_PERCENT: string | undefined;
@@ -75,6 +78,9 @@ export const getEnv = () => {
         ROBOT_MAX_LOTS_PER_ORDER: process.env.ROBOT_MAX_LOTS_PER_ORDER,
         ROBOT_BUY_TICKERS: process.env.ROBOT_BUY_TICKERS,
         ROBOT_SCAN_TICKERS: process.env.ROBOT_SCAN_TICKERS,
+        ROBOT_SCAN_UNIVERSE: process.env.ROBOT_SCAN_UNIVERSE,
+        ROBOT_SCAN_UNIVERSE_LIMIT: process.env.ROBOT_SCAN_UNIVERSE_LIMIT,
+        ROBOT_SCAN_MAX_LOT_RUB: process.env.ROBOT_SCAN_MAX_LOT_RUB,
         ROBOT_BUY_TREND_DAYS: process.env.ROBOT_BUY_TREND_DAYS,
         ROBOT_BUY_MIN_TREND_PERCENT: process.env.ROBOT_BUY_MIN_TREND_PERCENT,
         ROBOT_BUY_MIN_MOMENTUM_PERCENT: process.env.ROBOT_BUY_MIN_MOMENTUM_PERCENT,

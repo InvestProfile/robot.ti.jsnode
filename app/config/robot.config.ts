@@ -4,9 +4,11 @@ const LIVE_CONFIRMATION = 'I_UNDERSTAND_THIS_TRADES_REAL_MONEY';
 const DEFAULT_STRATEGIES = ['stop-loss', 'trailing-stop', 'profit-take', 'score-buy', 'trend-follow-buy', 'watchlist-buy'];
 const TRAILING_BASELINES = ['observed', 'history_30d', 'history_90d'] as const;
 const LIVE_ACTIONS = ['buy', 'sell'] as const;
+const SCAN_UNIVERSES = ['manual', 'auto'] as const;
 
 export type TrailingBaseline = typeof TRAILING_BASELINES[number];
 export type LiveAction = typeof LIVE_ACTIONS[number];
+export type ScanUniverse = typeof SCAN_UNIVERSES[number];
 
 export interface BuyScoreProfile {
     buyTrendDays: number;
@@ -103,6 +105,17 @@ const parseTrailingBaseline = (value: string | undefined): TrailingBaseline => {
     throw new Error(`Unsupported ROBOT_TRAILING_BASELINE=${value}. Use: ${TRAILING_BASELINES.join(', ')}`);
 };
 
+const parseScanUniverse = (value: string | undefined): ScanUniverse => {
+    if (!value) return 'manual';
+
+    const normalized = value.trim().toLowerCase();
+    if (SCAN_UNIVERSES.includes(normalized as ScanUniverse)) {
+        return normalized as ScanUniverse;
+    }
+
+    throw new Error(`Unsupported ROBOT_SCAN_UNIVERSE=${value}. Use: ${SCAN_UNIVERSES.join(', ')}`);
+};
+
 const parseBuyScoreProfiles = (value: string | undefined) => {
     if (!value) return {};
 
@@ -154,6 +167,9 @@ export interface RobotConfig {
     maxLotsPerOrder: number;
     buyTickers: string[];
     scanTickers: string[];
+    scanUniverse: ScanUniverse;
+    scanUniverseLimit: number;
+    scanMaxLotRub: number;
     buyTrendDays: number;
     buyMinTrendPercent: number;
     buyMinMomentumPercent: number;
@@ -211,6 +227,9 @@ export const getRobotConfig = (): RobotConfig => {
         maxLotsPerOrder: Math.max(1, Math.trunc(parseNumber(env.ROBOT_MAX_LOTS_PER_ORDER, 1))),
         buyTickers,
         scanTickers: scanTickers.length > 0 ? scanTickers : buyTickers,
+        scanUniverse: parseScanUniverse(env.ROBOT_SCAN_UNIVERSE),
+        scanUniverseLimit: Math.max(1, Math.trunc(parseNumber(env.ROBOT_SCAN_UNIVERSE_LIMIT, 150))),
+        scanMaxLotRub: Math.max(0, parseNumber(env.ROBOT_SCAN_MAX_LOT_RUB, 10_000)),
         buyTrendDays: Math.max(2, Math.trunc(parseNumber(env.ROBOT_BUY_TREND_DAYS, 20))),
         buyMinTrendPercent: parseNumber(env.ROBOT_BUY_MIN_TREND_PERCENT, 0.5),
         buyMinMomentumPercent: parseNumber(env.ROBOT_BUY_MIN_MOMENTUM_PERCENT, 0),

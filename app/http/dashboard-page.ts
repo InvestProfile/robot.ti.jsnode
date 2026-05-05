@@ -121,6 +121,10 @@ export const dashboardPage = `<!doctype html>
         <h2>Config</h2>
         <div id="config" class="small"></div>
       </section>
+      <section>
+        <h2>Scan Universe</h2>
+        <div style="overflow:auto"><table id="scanUniverse"></table></div>
+      </section>
     </div>
     <div class="stack">
       <section>
@@ -174,7 +178,7 @@ export const dashboardPage = `<!doctype html>
       return res.json();
     }
     async function load() {
-      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals] = await Promise.all([
+      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
         api('/api/limits'),
@@ -184,7 +188,8 @@ export const dashboardPage = `<!doctype html>
         api('/api/snapshots?limit=20'),
         api('/api/positions'),
         api('/api/preview'),
-        api('/api/buy-signals?limit=30')
+        api('/api/buy-signals?limit=30'),
+        api('/api/scan-universe')
       ]);
       document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString('ru-RU');
       document.getElementById('mode').innerHTML = status.config.dryRun ? '<span class="pill warn">DRY RUN</span>' : '<span class="pill bad">LIVE</span>';
@@ -203,6 +208,7 @@ export const dashboardPage = `<!doctype html>
         'trade accounts: ' + esc(status.config.accountIds.join(', ')),
         'observe accounts: ' + esc(status.config.observeAccountIds.join(', ')),
         'buy tickers: ' + esc(status.config.buyTickers.join(', ')),
+        'scan universe: ' + esc(status.config.scanUniverse) + ', limit ' + esc(status.config.scanUniverseLimit) + ', max lot ' + esc(status.config.scanMaxLotRub) + ' RUB',
         'buy score: min ' + esc(status.config.buyMinScore) + ', trend ' + esc(status.config.buyTrendDays) + 'd, +' + esc(status.config.buyMinTrendPercent) + '%, momentum +' + esc(status.config.buyMinMomentumPercent) + '%',
         'max order RUB: ' + esc(status.config.maxOrderRub),
         'max daily orders: ' + esc(status.config.maxDailyOrders),
@@ -227,6 +233,9 @@ export const dashboardPage = `<!doctype html>
       );
       document.getElementById('performance').innerHTML = rows(['Account', 'Total', 'Change', 'Last', 'Drawdown'], performance.accounts, p =>
         '<tr><td>' + esc(p.accountAlias || p.accountId) + '<div class="small">' + esc(p.snapshotsCount) + ' snapshots</div></td><td class="right">' + money(p.latestTotalRub) + '</td><td class="right">' + money(p.totalChangeRub) + '<div class="small">' + percent(p.totalChangePercent) + '</div></td><td class="right">' + money(p.periodChangeRub) + '<div class="small">' + percent(p.periodChangePercent) + '</div></td><td class="right">' + money(p.maxDrawdownRub) + '<div class="small">-' + esc((p.maxDrawdownPercent || 0).toFixed(2)) + '%</div></td></tr>'
+      );
+      document.getElementById('scanUniverse').innerHTML = rows(['Ticker', 'Lot RUB', 'Sector', 'Name'], scanUniverse.items.slice(0, 40), i =>
+        '<tr><td>' + esc(i.ticker) + '</td><td class="right">' + money(i.estimatedLotRub) + '</td><td>' + esc(i.sector) + '</td><td>' + esc(i.name) + '</td></tr>'
       );
       document.getElementById('decisions').innerHTML = rows(['Time', 'Account', 'Mode', 'Ticker', 'Signal', 'Status', 'P/L', 'Reason'], decisions.decisions, d =>
         '<tr><td>' + time(d.createdAt) + '</td><td>' + esc(d.accountAlias || d.accountId) + '</td><td>' + esc(d.accountMode) + '</td><td>' + esc(d.ticker || d.figi) + '</td><td>' + esc(d.signalSource) + '</td><td>' + esc(d.status) + '</td><td class="right">' + percent(d.profitPercent) + '</td><td>' + esc(d.reason) + '</td></tr>'

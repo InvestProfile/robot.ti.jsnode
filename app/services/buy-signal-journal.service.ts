@@ -3,6 +3,7 @@ import BuySignalJournalModel from '../models/buy-signal-journal.model';
 import BuyScannerService from './buy-scanner.service';
 import MarketDataService from './marketData.service';
 import { DailyCandle } from '../strategies/trade-signal';
+import ScanUniverseService from './scan-universe.service';
 
 const HORIZONS = [1, 3, 5, 10] as const;
 
@@ -28,10 +29,11 @@ const calculateReturnPercent = (from: number, to: number) => (to / from - 1) * 1
 
 export default class BuySignalJournalService {
     static async capture(config: RobotConfig) {
-        if (config.scanTickers.length === 0) return { captured: 0, updated: 0 };
+        const universe = await ScanUniverseService.resolveTickers(config);
+        if (universe.tickers.length === 0) return { captured: 0, updated: 0 };
 
         const now = new Date();
-        const scan = await BuyScannerService.scan(config, config.scanTickers);
+        const scan = await BuyScannerService.scan(config, universe.tickers);
         let captured = 0;
 
         for (const item of scan.items) {
