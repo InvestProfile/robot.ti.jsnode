@@ -49,11 +49,12 @@ export default class TradeJournalService {
     }
 
     private static getDecisionPrice(decision: TradeDecisionLog) {
-        return decision.currentPrice ?? decision.estimatedOrderRub;
+        const price = decision.currentPrice ?? decision.estimatedOrderRub;
+        return price && Number.isFinite(price) && price > 0 ? price : undefined;
     }
 
     private static getPriceChangePercent(previousPrice: number | undefined, currentPrice: number | undefined) {
-        if (!previousPrice || !currentPrice || previousPrice <= 0) return Number.POSITIVE_INFINITY;
+        if (!previousPrice || !currentPrice || previousPrice <= 0) return 0;
         return Math.abs(currentPrice / previousPrice - 1) * 100;
     }
 
