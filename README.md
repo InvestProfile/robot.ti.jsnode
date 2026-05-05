@@ -38,6 +38,8 @@ npm run decisions
 npm run decisions -- 50
 npm run scan:buy
 npm run scan:buy -- SBER T YDEX
+npm run backtest:buy
+npm run backtest:buy -- --days 120 SBER T YDEX
 ```
 
 To estimate or apply a safe cleanup of noisy `dry-run` / `skip` decisions:
@@ -93,6 +95,7 @@ Read-only endpoints:
 - `/api/positions`
 - `/api/preview`
 - `/api/buy-scan`
+- `/api/buy-backtest`
 - `/api/decisions`
 - `/api/trades`
 - `/api/snapshots`

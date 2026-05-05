@@ -43,4 +43,5 @@ export interface DailyCandle {
     high: number;
     low: number;
     volume: number;
+    time?: Date;
 }

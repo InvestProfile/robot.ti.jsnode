@@ -14,6 +14,7 @@ import TradesService from '../services/trades.service';
 import { PortfolioSnapshotModel } from '../models/portfolio-snapshot.model';
 import PerformanceService from '../services/performance.service';
 import BuyScannerService from '../services/buy-scanner.service';
+import BuyBacktestService from '../services/buy-backtest.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -321,6 +322,20 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
             .map(ticker => ticker.trim().toUpperCase())
             .filter(Boolean);
         json(res, 200, await BuyScannerService.scan(config, tickers?.length ? tickers : config.scanTickers));
+        return;
+    }
+
+    if (url.pathname === '/api/buy-backtest') {
+        const tickers = url.searchParams.get('tickers')
+            ?.split(',')
+            .map(ticker => ticker.trim().toUpperCase())
+            .filter(Boolean);
+        const days = Number(url.searchParams.get('days') ?? 180);
+        json(res, 200, await BuyBacktestService.run(
+            config,
+            tickers?.length ? tickers : config.scanTickers,
+            Number.isFinite(days) && days > 0 ? Math.trunc(days) : 180
+        ));
         return;
     }
 

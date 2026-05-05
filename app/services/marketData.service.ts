@@ -4,6 +4,7 @@ import { getEnv } from '../config/env.config';
 import {getSdk} from './get-sdk';
 import { CandleInterval } from 'tinkoff-sdk-grpc-js/dist/generated/marketdata';
 import { quotationToNumber } from '../utils/money';
+import { DailyCandle } from '../strategies/trade-signal';
 
 const envVariables = getEnv();
 
@@ -89,7 +90,7 @@ export default class MarketDataService {
     static async getDailyCandles(
         instrumentId: string,
         days: number
-    ) {
+    ): Promise<DailyCandle[]> {
         if (!envVariables.INVEST_TOKEN) {
             throw new Error('INVEST_TOKEN is not defined.');
         }
@@ -105,19 +106,24 @@ export default class MarketDataService {
             interval: CandleInterval.CANDLE_INTERVAL_DAY
         });
 
-        return response.candles
-            ?.map(candle => ({
-                close: quotationToNumber(candle.close),
-                high: quotationToNumber(candle.high),
-                low: quotationToNumber(candle.low),
-                volume: Number(candle.volume ?? 0)
-            }))
-            .filter((candle): candle is { close: number; high: number; low: number; volume: number } =>
-                candle.close !== undefined
-                && candle.high !== undefined
-                && candle.low !== undefined
-                && Number.isFinite(candle.volume)
-            ) ?? [];
+        return response.candles?.flatMap(candle => {
+            const close = quotationToNumber(candle.close);
+            const high = quotationToNumber(candle.high);
+            const low = quotationToNumber(candle.low);
+            const volume = Number(candle.volume ?? 0);
+
+            if (close === undefined || high === undefined || low === undefined || !Number.isFinite(volume)) {
+                return [];
+            }
+
+            return [{
+                close,
+                high,
+                low,
+                volume,
+                time: candle.time
+            }];
+        }) ?? [];
     }
 
     static async getLastPrices(instrumentIds: string[]) {
