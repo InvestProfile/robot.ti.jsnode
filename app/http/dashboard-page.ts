@@ -198,7 +198,7 @@ export const dashboardPage = `<!doctype html>
         'trade accounts: ' + esc(status.config.accountIds.join(', ')),
         'observe accounts: ' + esc(status.config.observeAccountIds.join(', ')),
         'buy tickers: ' + esc(status.config.buyTickers.join(', ')),
-        'buy trend: ' + esc(status.config.buyTrendDays) + 'd, +' + esc(status.config.buyMinTrendPercent) + '%, momentum +' + esc(status.config.buyMinMomentumPercent) + '%',
+        'buy score: min ' + esc(status.config.buyMinScore) + ', trend ' + esc(status.config.buyTrendDays) + 'd, +' + esc(status.config.buyMinTrendPercent) + '%, momentum +' + esc(status.config.buyMinMomentumPercent) + '%',
         'max order RUB: ' + esc(status.config.maxOrderRub),
         'max daily orders: ' + esc(status.config.maxDailyOrders),
         'max daily RUB: ' + esc(status.config.maxDailyRub),

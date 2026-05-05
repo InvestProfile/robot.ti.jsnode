@@ -131,11 +131,12 @@ ROBOT_MAX_CONSECUTIVE_TICK_ERRORS=3
 ROBOT_SNAPSHOT_INTERVAL_MS=900000
 ROBOT_INTERVAL_MS=60000
 ROBOT_POSITION_DELAY_MS=1000
-ROBOT_ENABLED_STRATEGIES=stop-loss,trailing-stop,profit-take,trend-follow-buy,watchlist-buy
+ROBOT_ENABLED_STRATEGIES=stop-loss,trailing-stop,profit-take,score-buy,trend-follow-buy,watchlist-buy
 ROBOT_BUY_TICKERS=SBER,T,YDEX
 ROBOT_BUY_TREND_DAYS=20
 ROBOT_BUY_MIN_TREND_PERCENT=0.5
 ROBOT_BUY_MIN_MOMENTUM_PERCENT=0
+ROBOT_BUY_MIN_SCORE=70
 ROBOT_MAX_ORDER_RUB=1000
 ROBOT_MAX_DAILY_ORDERS=3
 ROBOT_MAX_DAILY_RUB=2000
@@ -185,6 +186,7 @@ Enabled strategies are configured by `ROBOT_ENABLED_STRATEGIES`.
 - `trailing-stop` tracks the highest observed price in `position_states` and sends a sell signal when current price falls by `ROBOT_TRAILING_STOP_PERCENT` from that high.
 - `watchlist-buy` sends a buy signal for tickers listed in `ROBOT_BUY_TICKERS` when the instrument is not already in the portfolio and the estimated order fits risk limits.
 - `trend-follow-buy` filters watchlist buys by daily candles: current price must be above the `ROBOT_BUY_TREND_DAYS` average by `ROBOT_BUY_MIN_TREND_PERCENT`, with at least `ROBOT_BUY_MIN_MOMENTUM_PERCENT` momentum from the previous daily close.
+- `score-buy` scores watchlist buys using daily candles: trend, momentum, pullback from recent high, volatility, and volume. It sends a buy signal only when the score reaches `ROBOT_BUY_MIN_SCORE`.
 
 `ROBOT_TRAILING_BASELINE` controls how the first `highestPrice` is initialized:
 

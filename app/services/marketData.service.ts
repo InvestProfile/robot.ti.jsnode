@@ -86,6 +86,40 @@ export default class MarketDataService {
             .filter((value): value is number => value !== undefined && Number.isFinite(value)) ?? [];
     }
 
+    static async getDailyCandles(
+        instrumentId: string,
+        days: number
+    ) {
+        if (!envVariables.INVEST_TOKEN) {
+            throw new Error('INVEST_TOKEN is not defined.');
+        }
+
+        const {marketData} = getSdk(envVariables.INVEST_TOKEN);
+        const to = new Date();
+        const from = new Date(to.getTime() - Math.max(days + 10, days) * 24 * 60 * 60 * 1000);
+
+        const response = await marketData.getCandles({
+            instrumentId,
+            from,
+            to,
+            interval: CandleInterval.CANDLE_INTERVAL_DAY
+        });
+
+        return response.candles
+            ?.map(candle => ({
+                close: quotationToNumber(candle.close),
+                high: quotationToNumber(candle.high),
+                low: quotationToNumber(candle.low),
+                volume: Number(candle.volume ?? 0)
+            }))
+            .filter((candle): candle is { close: number; high: number; low: number; volume: number } =>
+                candle.close !== undefined
+                && candle.high !== undefined
+                && candle.low !== undefined
+                && Number.isFinite(candle.volume)
+            ) ?? [];
+    }
+
     static async getLastPrices(instrumentIds: string[]) {
         if (!envVariables.INVEST_TOKEN) {
             throw new Error('INVEST_TOKEN is not defined.');

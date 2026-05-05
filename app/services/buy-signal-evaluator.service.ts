@@ -80,6 +80,9 @@ export default class BuySignalEvaluatorService {
             const estimatedOrderRub = lastPrice * Math.max(1, instrument.lot ?? 1);
             const alreadyInPortfolio = portfolioInstrumentIds.has(instrument.uid);
             const tradingStatus = await marketData.getStatus(instrument.figi, instrument.uid);
+            const dailyCandles = config.enabledStrategies.includes('score-buy')
+                ? await marketData.getDailyCandles(instrument.uid, config.buyTrendDays)
+                : undefined;
             const dailyCloses = config.enabledStrategies.includes('trend-follow-buy')
                 ? await marketData.getDailyClosePrices(instrument.uid, config.buyTrendDays)
                 : undefined;
@@ -93,7 +96,8 @@ export default class BuySignalEvaluatorService {
                 lastPrice,
                 availableCashRub: remainingCashRub,
                 alreadyInPortfolio,
-                dailyCloses
+                dailyCloses,
+                dailyCandles
             }, config);
             const risk = RiskManagerService.evaluateBuySignal({
                 availableCashRub: remainingCashRub,
