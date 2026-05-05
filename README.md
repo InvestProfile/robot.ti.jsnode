@@ -11,6 +11,8 @@ The runtime is intentionally conservative:
 - refuses to trade accounts listed in `ROBOT_PROTECTED_ACCOUNT_IDS`;
 - starts in `ROBOT_DRY_RUN=true` by default;
 - requires an explicit live confirmation phrase before real-money trading can start;
+- can pause live order placement through `ROBOT_TRADING_PAUSED=true`;
+- opens a circuit breaker after repeated tick errors;
 - writes every decision into the `trade_decisions` table;
 - writes posted orders into the `trades` table;
 - reconciles posted orders against the broker order state.
@@ -120,6 +122,8 @@ ROBOT_ACCOUNT_ALIASES=2054310628:торговый счет,2002465405:долго
 ROBOT_PROTECTED_ACCOUNT_IDS=2002465405,2006532697,2091363693,2045881687,2051251635,2201800992,2011287614
 ROBOT_DRY_RUN=true
 ROBOT_LIVE_ALLOWED_ACTIONS=buy
+ROBOT_TRADING_PAUSED=false
+ROBOT_MAX_CONSECUTIVE_TICK_ERRORS=3
 ROBOT_INTERVAL_MS=60000
 ROBOT_POSITION_DELAY_MS=1000
 ROBOT_ENABLED_STRATEGIES=stop-loss,trailing-stop,profit-take
@@ -154,6 +158,11 @@ ROBOT_LIVE_CONFIRMATION=I_UNDERSTAND_THIS_TRADES_REAL_MONEY
 Do not enable live mode until dry-run decisions in `trade_decisions` look correct.
 By default, live trading is buy-only through `ROBOT_LIVE_ALLOWED_ACTIONS=buy`.
 Selling requires explicitly setting `ROBOT_LIVE_ALLOWED_ACTIONS=buy,sell`.
+
+Set `ROBOT_TRADING_PAUSED=true` to keep the robot running in observe/analysis
+mode while blocking real order placement. If repeated tick errors reach
+`ROBOT_MAX_CONSECUTIVE_TICK_ERRORS`, the runtime opens a circuit breaker and
+also blocks real order placement until the process is restarted.
 
 `ROBOT_OBSERVE_ACCOUNT_IDS` is read-only from the robot's point of view. The
 robot may write analysis into `trade_decisions`, but order execution is only

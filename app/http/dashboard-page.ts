@@ -101,6 +101,8 @@ export const dashboardPage = `<!doctype html>
           <div class="metric"><div class="label">Tick</div><div id="tick" class="value">-</div></div>
           <div class="metric"><div class="label">Interval</div><div id="interval" class="value">-</div></div>
           <div class="metric"><div class="label">Last tick</div><div id="lastTick" class="value">-</div></div>
+          <div class="metric"><div class="label">Safety</div><div id="safety" class="value">-</div></div>
+          <div class="metric"><div class="label">Errors</div><div id="errors" class="value">-</div></div>
         </div>
       </section>
       <section>
@@ -174,6 +176,13 @@ export const dashboardPage = `<!doctype html>
       document.getElementById('tick').innerHTML = status.runtime.isTickRunning ? '<span class="blue">running</span>' : '<span class="good">idle</span>';
       document.getElementById('interval').textContent = Math.round(status.config.intervalMs / 1000) + ' sec';
       document.getElementById('lastTick').textContent = time(status.runtime.lastTickFinishedAt || status.runtime.lastTickStartedAt);
+      document.getElementById('safety').innerHTML = status.config.tradingPaused
+        ? '<span class="pill warn">PAUSED</span>'
+        : status.runtime.circuitBreakerOpen
+          ? '<span class="pill bad">BREAKER</span>'
+          : '<span class="pill good">READY</span>';
+      document.getElementById('errors').innerHTML = esc(status.runtime.consecutiveTickErrors || 0) + ' / ' + esc(status.config.maxConsecutiveTickErrors)
+        + (status.runtime.circuitBreakerReason ? '<div class="small">' + esc(status.runtime.circuitBreakerReason) + '</div>' : '');
       document.getElementById('config').innerHTML = [
         'strategies: ' + esc(status.config.enabledStrategies.join(', ')),
         'trade accounts: ' + esc(status.config.accountIds.join(', ')),
@@ -183,6 +192,7 @@ export const dashboardPage = `<!doctype html>
         'max daily orders: ' + esc(status.config.maxDailyOrders),
         'max daily RUB: ' + esc(status.config.maxDailyRub),
         'live actions: ' + esc(status.config.liveAllowedActions.join(', ')),
+        'trading paused: ' + esc(status.config.tradingPaused),
         'signal cooldown: ' + esc(Math.round(status.config.signalCooldownMs / 60000)) + ' min',
         'signal price change: ' + esc(status.config.signalPriceChangePercent) + '%'
       ].join('<br>');

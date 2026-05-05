@@ -85,6 +85,8 @@ const safeConfig = (config: RobotConfig) => ({
     dryRun: config.dryRun,
     liveConfirmationRequired: config.liveConfirmationRequired,
     liveAllowedActions: config.liveAllowedActions,
+    tradingPaused: config.tradingPaused,
+    maxConsecutiveTickErrors: config.maxConsecutiveTickErrors,
     intervalMs: config.intervalMs,
     positionDelayMs: config.positionDelayMs,
     enabledStrategies: config.enabledStrategies,

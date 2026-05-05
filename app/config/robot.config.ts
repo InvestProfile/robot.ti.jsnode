@@ -106,6 +106,8 @@ export interface RobotConfig {
     dryRun: boolean;
     liveConfirmationRequired: boolean;
     liveAllowedActions: LiveAction[];
+    tradingPaused: boolean;
+    maxConsecutiveTickErrors: number;
     intervalMs: number;
     positionDelayMs: number;
     enabledStrategies: string[];
@@ -150,6 +152,8 @@ export const getRobotConfig = (): RobotConfig => {
         dryRun,
         liveConfirmationRequired: !dryRun,
         liveAllowedActions: parseLiveActions(env.ROBOT_LIVE_ALLOWED_ACTIONS),
+        tradingPaused: parseBoolean(env.ROBOT_TRADING_PAUSED, false),
+        maxConsecutiveTickErrors: Math.max(1, Math.trunc(parseNumber(env.ROBOT_MAX_CONSECUTIVE_TICK_ERRORS, 3))),
         intervalMs: parseNumber(env.ROBOT_INTERVAL_MS, 60_000),
         positionDelayMs: parseNumber(env.ROBOT_POSITION_DELAY_MS, 1_000),
         enabledStrategies: parseStrategies(env.ROBOT_ENABLED_STRATEGIES),

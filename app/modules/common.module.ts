@@ -22,6 +22,9 @@ let isTickRunning = false;
 let lastTickStartedAt: string | undefined;
 let lastTickFinishedAt: string | undefined;
 let lastTickError: string | undefined;
+let consecutiveTickErrors = 0;
+let circuitBreakerOpen = false;
+let circuitBreakerReason: string | undefined;
 
 export interface TradingProcess {
     stop: () => void;
@@ -31,7 +34,10 @@ export const getTradingRuntimeState = () => ({
     isTickRunning,
     lastTickStartedAt,
     lastTickFinishedAt,
-    lastTickError
+    lastTickError,
+    consecutiveTickErrors,
+    circuitBreakerOpen,
+    circuitBreakerReason
 });
 
 const findInstrument = (
@@ -71,6 +77,12 @@ const getOrderMetadata = (orderResult: unknown) => {
         totalAmountUnits: totalAmount.units as string | number | undefined,
         totalAmountNano: totalAmount.nano as string | number | undefined
     };
+};
+
+const getLiveTradingPauseReason = (config: RobotConfig) => {
+    if (config.tradingPaused) return 'trading is paused by ROBOT_TRADING_PAUSED';
+    if (circuitBreakerOpen) return circuitBreakerReason ?? 'circuit breaker is open';
+    return undefined;
 };
 
 const executeBuySignals = async (
@@ -130,6 +142,26 @@ const executeBuySignals = async (
                 status: 'skip',
                 signalSource: preview.signal?.source,
                 reason: 'buy preview is missing order parameters',
+                currentPrice: preview.currentPrice,
+                quantityLots: preview.quantityLots,
+                estimatedOrderRub: preview.estimatedOrderRub
+            });
+            continue;
+        }
+
+        const pauseReason = getLiveTradingPauseReason(config);
+        if (pauseReason) {
+            await TradeJournalService.logDecision({
+                accountId,
+                accountAlias: preview.accountAlias,
+                accountMode: 'trade',
+                figi: preview.figi,
+                instrumentUid: preview.instrumentUid,
+                ticker: preview.ticker,
+                name: preview.name,
+                status: 'skip',
+                signalSource: preview.signal?.source,
+                reason: pauseReason,
                 currentPrice: preview.currentPrice,
                 quantityLots: preview.quantityLots,
                 estimatedOrderRub: preview.estimatedOrderRub
@@ -359,6 +391,27 @@ export const executeTrades = async (
             continue;
         }
 
+        const pauseReason = getLiveTradingPauseReason(config);
+        if (pauseReason) {
+            await TradeJournalService.logDecision({
+                accountId,
+                accountAlias,
+                accountMode,
+                figi: position?.figi,
+                instrumentUid: position?.instrumentUid,
+                ticker: instrument?.ticker,
+                name: instrument?.name,
+                status: 'skip',
+                signalSource: signal?.source,
+                reason: pauseReason,
+                averagePrice,
+                currentPrice,
+                profitPercent: risk.profitPercent,
+                quantityLots: risk.quantity
+            });
+            continue;
+        }
+
         const orderResult = await orderService.postOrder(
             accountId,
             2,
@@ -453,9 +506,16 @@ const executeRobotTick = async (config: RobotConfig) => {
         }
 
         await OrderReconciliationService.reconcileOpenOrders();
+        consecutiveTickErrors = 0;
     } catch (error) {
         console.error('Error occurred in trading tick:', error);
         lastTickError = error instanceof Error ? error.message : String(error);
+        consecutiveTickErrors += 1;
+        if (consecutiveTickErrors >= config.maxConsecutiveTickErrors) {
+            circuitBreakerOpen = true;
+            circuitBreakerReason = `circuit breaker opened after ${consecutiveTickErrors} consecutive tick errors`;
+            console.error(circuitBreakerReason);
+        }
     } finally {
         isTickRunning = false;
         lastTickFinishedAt = new Date().toISOString();
@@ -482,6 +542,8 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
     console.log('Dry run: ' + config.dryRun);
     console.log('Live allowed actions: ' + config.liveAllowedActions.join(', '));
     console.log('Live confirmation required: ' + config.liveConfirmationRequired);
+    console.log('Trading paused: ' + config.tradingPaused);
+    console.log('Max consecutive tick errors: ' + config.maxConsecutiveTickErrors);
 
     void executeRobotTick(config);
     const interval = setInterval(() => void executeRobotTick(config), config.intervalMs);
