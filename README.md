@@ -34,6 +34,13 @@ npm run decisions
 npm run decisions -- 50
 ```
 
+To estimate or apply a safe cleanup of noisy `dry-run` / `skip` decisions:
+
+```bash
+npm run cleanup:decisions -- 24
+CLEANUP_APPLY=true npm run cleanup:decisions -- 24
+```
+
 To check readiness before running live:
 
 ```bash
