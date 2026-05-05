@@ -8,8 +8,9 @@ export const dashboardPage = `<!doctype html>
     :root {
       color-scheme: dark;
       --bg: #101214;
-      --panel: #191d21;
-      --line: #2d3339;
+      --panel: #181c20;
+      --panel-2: #20252a;
+      --line: #303740;
       --text: #eef1f3;
       --muted: #9aa4ad;
       --good: #74c69d;
@@ -25,49 +26,51 @@ export const dashboardPage = `<!doctype html>
       color: var(--text);
     }
     header {
-      display: flex;
-      justify-content: space-between;
+      display: grid;
+      grid-template-columns: minmax(180px, 1fr) auto;
+      gap: 14px;
       align-items: center;
-      gap: 16px;
-      padding: 18px 22px;
+      padding: 16px 20px 12px;
       border-bottom: 1px solid var(--line);
       background: #15181b;
       position: sticky;
       top: 0;
-      z-index: 2;
+      z-index: 5;
     }
-    h1 { margin: 0; font-size: 20px; font-weight: 650; }
-    h2 { margin: 0 0 12px; font-size: 15px; font-weight: 650; color: var(--muted); }
-    main {
-      display: grid;
-      grid-template-columns: minmax(280px, 420px) 1fr;
-      gap: 16px;
-      padding: 16px;
-    }
-    section {
+    h1 { margin: 0; font-size: 20px; font-weight: 700; }
+    h2 { margin: 0; font-size: 15px; font-weight: 700; color: var(--text); }
+    h3 { margin: 0 0 8px; color: var(--muted); font-size: 13px; font-weight: 700; }
+    main { padding: 16px; }
+    section, .card {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 14px;
       min-width: 0;
     }
-    .stack { display: grid; gap: 16px; }
-    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .metric { border: 1px solid var(--line); border-radius: 6px; padding: 10px; min-height: 66px; }
-    .label { color: var(--muted); font-size: 12px; }
-    .value { margin-top: 4px; font-size: 18px; font-weight: 650; overflow-wrap: anywhere; }
-    .pill { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 99px; font-weight: 650; font-size: 12px; border: 1px solid var(--line); }
-    .good { color: var(--good); }
-    .warn { color: var(--warn); }
-    .bad { color: var(--bad); }
-    .blue { color: var(--blue); }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { padding: 9px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-    th { color: var(--muted); font-size: 12px; font-weight: 600; }
-    td { overflow-wrap: anywhere; }
-    .small { color: var(--muted); font-size: 12px; }
-    .right { text-align: right; }
-    .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .topbar { display: flex; justify-content: flex-end; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .tabs {
+      display: flex;
+      gap: 6px;
+      padding: 10px 20px;
+      border-bottom: 1px solid var(--line);
+      background: #15181b;
+      position: sticky;
+      top: 65px;
+      z-index: 4;
+      overflow-x: auto;
+    }
+    .tab {
+      height: 34px;
+      border: 1px solid var(--line);
+      background: #1d2227;
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 0 12px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .tab.active { color: var(--text); background: #273039; border-color: #46515c; }
     button {
       height: 32px;
       border: 1px solid var(--line);
@@ -78,89 +81,193 @@ export const dashboardPage = `<!doctype html>
       cursor: pointer;
     }
     button:hover { background: #2a3037; }
-    @media (max-width: 900px) {
-      main { grid-template-columns: 1fr; }
-      .grid { grid-template-columns: 1fr; }
+    .view { display: none; }
+    .view.active { display: block; }
+    .layout { display: grid; grid-template-columns: minmax(300px, 420px) 1fr; gap: 14px; align-items: start; }
+    .stack { display: grid; gap: 14px; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .wide-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+    .metric { border: 1px solid var(--line); background: #171b1f; border-radius: 6px; padding: 10px; min-height: 64px; }
+    .label { color: var(--muted); font-size: 12px; display:flex; gap:6px; align-items:center; }
+    .value { margin-top: 4px; font-size: 18px; font-weight: 700; overflow-wrap: anywhere; }
+    .small { color: var(--muted); font-size: 12px; }
+    .help {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 11px;
+      cursor: help;
+    }
+    .pill { display: inline-flex; align-items: center; gap: 7px; min-height: 24px; padding: 2px 9px; border-radius: 999px; font-weight: 700; font-size: 12px; border: 1px solid var(--line); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display:inline-block; background: var(--muted); box-shadow: 0 0 12px currentColor; }
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+    .blue { color: var(--blue); }
+    .pill.good .dot { background: var(--good); }
+    .pill.warn .dot { background: var(--warn); }
+    .pill.bad .dot { background: var(--bad); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 9px 8px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { color: var(--muted); font-size: 12px; font-weight: 700; }
+    td { overflow-wrap: anywhere; }
+    .right { text-align: right; }
+    .nowrap { white-space: nowrap; }
+    .reason { max-width: 680px; }
+    .table-wrap { overflow: auto; max-height: 64vh; }
+    .compact .table-wrap { max-height: 360px; }
+    details {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      overflow: hidden;
+    }
+    summary {
+      cursor: pointer;
+      padding: 12px 14px;
+      font-weight: 700;
+      color: var(--text);
+      background: #171b1f;
+    }
+    details > div { padding: 10px 14px 14px; }
+    .readiness {
+      display: grid;
+      grid-template-columns: minmax(260px, 420px) 1fr;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .readiness-title { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .blockers { display: flex; gap: 8px; flex-wrap: wrap; }
+    @media (max-width: 1100px) {
+      .layout, .readiness { grid-template-columns: 1fr; }
+      .wide-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .tabs { top: 61px; }
+    }
+    @media (max-width: 680px) {
+      header { grid-template-columns: 1fr; }
+      .topbar { justify-content: flex-start; }
+      .grid, .wide-grid { grid-template-columns: 1fr; }
+      main { padding: 10px; }
     }
   </style>
 </head>
 <body>
   <header>
     <h1>T-Invest Robot</h1>
-    <div class="toolbar">
+    <div class="topbar">
       <span id="updated" class="small">loading...</span>
       <button id="refresh" type="button">Refresh</button>
     </div>
   </header>
+  <nav class="tabs" aria-label="Dashboard tabs">
+    <button class="tab active" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="signals">Signals</button>
+    <button class="tab" data-tab="paper">Paper</button>
+    <button class="tab" data-tab="market">Market</button>
+    <button class="tab" data-tab="accounts">Accounts</button>
+    <button class="tab" data-tab="logs">Logs</button>
+  </nav>
   <main>
-    <div class="stack">
-      <section>
-        <h2>Status</h2>
-        <div class="grid">
-          <div class="metric"><div class="label">Mode</div><div id="mode" class="value">-</div></div>
-          <div class="metric"><div class="label">Tick</div><div id="tick" class="value">-</div></div>
-          <div class="metric"><div class="label">Interval</div><div id="interval" class="value">-</div></div>
-          <div class="metric"><div class="label">Last tick</div><div id="lastTick" class="value">-</div></div>
-          <div class="metric"><div class="label">Safety</div><div id="safety" class="value">-</div></div>
-          <div class="metric"><div class="label">Errors</div><div id="errors" class="value">-</div></div>
+    <div id="overview" class="view active">
+      <div class="readiness">
+        <section>
+          <div class="readiness-title">
+            <h2>Live Readiness <span class="help" title="Индикатор показывает, можно ли думать о live-покупках. Он учитывает dry-run, дневные лимиты, рынок, paper-статистику, ошибки и buy-preview.">?</span></h2>
+            <span id="readinessPill" class="pill warn"><span class="dot"></span>CHECKING</span>
+          </div>
+          <div id="readinessText" class="small" style="margin-top:10px">-</div>
+        </section>
+        <section>
+          <h2>Blockers <span class="help" title="Причины, почему робот сейчас не должен или не может покупать реальными деньгами.">?</span></h2>
+          <div id="blockers" class="blockers"></div>
+        </section>
+      </div>
+      <div class="wide-grid">
+        <div class="metric"><div class="label">Mode <span class="help" title="DRY RUN означает, что робот считает решения, но не отправляет реальные заявки. LIVE означает реальные деньги.">?</span></div><div id="mode" class="value">-</div></div>
+        <div class="metric"><div class="label">Market <span class="help" title="Общий фильтр рынка. Если рынок слабый, новые покупки блокируются.">?</span></div><div id="marketMini" class="value">-</div></div>
+        <div class="metric"><div class="label">Paper P/L <span class="help" title="Виртуальная прибыль/убыток paper-портфеля с учетом комиссии.">?</span></div><div id="paperMini" class="value">-</div></div>
+        <div class="metric"><div class="label">Daily Limit <span class="help" title="Сколько заявок уже использовано сегодня и сколько еще можно.">?</span></div><div id="limitMini" class="value">-</div></div>
+      </div>
+      <div class="layout" style="margin-top:14px">
+        <div class="stack">
+          <section>
+            <h2>Status</h2>
+            <div class="grid">
+              <div class="metric"><div class="label">Tick</div><div id="tick" class="value">-</div></div>
+              <div class="metric"><div class="label">Errors</div><div id="errors" class="value">-</div></div>
+              <div class="metric"><div class="label">Last tick</div><div id="lastTick" class="value">-</div></div>
+              <div class="metric"><div class="label">Safety</div><div id="safety" class="value">-</div></div>
+            </div>
+          </section>
+          <section>
+            <h2>Config Summary <span class="help" title="Короткая выжимка настроек, которые чаще всего объясняют поведение робота.">?</span></h2>
+            <div id="config" class="small"></div>
+          </section>
         </div>
-      </section>
+        <section>
+          <h2>Action Preview <span class="help" title="Что робот сделал бы по разрешенному списку buy tickers прямо сейчас. В dry-run это только расчет.">?</span></h2>
+          <div class="table-wrap"><table id="preview"></table></div>
+        </section>
+      </div>
+    </div>
+
+    <div id="signals" class="view">
+      <div class="layout">
+        <section>
+          <h2>Buy Signal Journal <span class="help" title="История бумажных buy-сигналов по auto-universe. Доходности 1/3/5/10 дней появятся позже, когда пройдет время.">?</span></h2>
+          <div class="table-wrap"><table id="buySignals"></table></div>
+        </section>
+        <section>
+          <h2>Action Preview</h2>
+          <div class="table-wrap"><table id="previewSignals"></table></div>
+        </section>
+      </div>
+    </div>
+
+    <div id="paper" class="view">
       <section>
-        <h2>Accounts</h2>
-        <div style="overflow:auto"><table id="accounts"></table></div>
-      </section>
-      <section>
-        <h2>Daily Limits</h2>
-        <div style="overflow:auto"><table id="limits"></table></div>
-      </section>
-      <section>
-        <h2>Performance</h2>
-        <div style="overflow:auto"><table id="performance"></table></div>
-      </section>
-      <section>
-        <h2>Config</h2>
-        <div id="config" class="small"></div>
-      </section>
-      <section>
-        <h2>Scan Universe</h2>
-        <div style="overflow:auto"><table id="scanUniverse"></table></div>
-      </section>
-      <section>
-        <h2>Market Regime</h2>
-        <div id="marketRegimeSummary" class="small" style="margin-bottom:10px"></div>
-        <div style="overflow:auto"><table id="marketRegime"></table></div>
+        <h2>Paper Portfolio <span class="help" title="Виртуальный портфель: робот как будто покупает/продает, считает P/L с учетом комиссии, но не трогает деньги.">?</span></h2>
+        <div id="paperSummary" class="small" style="margin:8px 0 12px"></div>
+        <div class="table-wrap"><table id="paperPositions"></table></div>
       </section>
     </div>
-    <div class="stack">
-      <section>
-        <h2>Action Preview</h2>
-        <div style="overflow:auto"><table id="preview"></table></div>
-      </section>
-      <section>
-        <h2>Buy Signal Journal</h2>
-        <div style="overflow:auto"><table id="buySignals"></table></div>
-      </section>
-      <section>
-        <h2>Paper Portfolio</h2>
-        <div id="paperSummary" class="small" style="margin-bottom:10px"></div>
-        <div style="overflow:auto"><table id="paperPositions"></table></div>
-      </section>
-      <section>
-        <h2>Latest Decisions</h2>
-        <div style="overflow:auto"><table id="decisions"></table></div>
-      </section>
-      <section>
-        <h2>Executed Trades</h2>
-        <div style="overflow:auto"><table id="trades"></table></div>
-      </section>
-      <section>
-        <h2>Portfolio History</h2>
-        <div style="overflow:auto"><table id="snapshots"></table></div>
-      </section>
-      <section>
-        <h2>Positions</h2>
-        <div style="overflow:auto"><table id="positions"></table></div>
-      </section>
+
+    <div id="market" class="view">
+      <div class="layout">
+        <section>
+          <h2>Market Regime <span class="help" title="Рыночный стоп-кран. Если базовые бумаги слабые, новые покупки блокируются.">?</span></h2>
+          <div id="marketRegimeSummary" class="small" style="margin-bottom:10px"></div>
+          <div class="table-wrap"><table id="marketRegime"></table></div>
+        </section>
+        <section>
+          <h2>Scan Universe <span class="help" title="Список ликвидных RUB MOEX бумаг, которые робот анализирует как рынок. Это не список реальных покупок.">?</span></h2>
+          <div class="table-wrap"><table id="scanUniverse"></table></div>
+        </section>
+      </div>
+    </div>
+
+    <div id="accounts" class="view">
+      <div class="layout">
+        <div class="stack">
+          <section><h2>Accounts</h2><div class="table-wrap"><table id="accountsTable"></table></div></section>
+          <section><h2>Daily Limits</h2><div class="table-wrap"><table id="limits"></table></div></section>
+          <section><h2>Performance</h2><div class="table-wrap"><table id="performance"></table></div></section>
+        </div>
+        <section><h2>Positions</h2><div class="table-wrap"><table id="positions"></table></div></section>
+      </div>
+    </div>
+
+    <div id="logs" class="view">
+      <div class="stack">
+        <details open><summary>Latest Decisions</summary><div class="table-wrap"><table id="decisions"></table></div></details>
+        <details><summary>Executed Trades</summary><div class="table-wrap"><table id="trades"></table></div></details>
+        <details><summary>Portfolio History</summary><div class="table-wrap"><table id="snapshots"></table></div></details>
+      </div>
     </div>
   </main>
   <script>
@@ -172,12 +279,12 @@ export const dashboardPage = `<!doctype html>
       : '-';
     const time = value => value ? new Date(value).toLocaleString('ru-RU') : '-';
     const esc = value => String(value ?? '-').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-    const rows = (headers, items, render) => '<thead><tr>' + headers.map(h => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>' + items.map(render).join('') + '</tbody>';
+    const rows = (headers, items, render) => '<thead><tr>' + headers.map(h => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>' + (items || []).map(render).join('') + '</tbody>';
+    const pill = (kind, text) => '<span class="pill ' + kind + '"><span class="dot"></span>' + esc(text) + '</span>';
     const tradeDirection = value => String(value) === '2' ? 'sell' : String(value) === '1' ? 'buy' : '-';
     const tradeAmount = trade => {
       const total = Number(trade.totalAmountUnits || 0) + Number(trade.totalAmountNano || 0) / 1e9;
       if (Number.isFinite(total) && total > 0) return total;
-
       const price = Number(trade.price_units || 0) + Number(trade.price_nano || 0) / 1e9;
       const lots = Math.max(1, Number(trade.lot || trade.quantity || 1));
       return Number.isFinite(price) && Number.isFinite(lots) ? price * lots : undefined;
@@ -186,6 +293,31 @@ export const dashboardPage = `<!doctype html>
       const res = await fetch(path);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
+    }
+    function setActiveTab(id) {
+      document.querySelectorAll('.tab').forEach(tab => tab.classList.toggle('active', tab.dataset.tab === id));
+      document.querySelectorAll('.view').forEach(view => view.classList.toggle('active', view.id === id));
+      localStorage.setItem('robot-tab', id);
+    }
+    function getReadiness(status, limits, marketRegime, paperPositions, preview) {
+      const blockers = [];
+      if (status.config.dryRun) blockers.push({ kind: 'warn', text: 'dry-run включен' });
+      if (status.config.tradingPaused) blockers.push({ kind: 'bad', text: 'торговля на паузе' });
+      if (status.runtime.circuitBreakerOpen) blockers.push({ kind: 'bad', text: 'circuit breaker' });
+      if (!marketRegime.passed) blockers.push({ kind: 'bad', text: 'слабый рынок' });
+      if ((paperPositions.summary.closed || 0) < 3) blockers.push({ kind: 'warn', text: 'мало закрытых paper-сделок' });
+      if (!preview.previews.some(p => p.status === 'allowed')) blockers.push({ kind: 'warn', text: 'нет allowed buy-preview' });
+      if (limits.limits.some(l => l.ordersLeft <= 0)) blockers.push({ kind: 'warn', text: 'дневной лимит заявок исчерпан' });
+      if ((status.runtime.consecutiveTickErrors || 0) > 0) blockers.push({ kind: 'warn', text: 'есть ошибки тика' });
+      const hard = blockers.some(item => item.kind === 'bad');
+      if (blockers.length === 0) return { kind: 'good', text: 'READY', details: 'По текущим проверкам live-buy выглядит допустимо.', blockers };
+      if (hard) return { kind: 'bad', text: 'BLOCKED', details: 'Есть жесткие блокировки. Live включать нельзя.', blockers };
+      return { kind: 'warn', text: 'WAIT', details: 'Деньги в безопасности. Live пока лучше не включать: нужны данные/снятие мягких блокировок.', blockers };
+    }
+    function renderPreview(tableId, preview) {
+      document.getElementById(tableId).innerHTML = rows(['Ticker', 'Status', 'Price', 'Amount', 'Reason'], preview.previews, p =>
+        '<tr><td>' + esc(p.ticker || p.figi) + '<div class="small">' + esc(p.name) + '</div></td><td>' + (p.status === 'allowed' ? pill('good', 'allowed') : pill('warn', 'blocked')) + '</td><td class="right nowrap">' + money(p.currentPrice) + '</td><td class="right nowrap">' + money(p.estimatedOrderRub) + '</td><td class="reason">' + esc(p.reason) + '</td></tr>'
+      );
     }
     async function load() {
       const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions, marketRegime] = await Promise.all([
@@ -203,54 +335,61 @@ export const dashboardPage = `<!doctype html>
         api('/api/paper-positions?limit=50'),
         api('/api/market-regime')
       ]);
+      const readiness = getReadiness(status, limits, marketRegime, paperPositions, preview);
       document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString('ru-RU');
-      document.getElementById('mode').innerHTML = status.config.dryRun ? '<span class="pill warn">DRY RUN</span>' : '<span class="pill bad">LIVE</span>';
+      document.getElementById('readinessPill').className = 'pill ' + readiness.kind;
+      document.getElementById('readinessPill').innerHTML = '<span class="dot"></span>' + esc(readiness.text);
+      document.getElementById('readinessText').textContent = readiness.details;
+      document.getElementById('blockers').innerHTML = readiness.blockers.length
+        ? readiness.blockers.map(item => pill(item.kind, item.text)).join('')
+        : pill('good', 'нет блокировок');
+      document.getElementById('mode').innerHTML = status.config.dryRun ? pill('warn', 'DRY RUN') : pill('bad', 'LIVE');
+      document.getElementById('marketMini').innerHTML = marketRegime.passed ? pill('good', 'PASSED') : pill('bad', 'BLOCKED');
+      document.getElementById('paperMini').textContent = money(paperPositions.summary.totalProfitRub) + ' RUB';
+      document.getElementById('limitMini').textContent = limits.limits.map(l => l.ordersUsed + ' / ' + l.ordersLimit).join(', ');
       document.getElementById('tick').innerHTML = status.runtime.isTickRunning ? '<span class="blue">running</span>' : '<span class="good">idle</span>';
-      document.getElementById('interval').textContent = Math.round(status.config.intervalMs / 1000) + ' sec';
+      document.getElementById('errors').innerHTML = esc(status.runtime.consecutiveTickErrors || 0) + ' / ' + esc(status.config.maxConsecutiveTickErrors);
       document.getElementById('lastTick').textContent = time(status.runtime.lastTickFinishedAt || status.runtime.lastTickStartedAt);
-      document.getElementById('safety').innerHTML = status.config.tradingPaused
-        ? '<span class="pill warn">PAUSED</span>'
-        : status.runtime.circuitBreakerOpen
-          ? '<span class="pill bad">BREAKER</span>'
-          : '<span class="pill good">READY</span>';
-      document.getElementById('errors').innerHTML = esc(status.runtime.consecutiveTickErrors || 0) + ' / ' + esc(status.config.maxConsecutiveTickErrors)
-        + (status.runtime.circuitBreakerReason ? '<div class="small">' + esc(status.runtime.circuitBreakerReason) + '</div>' : '');
+      document.getElementById('safety').innerHTML = status.config.tradingPaused ? pill('warn', 'PAUSED') : status.runtime.circuitBreakerOpen ? pill('bad', 'BREAKER') : pill('good', 'READY');
       document.getElementById('config').innerHTML = [
         'strategies: ' + esc(status.config.enabledStrategies.join(', ')),
-        'trade accounts: ' + esc(status.config.accountIds.join(', ')),
-        'observe accounts: ' + esc(status.config.observeAccountIds.join(', ')),
         'buy tickers: ' + esc(status.config.buyTickers.join(', ')),
-        'scan universe: ' + esc(status.config.scanUniverse) + ', limit ' + esc(status.config.scanUniverseLimit) + ', max lot ' + esc(status.config.scanMaxLotRub) + ' RUB',
-        'market regime: ' + esc(status.config.marketRegimeEnabled) + ', tickers ' + esc(status.config.marketRegimeTickers.join(', ')),
-        'paper trading: ' + esc(status.config.paperTradingEnabled) + ', max positions ' + esc(status.config.paperMaxPositions) + ', max position ' + esc(status.config.paperMaxPositionRub) + ' RUB',
-        'buy score: min ' + esc(status.config.buyMinScore) + ', trend ' + esc(status.config.buyTrendDays) + 'd, +' + esc(status.config.buyMinTrendPercent) + '%, momentum +' + esc(status.config.buyMinMomentumPercent) + '%',
-        'max order RUB: ' + esc(status.config.maxOrderRub),
-        'max daily orders: ' + esc(status.config.maxDailyOrders),
-        'max daily RUB: ' + esc(status.config.maxDailyRub),
-        'live actions: ' + esc(status.config.liveAllowedActions.join(', ')),
-        'trading paused: ' + esc(status.config.tradingPaused),
-        'snapshot interval: ' + esc(Math.round(status.config.snapshotIntervalMs / 60000)) + ' min',
-        'signal cooldown: ' + esc(Math.round(status.config.signalCooldownMs / 60000)) + ' min',
-        'signal price change: ' + esc(status.config.signalPriceChangePercent) + '%'
+        'scan universe: ' + esc(status.config.scanUniverse) + ', ' + esc(status.config.scanUniverseLimit) + ' tickers',
+        'market tickers: ' + esc(status.config.marketRegimeTickers.join(', ')),
+        'paper: ' + esc(status.config.paperTradingEnabled) + ', fee ' + esc(status.config.paperCommissionPercent) + '%, cooldown ' + Math.round((status.config.paperReentryCooldownMs || 0) / 60000) + ' min',
+        'max order: ' + esc(status.config.maxOrderRub) + ' RUB, daily ' + esc(status.config.maxDailyOrders) + ' orders / ' + esc(status.config.maxDailyRub) + ' RUB',
+        'live actions: ' + esc(status.config.liveAllowedActions.join(', '))
       ].join('<br>');
-      document.getElementById('preview').innerHTML = rows(['Ticker', 'Status', 'Price', 'Amount', 'Reason'], preview.previews, p =>
-        '<tr><td>' + esc(p.ticker || p.figi) + '<div class="small">' + esc(p.name) + '</div></td><td>' + esc(p.status) + '</td><td class="right">' + money(p.currentPrice) + '</td><td class="right">' + money(p.estimatedOrderRub) + '</td><td>' + esc(p.reason) + '</td></tr>'
-      );
+      renderPreview('preview', preview);
+      renderPreview('previewSignals', preview);
       document.getElementById('buySignals').innerHTML = rows(['Time', 'Ticker', 'Profile', 'Score', 'Price', '1d', '3d', '5d', '10d'], buySignals.signals, s =>
-        '<tr><td>' + time(s.signaledAt) + '</td><td>' + esc(s.ticker) + '<div class="small">' + esc(s.name) + '</div></td><td class="right">' + esc(s.profileTrendDays) + '/' + esc(s.profileMinScore) + '</td><td class="right">' + esc(s.signalScore) + '</td><td class="right">' + money(s.signalPrice) + '</td><td class="right">' + percent(s.return1dPercent) + '</td><td class="right">' + percent(s.return3dPercent) + '</td><td class="right">' + percent(s.return5dPercent) + '</td><td class="right">' + percent(s.return10dPercent) + '</td></tr>'
+        '<tr><td class="nowrap">' + time(s.signaledAt) + '</td><td>' + esc(s.ticker) + '<div class="small">' + esc(s.name) + '</div></td><td class="right">' + esc(s.profileTrendDays) + '/' + esc(s.profileMinScore) + '</td><td class="right">' + esc(s.signalScore) + '</td><td class="right">' + money(s.signalPrice) + '</td><td class="right">' + percent(s.return1dPercent) + '</td><td class="right">' + percent(s.return3dPercent) + '</td><td class="right">' + percent(s.return5dPercent) + '</td><td class="right">' + percent(s.return10dPercent) + '</td></tr>'
       );
       document.getElementById('paperSummary').innerHTML = [
         'open: ' + esc(paperPositions.summary.open),
         'closed: ' + esc(paperPositions.summary.closed),
-        'total P/L: ' + money(paperPositions.summary.totalProfitRub) + ' RUB',
+        'net P/L: ' + money(paperPositions.summary.totalProfitRub) + ' RUB',
+        'gross P/L: ' + money(paperPositions.summary.grossProfitRub) + ' RUB',
+        'commission: ' + money(paperPositions.summary.totalCommissionRub) + ' RUB',
         'closed win-rate: ' + percent(paperPositions.summary.closedWinRatePercent),
-        'avg open: ' + percent(paperPositions.summary.averageOpenProfitPercent),
-        'avg closed: ' + percent(paperPositions.summary.averageClosedProfitPercent)
+        'avg open: ' + percent(paperPositions.summary.averageOpenProfitPercent)
       ].join('<br>');
-      document.getElementById('paperPositions').innerHTML = rows(['Status', 'Ticker', 'Score', 'Entry', 'Current', 'P/L', 'Reason'], paperPositions.positions, p =>
-        '<tr><td>' + esc(p.status) + '</td><td>' + esc(p.ticker) + '<div class="small">' + esc(p.name) + '</div></td><td class="right">' + esc(p.entryScore) + '</td><td class="right">' + money(p.entryPrice) + '</td><td class="right">' + money(p.currentPrice || p.exitPrice) + '</td><td class="right">' + money(p.profitRub) + '<div class="small">' + percent(p.profitPercent) + '</div></td><td>' + esc(p.exitReason || p.entryReason) + '</td></tr>'
+      document.getElementById('paperPositions').innerHTML = rows(['Status', 'Ticker', 'Score', 'Entry', 'Current', 'Gross', 'Fee', 'Net', 'Reason'], paperPositions.positions, p =>
+        '<tr><td>' + esc(p.status) + '</td><td>' + esc(p.ticker) + '<div class="small">' + esc(p.name) + '</div></td><td class="right">' + esc(p.entryScore) + '</td><td class="right">' + money(p.entryPrice) + '</td><td class="right">' + money(p.currentPrice || p.exitPrice) + '</td><td class="right">' + money(p.grossProfitRub) + '</td><td class="right">' + money(p.totalCommissionRub) + '</td><td class="right">' + money(p.profitRub) + '<div class="small">' + percent(p.profitPercent) + '</div></td><td class="reason">' + esc(p.exitReason || p.entryReason) + '</td></tr>'
       );
-      document.getElementById('accounts').innerHTML = rows(['Account', 'Mode', 'Cash RUB', 'Total', 'Positions'], accounts.accounts, a =>
+      document.getElementById('marketRegimeSummary').innerHTML = [
+        marketRegime.passed ? pill('good', 'PASSED') : pill('bad', 'BLOCKED'),
+        esc(marketRegime.reason),
+        'health: ' + percent(marketRegime.healthPercent),
+        'avg trend: ' + percent(marketRegime.avgTrendPercent)
+      ].join('<br>');
+      document.getElementById('marketRegime').innerHTML = rows(['Ticker', 'Trend', 'Passed', 'Reason'], marketRegime.items, i =>
+        '<tr><td>' + esc(i.ticker) + '<div class="small">' + esc(i.name) + '</div></td><td class="right">' + percent(i.trendPercent) + '</td><td>' + (i.passed ? pill('good', 'true') : pill('warn', 'false')) + '</td><td class="reason">' + esc(i.reason) + '</td></tr>'
+      );
+      document.getElementById('scanUniverse').innerHTML = rows(['Ticker', 'Lot RUB', 'Sector', 'Name'], scanUniverse.items.slice(0, 80), i =>
+        '<tr><td>' + esc(i.ticker) + '</td><td class="right">' + money(i.estimatedLotRub) + '</td><td>' + esc(i.sector) + '</td><td>' + esc(i.name) + '</td></tr>'
+      );
+      document.getElementById('accountsTable').innerHTML = rows(['Account', 'Mode', 'Cash RUB', 'Total', 'Positions'], accounts.accounts, a =>
         '<tr><td>' + esc(a.alias || a.accountId) + '<div class="small">' + esc(a.accountId) + '</div></td><td>' + esc(a.mode) + '</td><td class="right">' + money(a.cashRub) + '</td><td class="right">' + money(a.totalRub) + '</td><td class="right">' + esc(a.positionsCount) + '</td></tr>'
       );
       document.getElementById('limits').innerHTML = rows(['Account', 'Orders', 'Left', 'RUB used', 'RUB left'], limits.limits, l =>
@@ -259,31 +398,21 @@ export const dashboardPage = `<!doctype html>
       document.getElementById('performance').innerHTML = rows(['Account', 'Total', 'Change', 'Last', 'Drawdown'], performance.accounts, p =>
         '<tr><td>' + esc(p.accountAlias || p.accountId) + '<div class="small">' + esc(p.snapshotsCount) + ' snapshots</div></td><td class="right">' + money(p.latestTotalRub) + '</td><td class="right">' + money(p.totalChangeRub) + '<div class="small">' + percent(p.totalChangePercent) + '</div></td><td class="right">' + money(p.periodChangeRub) + '<div class="small">' + percent(p.periodChangePercent) + '</div></td><td class="right">' + money(p.maxDrawdownRub) + '<div class="small">-' + esc((p.maxDrawdownPercent || 0).toFixed(2)) + '%</div></td></tr>'
       );
-      document.getElementById('scanUniverse').innerHTML = rows(['Ticker', 'Lot RUB', 'Sector', 'Name'], scanUniverse.items.slice(0, 40), i =>
-        '<tr><td>' + esc(i.ticker) + '</td><td class="right">' + money(i.estimatedLotRub) + '</td><td>' + esc(i.sector) + '</td><td>' + esc(i.name) + '</td></tr>'
-      );
-      document.getElementById('marketRegimeSummary').innerHTML = [
-        marketRegime.passed ? '<span class="pill good">PASSED</span>' : '<span class="pill bad">BLOCKED</span>',
-        esc(marketRegime.reason),
-        'health: ' + percent(marketRegime.healthPercent),
-        'avg trend: ' + percent(marketRegime.avgTrendPercent)
-      ].join('<br>');
-      document.getElementById('marketRegime').innerHTML = rows(['Ticker', 'Trend', 'Passed', 'Reason'], marketRegime.items, i =>
-        '<tr><td>' + esc(i.ticker) + '<div class="small">' + esc(i.name) + '</div></td><td class="right">' + percent(i.trendPercent) + '</td><td>' + esc(i.passed) + '</td><td>' + esc(i.reason) + '</td></tr>'
-      );
-      document.getElementById('decisions').innerHTML = rows(['Time', 'Account', 'Mode', 'Ticker', 'Signal', 'Status', 'P/L', 'Reason'], decisions.decisions, d =>
-        '<tr><td>' + time(d.createdAt) + '</td><td>' + esc(d.accountAlias || d.accountId) + '</td><td>' + esc(d.accountMode) + '</td><td>' + esc(d.ticker || d.figi) + '</td><td>' + esc(d.signalSource) + '</td><td>' + esc(d.status) + '</td><td class="right">' + percent(d.profitPercent) + '</td><td>' + esc(d.reason) + '</td></tr>'
-      );
-      document.getElementById('trades').innerHTML = rows(['Time', 'Account', 'Ticker', 'Side', 'Lots', 'Done', 'Amount', 'Status', 'Order'], trades.trades, t =>
-        '<tr><td>' + time(t.createdAt) + '</td><td>' + esc(t.accountId) + '</td><td>' + esc(t.ticker || t.figi) + '<div class="small">' + esc(t.name) + '</div></td><td>' + esc(tradeDirection(t.direction)) + '</td><td class="right">' + esc(t.lotsRequested || t.lot || t.quantity) + '</td><td class="right">' + esc(t.lotsExecuted) + '</td><td class="right">' + money(tradeAmount(t)) + '</td><td>' + esc(t.status) + '</td><td>' + esc(t.orderId) + '</td></tr>'
-      );
-      document.getElementById('snapshots').innerHTML = rows(['Time', 'Account', 'Mode', 'Cash', 'Total', 'Positions'], snapshots.snapshots, s =>
-        '<tr><td>' + time(s.createdAt) + '</td><td>' + esc(s.accountAlias || s.accountId) + '</td><td>' + esc(s.accountMode) + '</td><td class="right">' + money(s.cashRub) + '</td><td class="right">' + money(s.totalRub) + '</td><td class="right">' + esc(s.positionsCount) + '</td></tr>'
-      );
       document.getElementById('positions').innerHTML = rows(['Account', 'Ticker', 'Name', 'Lots', 'Average', 'Current', 'P/L'], positions.positions, p =>
         '<tr><td>' + esc(p.accountAlias || p.accountId) + '</td><td>' + esc(p.ticker || p.figi) + '</td><td>' + esc(p.name) + '</td><td class="right">' + esc(p.quantityLots) + '</td><td class="right">' + money(p.averagePrice) + '</td><td class="right">' + money(p.currentPrice) + '</td><td class="right">' + percent(p.profitPercent) + '</td></tr>'
       );
+      document.getElementById('decisions').innerHTML = rows(['Time', 'Account', 'Mode', 'Ticker', 'Signal', 'Status', 'P/L', 'Reason'], decisions.decisions, d =>
+        '<tr><td class="nowrap">' + time(d.createdAt) + '</td><td>' + esc(d.accountAlias || d.accountId) + '</td><td>' + esc(d.accountMode) + '</td><td>' + esc(d.ticker || d.figi) + '</td><td>' + esc(d.signalSource) + '</td><td>' + esc(d.status) + '</td><td class="right">' + percent(d.profitPercent) + '</td><td class="reason">' + esc(d.reason) + '</td></tr>'
+      );
+      document.getElementById('trades').innerHTML = rows(['Time', 'Account', 'Ticker', 'Side', 'Lots', 'Done', 'Amount', 'Status', 'Order'], trades.trades, t =>
+        '<tr><td class="nowrap">' + time(t.createdAt) + '</td><td>' + esc(t.accountId) + '</td><td>' + esc(t.ticker || t.figi) + '<div class="small">' + esc(t.name) + '</div></td><td>' + esc(tradeDirection(t.direction)) + '</td><td class="right">' + esc(t.lotsRequested || t.lot || t.quantity) + '</td><td class="right">' + esc(t.lotsExecuted) + '</td><td class="right">' + money(tradeAmount(t)) + '</td><td>' + esc(t.status) + '</td><td>' + esc(t.orderId) + '</td></tr>'
+      );
+      document.getElementById('snapshots').innerHTML = rows(['Time', 'Account', 'Mode', 'Cash', 'Total', 'Positions'], snapshots.snapshots, s =>
+        '<tr><td class="nowrap">' + time(s.createdAt) + '</td><td>' + esc(s.accountAlias || s.accountId) + '</td><td>' + esc(s.accountMode) + '</td><td class="right">' + money(s.cashRub) + '</td><td class="right">' + money(s.totalRub) + '</td><td class="right">' + esc(s.positionsCount) + '</td></tr>'
+      );
     }
+    document.querySelectorAll('.tab').forEach(tab => tab.addEventListener('click', () => setActiveTab(tab.dataset.tab)));
+    setActiveTab(localStorage.getItem('robot-tab') || 'overview');
     document.getElementById('refresh').addEventListener('click', () => load().catch(err => alert(err.message)));
     load().catch(err => {
       document.getElementById('updated').textContent = 'error';

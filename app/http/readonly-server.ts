@@ -130,6 +130,8 @@ const safeConfig = (config: RobotConfig) => ({
     paperTradingIntervalMs: config.paperTradingIntervalMs,
     paperMaxPositions: config.paperMaxPositions,
     paperMaxPositionRub: config.paperMaxPositionRub,
+    paperCommissionPercent: config.paperCommissionPercent,
+    paperReentryCooldownMs: config.paperReentryCooldownMs,
     snapshotIntervalMs: config.snapshotIntervalMs
 });
 

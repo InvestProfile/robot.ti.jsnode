@@ -190,6 +190,8 @@ export interface RobotConfig {
     paperTradingIntervalMs: number;
     paperMaxPositions: number;
     paperMaxPositionRub: number;
+    paperCommissionPercent: number;
+    paperReentryCooldownMs: number;
 }
 
 export const getRobotConfig = (): RobotConfig => {
@@ -261,7 +263,9 @@ export const getRobotConfig = (): RobotConfig => {
         paperTradingEnabled: parseBoolean(env.ROBOT_PAPER_TRADING_ENABLED, true),
         paperTradingIntervalMs: Math.max(0, parseNumber(env.ROBOT_PAPER_TRADING_INTERVAL_MS, 15 * 60 * 1000)),
         paperMaxPositions: Math.max(1, Math.trunc(parseNumber(env.ROBOT_PAPER_MAX_POSITIONS, 10))),
-        paperMaxPositionRub: Math.max(0, parseNumber(env.ROBOT_PAPER_MAX_POSITION_RUB, 1_000))
+        paperMaxPositionRub: Math.max(0, parseNumber(env.ROBOT_PAPER_MAX_POSITION_RUB, 1_000)),
+        paperCommissionPercent: Math.max(0, parseNumber(env.ROBOT_PAPER_COMMISSION_PERCENT, 0.05)),
+        paperReentryCooldownMs: Math.max(0, parseNumber(env.ROBOT_PAPER_REENTRY_COOLDOWN_MS, 3 * 60 * 60 * 1000))
     };
 };
 

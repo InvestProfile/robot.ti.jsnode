@@ -11,6 +11,19 @@ const calculateProfitPercent = (entryPrice: number, currentPrice: number) =>
 const calculateAmount = (price: number, lot: number, quantityLots: number) =>
     price * Math.max(1, lot) * Math.max(1, quantityLots);
 
+const calculateCommission = (amountRub: number, config: RobotConfig) =>
+    amountRub * config.paperCommissionPercent / 100;
+
+const calculateNetProfitRub = (
+    entryAmountRub: number,
+    currentAmountRub: number,
+    entryCommissionRub: number,
+    exitCommissionRub: number
+) => currentAmountRub - entryAmountRub - entryCommissionRub - exitCommissionRub;
+
+const calculateNetProfitPercent = (entryAmountRub: number, netProfitRub: number) =>
+    entryAmountRub > 0 ? netProfitRub / entryAmountRub * 100 : 0;
+
 const average = (values: number[]) => values.length > 0
     ? values.reduce((sum, value) => sum + value, 0) / values.length
     : undefined;
@@ -129,16 +142,29 @@ export default class PaperTradingService {
                 attributes: ['ticker']
             })).map(position => position.ticker)
         );
+        const cooldownSince = new Date(Date.now() - config.paperReentryCooldownMs);
+        const cooldownTickers = config.paperReentryCooldownMs > 0
+            ? new Set((await PaperPositionModel.findAll({
+                where: {
+                    status: 'closed',
+                    closedAt: { [Op.gte]: cooldownSince }
+                },
+                attributes: ['ticker']
+            })).map(position => position.ticker))
+            : new Set<string>();
         let opened = 0;
 
         for (const item of scan.items) {
             if (opened >= slots) break;
             if (!item.passed || !item.instrumentUid || !item.lastPrice || item.score === undefined) continue;
             if (openTickers.has(item.ticker)) continue;
+            if (cooldownTickers.has(item.ticker)) continue;
 
             const lot = Math.max(1, Math.trunc((item.estimatedOrderRub ?? item.lastPrice) / item.lastPrice));
             const quantityLots = 1;
             const entryAmountRub = calculateAmount(item.lastPrice, lot, quantityLots);
+            const entryCommissionRub = calculateCommission(entryAmountRub, config);
+            const estimatedExitCommissionRub = calculateCommission(entryAmountRub, config);
 
             if (config.paperMaxPositionRub > 0 && entryAmountRub > config.paperMaxPositionRub) continue;
 
@@ -155,6 +181,12 @@ export default class PaperTradingService {
                 lot,
                 entryAmountRub,
                 currentAmountRub: entryAmountRub,
+                entryCommissionRub,
+                exitCommissionRub: estimatedExitCommissionRub,
+                totalCommissionRub: entryCommissionRub + estimatedExitCommissionRub,
+                grossProfitRub: 0,
+                profitRub: -entryCommissionRub - estimatedExitCommissionRub,
+                profitPercent: calculateNetProfitPercent(entryAmountRub, -entryCommissionRub - estimatedExitCommissionRub),
                 entryScore: item.score,
                 entryReason: item.reason,
                 openedAt: new Date()
@@ -185,8 +217,12 @@ export default class PaperTradingService {
 
             const highestPrice = Math.max(position.highestPrice, currentPrice);
             const currentAmountRub = calculateAmount(currentPrice, position.lot, position.quantityLots);
-            const profitRub = currentAmountRub - position.entryAmountRub;
-            const profitPercent = calculateProfitPercent(position.entryPrice, currentPrice);
+            const grossProfitRub = currentAmountRub - position.entryAmountRub;
+            const entryCommissionRub = position.entryCommissionRub ?? calculateCommission(position.entryAmountRub, config);
+            const exitCommissionRub = calculateCommission(currentAmountRub, config);
+            const totalCommissionRub = entryCommissionRub + exitCommissionRub;
+            const profitRub = calculateNetProfitRub(position.entryAmountRub, currentAmountRub, entryCommissionRub, exitCommissionRub);
+            const profitPercent = calculateNetProfitPercent(position.entryAmountRub, profitRub);
             const exit = this.getExitSignal(position, currentPrice, config);
 
             if (exit) {
@@ -197,6 +233,10 @@ export default class PaperTradingService {
                     highestPrice,
                     currentAmountRub,
                     exitAmountRub: currentAmountRub,
+                    entryCommissionRub,
+                    exitCommissionRub,
+                    totalCommissionRub,
+                    grossProfitRub,
                     profitRub,
                     profitPercent,
                     exitSource: exit.source,
@@ -212,6 +252,10 @@ export default class PaperTradingService {
                 currentPrice,
                 highestPrice,
                 currentAmountRub,
+                entryCommissionRub,
+                exitCommissionRub,
+                totalCommissionRub,
+                grossProfitRub,
                 profitRub,
                 profitPercent
             });
@@ -236,6 +280,8 @@ export default class PaperTradingService {
         const closedPositions = positions.filter(position => position.status === 'closed');
         const openProfitRub = openPositions.reduce((sum, position) => sum + (position.profitRub ?? 0), 0);
         const closedProfitRub = closedPositions.reduce((sum, position) => sum + (position.profitRub ?? 0), 0);
+        const totalCommissionRub = positions.reduce((sum, position) => sum + (position.totalCommissionRub ?? 0), 0);
+        const grossProfitRub = positions.reduce((sum, position) => sum + (position.grossProfitRub ?? 0), 0);
         const closedProfits = closedPositions
             .map(position => position.profitRub)
             .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
@@ -254,6 +300,8 @@ export default class PaperTradingService {
                 openProfitRub,
                 closedProfitRub,
                 totalProfitRub: openProfitRub + closedProfitRub,
+                grossProfitRub,
+                totalCommissionRub,
                 closedWinRatePercent: closedProfits.length > 0 ? wins / closedProfits.length * 100 : undefined,
                 averageClosedProfitPercent: average(closedProfitPercents),
                 averageOpenProfitPercent: average(openProfitPercents),

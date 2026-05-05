@@ -17,6 +17,10 @@ export class PaperPositionModel extends Model {
     public entryAmountRub!: number;
     public currentAmountRub!: number | null;
     public exitAmountRub!: number | null;
+    public entryCommissionRub!: number | null;
+    public exitCommissionRub!: number | null;
+    public totalCommissionRub!: number | null;
+    public grossProfitRub!: number | null;
     public profitRub!: number | null;
     public profitPercent!: number | null;
     public entryScore!: number | null;
@@ -86,6 +90,22 @@ PaperPositionModel.init({
         allowNull: true,
     },
     exitAmountRub: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+    },
+    entryCommissionRub: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+    },
+    exitCommissionRub: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+    },
+    totalCommissionRub: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+    },
+    grossProfitRub: {
         type: DataTypes.DOUBLE,
         allowNull: true,
     },

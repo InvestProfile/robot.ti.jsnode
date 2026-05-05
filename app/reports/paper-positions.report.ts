@@ -28,6 +28,8 @@ const main = async () => {
     console.log(`Open P/L RUB: ${format(report.summary.openProfitRub)}`);
     console.log(`Closed P/L RUB: ${format(report.summary.closedProfitRub)}`);
     console.log(`Total P/L RUB: ${format(report.summary.totalProfitRub)}`);
+    console.log(`Gross P/L RUB: ${format(report.summary.grossProfitRub)}`);
+    console.log(`Commission RUB: ${format(report.summary.totalCommissionRub)}`);
     console.log(`Closed win-rate: ${format(report.summary.closedWinRatePercent, 0)}%`);
     console.log(`Avg open P/L: ${format(report.summary.averageOpenProfitPercent)}%`);
     console.log(`Avg closed P/L: ${format(report.summary.averageClosedProfitPercent)}%`);
@@ -57,8 +59,8 @@ const main = async () => {
         ].join('  '));
     }
     console.log('');
-    console.log('Status  Ticker  Score  Entry      Current    P/L %    P/L RUB   Reason');
-    console.log('------  ------  -----  ---------  ---------  -------  --------  ------------------------------');
+    console.log('Status  Ticker  Score  Entry      Current    Gross    Fee      Net %    Net RUB   Reason');
+    console.log('------  ------  -----  ---------  ---------  -------  -------  -------  --------  ------------------------------');
 
     for (const position of report.positions) {
         console.log([
@@ -67,6 +69,8 @@ const main = async () => {
             String(position.entryScore ?? '-').padStart(5),
             format(position.entryPrice).padStart(9),
             format(position.currentPrice ?? position.exitPrice).padStart(9),
+            format(position.grossProfitRub).padStart(7),
+            format(position.totalCommissionRub).padStart(7),
             format(position.profitPercent).padStart(7),
             format(position.profitRub).padStart(8),
             position.exitReason ?? position.entryReason ?? '-'

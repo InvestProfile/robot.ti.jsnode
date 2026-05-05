@@ -176,6 +176,8 @@ ROBOT_PAPER_TRADING_ENABLED=true
 ROBOT_PAPER_TRADING_INTERVAL_MS=900000
 ROBOT_PAPER_MAX_POSITIONS=10
 ROBOT_PAPER_MAX_POSITION_RUB=1000
+ROBOT_PAPER_COMMISSION_PERCENT=0.05
+ROBOT_PAPER_REENTRY_COOLDOWN_MS=10800000
 ROBOT_MIN_PROFIT_PERCENT=0.5
 ROBOT_STOP_LOSS_PERCENT=3
 ROBOT_TRAILING_STOP_PERCENT=2
@@ -267,8 +269,11 @@ paper analytics only: it does not post orders and it is available through
 
 `ROBOT_PAPER_TRADING_ENABLED=true` runs a virtual portfolio over the same scan
 targets. It opens paper positions from passed buy signals, updates current P/L,
-and closes them by paper stop-loss, trailing-stop, or profit-take. This does not
-post broker orders and is available through `/api/paper-positions`.
+and closes them by paper stop-loss, trailing-stop, or profit-take. Paper P/L is
+net of `ROBOT_PAPER_COMMISSION_PERCENT` on entry and estimated exit, while
+`ROBOT_PAPER_REENTRY_COOLDOWN_MS` prevents immediately reopening the same ticker
+after a paper close. This does not post broker orders and is available through
+`/api/paper-positions`.
 
 `ROBOT_MARKET_REGIME_ENABLED=true` blocks new buy signals when the market
 backdrop is weak. It checks `ROBOT_MARKET_REGIME_TICKERS` against their
