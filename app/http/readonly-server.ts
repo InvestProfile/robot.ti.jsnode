@@ -25,6 +25,7 @@ import StrategyEvidenceService from '../services/strategy-evidence.service';
 import SocialSignalService from '../services/social-signal.service';
 import SellBrainService from '../services/sell-brain.service';
 import SocialCollectorService from '../services/social-collector.service';
+import SocialConsensusService from '../services/social-consensus.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -138,6 +139,10 @@ const safeConfig = (config: RobotConfig) => ({
     paperMaxPositionRub: config.paperMaxPositionRub,
     paperCommissionPercent: config.paperCommissionPercent,
     paperReentryCooldownMs: config.paperReentryCooldownMs,
+    socialConsensusEnabled: config.socialConsensusEnabled,
+    socialConsensusDays: config.socialConsensusDays,
+    socialConsensusMaxScoreAdjustment: config.socialConsensusMaxScoreAdjustment,
+    socialConsensusMinActors: config.socialConsensusMinActors,
     snapshotIntervalMs: config.snapshotIntervalMs
 });
 
@@ -440,6 +445,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/social-collector') {
         json(res, 200, await SocialCollectorService.status());
+        return;
+    }
+
+    if (url.pathname === '/api/social-consensus') {
+        json(res, 200, await SocialConsensusService.getConsensus({
+            days: config.socialConsensusDays,
+            maxScoreAdjustment: config.socialConsensusMaxScoreAdjustment,
+            minActors: config.socialConsensusMinActors
+        }));
         return;
     }
 

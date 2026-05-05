@@ -271,6 +271,9 @@ export const dashboardPage = `<!doctype html>
           <div class="table-wrap"><table id="socialSignals"></table></div>
         </section>
         <section>
+          <h2>Social Consensus <span class="help" title="Агрегатор мнений по тикеру. Берет buy/sell действия наблюдаемых профилей, взвешивает их по effective confidence и дает небольшой бонус/штраф к score-buy.">?</span></h2>
+          <div id="socialConsensusSummary" class="small" style="margin:8px 0 12px"></div>
+          <div class="table-wrap" style="margin-bottom:14px"><table id="socialConsensus"></table></div>
           <h2>Collector Health <span class="help" title="Отдельный read-only процесс для Pulse/социальных профилей. Если он упадет, основной робот продолжит работать.">?</span></h2>
           <div id="socialCollectorSummary" class="small" style="margin:8px 0 12px"></div>
           <div class="table-wrap" style="margin-bottom:14px"><table id="socialProfiles"></table></div>
@@ -363,7 +366,7 @@ export const dashboardPage = `<!doctype html>
       );
     }
     async function load() {
-      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions, marketRegime, strategyEvidence, socialSignals, socialCollector, sellBrain] = await Promise.all([
+      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions, marketRegime, strategyEvidence, socialSignals, socialCollector, socialConsensus, sellBrain] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
         api('/api/limits'),
@@ -380,6 +383,7 @@ export const dashboardPage = `<!doctype html>
         api('/api/strategy-evidence'),
         api('/api/social-signals?limit=100'),
         api('/api/social-collector'),
+        api('/api/social-consensus'),
         api('/api/sell-brain')
       ]);
       const readiness = getReadiness(status, limits, marketRegime, paperPositions, preview);
@@ -404,6 +408,7 @@ export const dashboardPage = `<!doctype html>
         'scan universe: ' + esc(status.config.scanUniverse) + ', ' + esc(status.config.scanUniverseLimit) + ' tickers',
         'market tickers: ' + esc(status.config.marketRegimeTickers.join(', ')),
         'paper: ' + esc(status.config.paperTradingEnabled) + ', fee ' + esc(status.config.paperCommissionPercent) + '%, cooldown ' + Math.round((status.config.paperReentryCooldownMs || 0) / 60000) + ' min',
+        'social consensus: ' + esc(status.config.socialConsensusEnabled) + ', ' + esc(status.config.socialConsensusDays) + 'd, +/-' + esc(status.config.socialConsensusMaxScoreAdjustment),
         'sell brain: hold winners until ' + esc(status.config.sellHoldWinnerMinProfitPercent) + '%, unless drawdown > ' + esc(status.config.sellHoldWinnerMaxDrawdownPercent) + '%',
         'max order: ' + esc(status.config.maxOrderRub) + ' RUB, daily ' + esc(status.config.maxDailyOrders) + ' orders / ' + esc(status.config.maxDailyRub) + ' RUB',
         'live actions: ' + esc(status.config.liveAllowedActions.join(', '))
@@ -460,6 +465,15 @@ export const dashboardPage = `<!doctype html>
       ].join('<br>');
       document.getElementById('socialSignals').innerHTML = rows(['Time', 'Actor', 'Return', 'Ticker', 'Action', 'Confidence', 'Reason'], socialSignals.signals, s =>
         '<tr><td class="nowrap">' + time(s.observedAt) + '</td><td>' + esc(s.actorName || s.actorKey) + '<div class="small">' + esc(s.source) + '</div></td><td class="right">' + percent(s.actorReturnPercent) + '</td><td>' + esc(s.ticker) + '<div class="small">' + esc(s.name) + '</div></td><td>' + esc(s.action) + '</td><td class="right">' + percent(s.confidence) + '</td><td class="reason">' + esc(s.reason) + '</td></tr>'
+      );
+      document.getElementById('socialConsensusSummary').innerHTML = [
+        'window: ' + esc(socialConsensus.days) + 'd',
+        'max score adjustment: +/-' + esc(socialConsensus.maxScoreAdjustment),
+        'min actors: ' + esc(socialConsensus.minActors),
+        'tickers: ' + esc(socialConsensus.items.length)
+      ].join('<br>');
+      document.getElementById('socialConsensus').innerHTML = rows(['Ticker', 'Mood', 'Score', 'Adj', 'Actors', 'Signals', 'Buy/Sell', 'Weights', 'Reason'], socialConsensus.items, s =>
+        '<tr><td>' + esc(s.ticker) + '<div class="small">' + esc(s.name) + '</div></td><td>' + (s.mood === 'bullish' ? pill('good', s.mood) : s.mood === 'bearish' ? pill('bad', s.mood) : pill('warn', s.mood)) + '</td><td class="right">' + esc(s.score) + '</td><td class="right">' + esc(s.scoreAdjustment) + '</td><td class="right">' + esc(s.actors) + '</td><td class="right">' + esc(s.signals) + '</td><td class="right">' + esc(s.buy) + ' / ' + esc(s.sell) + '</td><td class="right">' + esc(s.bullishWeight) + ' / ' + esc(s.bearishWeight) + '</td><td class="reason">' + esc(s.reason) + '</td></tr>'
       );
       document.getElementById('socialCollectorSummary').innerHTML = [
         socialCollector.ok ? pill('good', 'OK') : pill('warn', 'WAITING'),

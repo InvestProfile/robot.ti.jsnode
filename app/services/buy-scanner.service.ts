@@ -3,6 +3,7 @@ import InstrumentsService from './instruments.service';
 import MarketDataService from './marketData.service';
 import ScoreBuyStrategy, { BuyScoreAnalysis } from '../strategies/score-buy.strategy';
 import MarketRegimeService from './market-regime.service';
+import SocialConsensusService from './social-consensus.service';
 
 type SharesResponse = Awaited<ReturnType<typeof InstrumentsService.getShares>>;
 type ShareInstrument = NonNullable<NonNullable<SharesResponse>['instruments']>[number];
@@ -37,6 +38,17 @@ export default class BuyScannerService {
         );
         const prices = await MarketDataService.getLastPrices(selected.map(instrument => instrument.uid));
         const marketRegime = await MarketRegimeService.evaluate(config);
+        const socialConsensus = config.socialConsensusEnabled
+            ? await SocialConsensusService.getConsensus({
+                days: config.socialConsensusDays,
+                maxScoreAdjustment: config.socialConsensusMaxScoreAdjustment,
+                minActors: config.socialConsensusMinActors,
+                tickers: selected.map(instrument => instrument.ticker)
+            })
+            : undefined;
+        const socialByTicker = new Map(
+            socialConsensus?.items.map(item => [item.ticker, item]) ?? []
+        );
         const items: BuyScanItem[] = [];
 
         for (const instrument of selected) {
@@ -60,6 +72,7 @@ export default class BuyScannerService {
                 maxOrderRub: Number.MAX_SAFE_INTEGER
             };
             const candles = await MarketDataService.getDailyCandles(instrument.uid, scanConfig.buyTrendDays);
+            const social = socialByTicker.get(instrument.ticker.toUpperCase());
             const analysis = ScoreBuyStrategy.analyze({
                 accountId: 'scan',
                 figi: instrument.figi,
@@ -70,7 +83,11 @@ export default class BuyScannerService {
                 lastPrice,
                 availableCashRub: Number.MAX_SAFE_INTEGER,
                 alreadyInPortfolio: false,
-                dailyCandles: candles
+                dailyCandles: candles,
+                socialScoreAdjustment: social?.scoreAdjustment,
+                socialScore: social?.score,
+                socialMood: social?.mood,
+                socialReason: social?.reason
             }, scanConfig);
 
             items.push({

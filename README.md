@@ -187,6 +187,10 @@ ROBOT_SOCIAL_REQUEST_MIN_DELAY_MS=5000
 ROBOT_SOCIAL_REQUEST_MAX_DELAY_MS=10000
 ROBOT_SOCIAL_INSTRUMENT_LIMIT=100
 ROBOT_SOCIAL_OPERATION_LIMIT=1
+ROBOT_SOCIAL_CONSENSUS_ENABLED=true
+ROBOT_SOCIAL_CONSENSUS_DAYS=3
+ROBOT_SOCIAL_CONSENSUS_MAX_SCORE_ADJUSTMENT=10
+ROBOT_SOCIAL_CONSENSUS_MIN_ACTORS=1
 ROBOT_MIN_PROFIT_PERCENT=0.5
 ROBOT_STOP_LOSS_PERCENT=3
 ROBOT_TRAILING_STOP_PERCENT=2
@@ -312,6 +316,12 @@ followers, 30-day operations, portfolio range, and 12-month return. It turns
 those facts plus recent social signals into `autoConfidence` on a 0-100 scale,
 then combines manual and automatic scores into `effectiveConfidence` for future
 social scoring.
+`/api/social-consensus` and `npm run social:consensus` aggregate recent social
+signals by ticker. The consensus weights each actor by `effectiveConfidence`,
+classifies the ticker as bullish/bearish/mixed/quiet, and applies a bounded
+`score-buy` adjustment controlled by `ROBOT_SOCIAL_CONSENSUS_MAX_SCORE_ADJUSTMENT`.
+This is intentionally a small buy-score modifier, not a direct social-trading
+order.
 
 `ROBOT_MARKET_REGIME_ENABLED=true` blocks new buy signals when the market
 backdrop is weak. It checks `ROBOT_MARKET_REGIME_TICKERS` against their

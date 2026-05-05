@@ -82,14 +82,21 @@ export default class ScoreBuyStrategy {
                     ? 5
                     : 0;
         const volumeScore = averageVolume > 0 ? 15 : 0;
-        const score = Math.round(trendScore + momentumScore + pullbackScore + volatilityScore + volumeScore);
+        const baseScore = Math.round(trendScore + momentumScore + pullbackScore + volatilityScore + volumeScore);
+        const socialScoreAdjustment = Number.isFinite(input.socialScoreAdjustment)
+            ? Math.round(input.socialScoreAdjustment ?? 0)
+            : 0;
+        const score = Math.round(clamp(baseScore + socialScoreAdjustment, 0, 100));
         const estimatedLotRub = input.lastPrice * Math.max(1, input.lot);
         const factors = {
+            baseScore,
             trendScore,
             momentumScore,
             pullbackScore,
             volatilityScore,
             volumeScore,
+            socialScoreAdjustment,
+            socialScore: input.socialScore ?? 0,
             trendPercent,
             momentumPercent,
             belowHighPercent,
@@ -101,7 +108,7 @@ export default class ScoreBuyStrategy {
             return {
                 score,
                 passed: false,
-                reason: `score ${score}/${config.buyMinScore}: trend ${trendPercent.toFixed(2)}%, momentum ${momentumPercent.toFixed(2)}%, below high ${belowHighPercent.toFixed(2)}%, volatility ${volatilityPercent.toFixed(2)}%`,
+                reason: `score ${score}/${config.buyMinScore}: base ${baseScore}, social ${socialScoreAdjustment}, trend ${trendPercent.toFixed(2)}%, momentum ${momentumPercent.toFixed(2)}%, below high ${belowHighPercent.toFixed(2)}%, volatility ${volatilityPercent.toFixed(2)}%${input.socialReason ? `, ${input.socialReason}` : ''}`,
                 estimatedOrderRub: estimatedLotRub,
                 factors
             };
@@ -130,7 +137,7 @@ export default class ScoreBuyStrategy {
         return {
             score,
             passed: true,
-            reason: `score ${score}/${config.buyMinScore}: trend ${trendPercent.toFixed(2)}%, momentum ${momentumPercent.toFixed(2)}%, below high ${belowHighPercent.toFixed(2)}%, volatility ${volatilityPercent.toFixed(2)}%`,
+            reason: `score ${score}/${config.buyMinScore}: base ${baseScore}, social ${socialScoreAdjustment}, trend ${trendPercent.toFixed(2)}%, momentum ${momentumPercent.toFixed(2)}%, below high ${belowHighPercent.toFixed(2)}%, volatility ${volatilityPercent.toFixed(2)}%${input.socialReason ? `, ${input.socialReason}` : ''}`,
             estimatedOrderRub: estimatedLotRub,
             factors
         };

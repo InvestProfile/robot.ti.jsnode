@@ -36,6 +36,10 @@ export interface BuyStrategyInput {
     alreadyInPortfolio: boolean;
     dailyCloses?: number[];
     dailyCandles?: DailyCandle[];
+    socialScoreAdjustment?: number;
+    socialScore?: number;
+    socialMood?: string;
+    socialReason?: string;
 }
 
 export interface DailyCandle {

@@ -21,6 +21,7 @@
     "sell:brain": "npm run build && node build/reports/sell-brain.report.js",
     "social:collect": "npm run build && node build/reports/social-collector.report.js",
     "social:collector": "npm run build && node build/reports/social-collector.report.js --loop",
+    "social:consensus": "npm run build && node build/reports/social-consensus.report.js",
     "cleanup:decisions": "npm run build && node build/reports/cleanup-decisions.report.js",
     "preflight": "npm run build && node build/reports/preflight.report.js",
     "preflight:live": "npm run build && node build/reports/preflight.report.js --live",

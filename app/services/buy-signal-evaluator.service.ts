@@ -9,6 +9,7 @@ import { TradeSignal } from '../strategies/trade-signal';
 import ScoreBuyStrategy, { BuyScoreAnalysis } from '../strategies/score-buy.strategy';
 import { quotationToNumber } from '../utils/money';
 import MarketRegimeService from './market-regime.service';
+import SocialConsensusService from './social-consensus.service';
 
 type SharesResponse = Awaited<ReturnType<typeof InstrumentsService.getShares>>;
 type ShareInstrument = NonNullable<NonNullable<SharesResponse>['instruments']>[number];
@@ -59,6 +60,17 @@ export default class BuySignalEvaluatorService {
             .filter((instrument): instrument is ShareInstrument => Boolean(instrument?.uid && instrument?.figi));
         const lastPrices = await marketData.getLastPrices(buyInstruments.map(instrument => instrument.uid));
         const marketRegime = await MarketRegimeService.evaluate(config);
+        const socialConsensus = config.socialConsensusEnabled
+            ? await SocialConsensusService.getConsensus({
+                days: config.socialConsensusDays,
+                maxScoreAdjustment: config.socialConsensusMaxScoreAdjustment,
+                minActors: config.socialConsensusMinActors,
+                tickers: buyInstruments.map(instrument => instrument.ticker)
+            })
+            : undefined;
+        const socialByTicker = new Map(
+            socialConsensus?.items.map(item => [item.ticker, item]) ?? []
+        );
         const previews: BuySignalPreview[] = [];
 
         for (const instrument of buyInstruments) {
@@ -91,6 +103,7 @@ export default class BuySignalEvaluatorService {
             const dailyCloses = buyConfig.enabledStrategies.includes('trend-follow-buy')
                 ? await marketData.getDailyClosePrices(instrument.uid, buyConfig.buyTrendDays)
                 : undefined;
+            const social = socialByTicker.get(instrument.ticker.toUpperCase());
             const signal = StrategyEngine.evaluateBuy({
                 accountId,
                 figi: instrument.figi,
@@ -102,7 +115,11 @@ export default class BuySignalEvaluatorService {
                 availableCashRub: remainingCashRub,
                 alreadyInPortfolio,
                 dailyCloses,
-                dailyCandles
+                dailyCandles,
+                socialScoreAdjustment: social?.scoreAdjustment,
+                socialScore: social?.score,
+                socialMood: social?.mood,
+                socialReason: social?.reason
             }, buyConfig);
             const scoreAnalysis = buyConfig.enabledStrategies.includes('score-buy')
                 ? ScoreBuyStrategy.analyze({
@@ -116,7 +133,11 @@ export default class BuySignalEvaluatorService {
                     availableCashRub: remainingCashRub,
                     alreadyInPortfolio,
                     dailyCloses,
-                    dailyCandles
+                    dailyCandles,
+                    socialScoreAdjustment: social?.scoreAdjustment,
+                    socialScore: social?.score,
+                    socialMood: social?.mood,
+                    socialReason: social?.reason
                 }, buyConfig)
                 : undefined;
             const risk = RiskManagerService.evaluateBuySignal({
