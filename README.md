@@ -306,6 +306,12 @@ Pulse parser used the internal `invest-gw/social/v1/profile/{uid}` endpoints
 with `sessionId=psid`, `limit=100` for instruments, `limit=1` for the latest
 operation, and a random 5-10 second delay before requests; those controls are
 kept as explicit environment settings.
+`confidence` is the manual prior from the old profile JSON on a 0-10 scale. The
+collector also reads public profile-page stats when a session is available:
+followers, 30-day operations, portfolio range, and 12-month return. It turns
+those facts plus recent social signals into `autoConfidence` on a 0-100 scale,
+then combines manual and automatic scores into `effectiveConfidence` for future
+social scoring.
 
 `ROBOT_MARKET_REGIME_ENABLED=true` blocks new buy signals when the market
 backdrop is weak. It checks `ROBOT_MARKET_REGIME_TICKERS` against their

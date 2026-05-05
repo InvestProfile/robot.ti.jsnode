@@ -13,6 +13,18 @@ export class SocialProfileModel extends Model {
     public confidence!: number | null;
     public activity!: number;
     public description!: string | null;
+    public followersCount!: number | null;
+    public followingCount!: number | null;
+    public monthOperationsCount!: number | null;
+    public portfolioLowerRub!: number | null;
+    public portfolioUpperRub!: number | null;
+    public autoConfidence!: number | null;
+    public effectiveConfidence!: number | null;
+    public recentSignalsCount!: number;
+    public recentBuySignalsCount!: number;
+    public recentSellSignalsCount!: number;
+    public scoreReason!: string | null;
+    public scoreUpdatedAt!: Date | null;
     public minReturnPercent!: number;
     public lastReturnPercent!: number | null;
     public status!: SocialProfileStatus;
@@ -59,6 +71,57 @@ SocialProfileModel.init({
     },
     description: {
         type: DataTypes.STRING,
+        allowNull: true,
+    },
+    followersCount: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
+    followingCount: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
+    monthOperationsCount: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
+    portfolioLowerRub: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+    },
+    portfolioUpperRub: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+    },
+    autoConfidence: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+    },
+    effectiveConfidence: {
+        type: DataTypes.DOUBLE,
+        allowNull: true,
+    },
+    recentSignalsCount: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+    },
+    recentBuySignalsCount: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+    },
+    recentSellSignalsCount: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: 0,
+    },
+    scoreReason: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    scoreUpdatedAt: {
+        type: DataTypes.DATE,
         allowNull: true,
     },
     minReturnPercent: {

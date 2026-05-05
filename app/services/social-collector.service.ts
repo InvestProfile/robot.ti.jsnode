@@ -1,5 +1,6 @@
 import { getEnv } from '../config/env.config';
 import SocialProfileModel from '../models/social-profile.model';
+import SocialProfileScoreService from './social-profile-score.service';
 import SocialSignalService from './social-signal.service';
 
 interface ConfiguredProfile {
@@ -117,6 +118,29 @@ const mapAction = (action: string | undefined) => {
     return 'watch';
 };
 
+const parseNumericMatch = (source: string, pattern: RegExp) => {
+    const match = source.match(pattern);
+    if (!match?.[1]) return null;
+    const value = Number(match[1]);
+
+    return Number.isFinite(value) ? value : null;
+};
+
+const extractProfileStatsFromHtml = (html: string, profileUid: string) => {
+    const profileIndex = html.indexOf(`"id":"${profileUid}"`);
+    if (profileIndex === -1) return {};
+
+    const fragment = html.slice(profileIndex, profileIndex + 5_000);
+    return {
+        followersCount: parseNumericMatch(fragment, /"followersCount":(\d+)/),
+        followingCount: parseNumericMatch(fragment, /"followingCount":(\d+)/),
+        monthOperationsCount: parseNumericMatch(fragment, /"monthOperationsCount":(\d+)/),
+        lastReturnPercent: parseNumericMatch(fragment, /"yearRelativeYield":(-?\d+(?:\.\d+)?)/),
+        portfolioLowerRub: parseNumericMatch(fragment, /"totalAmountRange":\{"lower":(-?\d+(?:\.\d+)?)/),
+        portfolioUpperRub: parseNumericMatch(fragment, /"totalAmountRange":\{"lower":-?\d+(?:\.\d+)?,"upper":(-?\d+(?:\.\d+)?)/)
+    };
+};
+
 export default class SocialCollectorService {
     static getConfig() {
         const env = getEnv();
@@ -155,6 +179,33 @@ export default class SocialCollectorService {
         return response.json() as Promise<any>;
     }
 
+    private static async requestText(url: string, cookieHeader: string) {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                accept: 'text/html,application/xhtml+xml',
+                cookie: cookieHeader,
+                referer: 'https://www.tbank.ru/invest/social/',
+                'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X) AppleWebKit/537.36 T-Invest-Robot-SocialCollector/1.0'
+            }
+        });
+
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status} ${response.statusText}`);
+        }
+
+        return response.text();
+    }
+
+    private static async fetchProfileStats(profile: ConfiguredProfile, cookieHeader: string, config: ReturnType<typeof SocialCollectorService.getConfig>) {
+        if (!profile.profileUid || !profile.profileUrl) return {};
+
+        await randomDelay(config.requestMinDelayMs, config.requestMaxDelayMs);
+        const html = await this.requestText(profile.profileUrl, cookieHeader);
+
+        return extractProfileStatsFromHtml(html, profile.profileUid);
+    }
+
     private static async collectProfile(profile: ConfiguredProfile, config: ReturnType<typeof SocialCollectorService.getConfig>) {
         if (!profile.profileUid) {
             return {
@@ -175,6 +226,7 @@ export default class SocialCollectorService {
         const cookieHeader = buildCookieHeader(config.authCookie, config.sessionId);
         const sessionQuery = config.sessionId ? `&sessionId=${encodeURIComponent(config.sessionId)}` : '';
         const today = new Date().toISOString().slice(0, 10);
+        const profileStats = await this.fetchProfileStats(profile, cookieHeader, config);
         const instrumentUrl = `https://www.tbank.ru/api/invest-gw/social/v1/profile/${profile.profileUid}/instrument?limit=${config.instrumentLimit}${sessionQuery}`;
 
         await randomDelay(config.requestMinDelayMs, config.requestMaxDelayMs);
@@ -218,7 +270,8 @@ export default class SocialCollectorService {
         return {
             status: 'ready' as const,
             signals,
-            lastError: null
+            lastError: null,
+            profileStats
         };
     }
 
@@ -292,7 +345,8 @@ export default class SocialCollectorService {
                 await profile.update({
                     status: result.status,
                     lastCheckedAt: new Date(),
-                    lastError: result.lastError
+                    lastError: result.lastError,
+                    ...result.profileStats
                 });
             } catch (error) {
                 errors += 1;
@@ -304,7 +358,12 @@ export default class SocialCollectorService {
             }
         }
 
+        const profileScores = await SocialProfileScoreService.refresh();
         const latestSignals = await SocialSignalService.list(20);
+        const refreshedProfiles = await SocialProfileModel.findAll({
+            order: [['updatedAt', 'DESC']],
+            limit: 500
+        });
 
         return {
             ok: errors === 0,
@@ -323,13 +382,15 @@ export default class SocialCollectorService {
             sync,
             checked,
             errors,
-            profiles: profiles.map(profile => profile.toJSON()),
+            profileScores,
+            profiles: refreshedProfiles.map(profile => profile.toJSON()),
             signalsSummary: latestSignals.summary
         };
     }
 
     static async status() {
         const config = this.getConfig();
+        await SocialProfileScoreService.refresh();
         const profiles = await SocialProfileModel.findAll({
             order: [['updatedAt', 'DESC']],
             limit: 500
