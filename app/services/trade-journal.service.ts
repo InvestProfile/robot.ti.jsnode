@@ -37,8 +37,7 @@ export default class TradeJournalService {
             decision.status,
             decision.signalSource ?? '',
             this.normalizeReason(decision.reason),
-            decision.quantityLots ?? '',
-            decision.estimatedOrderRub ? Math.round(decision.estimatedOrderRub) : ''
+            decision.quantityLots ?? ''
         ].join('|');
     }
 
