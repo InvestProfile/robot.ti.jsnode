@@ -127,7 +127,7 @@ const parseNumericMatch = (source: string, pattern: RegExp) => {
 };
 
 const extractProfileStatsFromHtml = (html: string, profileUid: string) => {
-    const profileIndex = html.indexOf(`"id":"${profileUid}"`);
+    const profileIndex = html.lastIndexOf(`"id":"${profileUid}"`);
     if (profileIndex === -1) return {};
 
     const fragment = html.slice(profileIndex, profileIndex + 5_000);
