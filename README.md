@@ -45,6 +45,8 @@ npm run optimize:buy
 npm run optimize:buy -- --days 120 --windows 10,20,30 --thresholds 60,65,70 SBER T YDEX
 npm run signals:buy
 npm run signals:buy -- --capture
+npm run paper
+npm run paper -- --tick
 ```
 
 To estimate or apply a safe cleanup of noisy `dry-run` / `skip` decisions:
@@ -104,6 +106,7 @@ Read-only endpoints:
 - `/api/buy-backtest`
 - `/api/buy-optimize`
 - `/api/buy-signals`
+- `/api/paper-positions`
 - `/api/decisions`
 - `/api/trades`
 - `/api/snapshots`
@@ -162,6 +165,10 @@ ROBOT_MAX_DAILY_RUB=2000
 ROBOT_SIGNAL_COOLDOWN_MS=1800000
 ROBOT_SIGNAL_PRICE_CHANGE_PERCENT=1
 ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS=900000
+ROBOT_PAPER_TRADING_ENABLED=true
+ROBOT_PAPER_TRADING_INTERVAL_MS=900000
+ROBOT_PAPER_MAX_POSITIONS=10
+ROBOT_PAPER_MAX_POSITION_RUB=1000
 ROBOT_MIN_PROFIT_PERCENT=0.5
 ROBOT_STOP_LOSS_PERCENT=3
 ROBOT_TRAILING_STOP_PERCENT=2
@@ -250,3 +257,8 @@ list. The robot updates captured signals' 1/3/5/10 trading-day returns from
 daily candles on the `ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS` interval. This is
 paper analytics only: it does not post orders and it is available through
 `/api/buy-signals`.
+
+`ROBOT_PAPER_TRADING_ENABLED=true` runs a virtual portfolio over the same scan
+targets. It opens paper positions from passed buy signals, updates current P/L,
+and closes them by paper stop-loss, trailing-stop, or profit-take. This does not
+post broker orders and is available through `/api/paper-positions`.

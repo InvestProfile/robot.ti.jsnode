@@ -43,6 +43,10 @@ interface EnvConfig {
     ROBOT_SIGNAL_COOLDOWN_MS: string | undefined;
     ROBOT_SIGNAL_PRICE_CHANGE_PERCENT: string | undefined;
     ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS: string | undefined;
+    ROBOT_PAPER_TRADING_ENABLED: string | undefined;
+    ROBOT_PAPER_TRADING_INTERVAL_MS: string | undefined;
+    ROBOT_PAPER_MAX_POSITIONS: string | undefined;
+    ROBOT_PAPER_MAX_POSITION_RUB: string | undefined;
     ROBOT_HTTP_ENABLED: string | undefined;
     ROBOT_HTTP_PORT: string | undefined;
     ROBOT_WEB_USERNAME: string | undefined;
@@ -92,6 +96,10 @@ export const getEnv = () => {
         ROBOT_SIGNAL_COOLDOWN_MS: process.env.ROBOT_SIGNAL_COOLDOWN_MS,
         ROBOT_SIGNAL_PRICE_CHANGE_PERCENT: process.env.ROBOT_SIGNAL_PRICE_CHANGE_PERCENT,
         ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS: process.env.ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS,
+        ROBOT_PAPER_TRADING_ENABLED: process.env.ROBOT_PAPER_TRADING_ENABLED,
+        ROBOT_PAPER_TRADING_INTERVAL_MS: process.env.ROBOT_PAPER_TRADING_INTERVAL_MS,
+        ROBOT_PAPER_MAX_POSITIONS: process.env.ROBOT_PAPER_MAX_POSITIONS,
+        ROBOT_PAPER_MAX_POSITION_RUB: process.env.ROBOT_PAPER_MAX_POSITION_RUB,
         ROBOT_HTTP_ENABLED: process.env.ROBOT_HTTP_ENABLED,
         ROBOT_HTTP_PORT: process.env.ROBOT_HTTP_PORT,
         ROBOT_WEB_USERNAME: process.env.ROBOT_WEB_USERNAME,

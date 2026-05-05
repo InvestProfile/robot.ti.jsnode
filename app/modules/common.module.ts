@@ -10,6 +10,7 @@ import TradesService from '../services/trades.service';
 import OrderReconciliationService from '../services/order-reconciliation.service';
 import PortfolioSnapshotService from '../services/portfolio-snapshot.service';
 import BuySignalJournalService from '../services/buy-signal-journal.service';
+import PaperTradingService from '../services/paper-trading.service';
 import StrategyEngine from '../strategies/strategy-engine';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
 import { normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
@@ -28,6 +29,7 @@ let consecutiveTickErrors = 0;
 let circuitBreakerOpen = false;
 let circuitBreakerReason: string | undefined;
 let isBuySignalJournalRunning = false;
+let isPaperTradingRunning = false;
 
 export interface TradingProcess {
     stop: () => void;
@@ -545,6 +547,24 @@ const executeBuySignalJournalTick = async (config: RobotConfig) => {
     }
 };
 
+const executePaperTradingTick = async (config: RobotConfig) => {
+    if (isPaperTradingRunning) {
+        console.log('Paper trading tick is still running, skip this interval.');
+        return;
+    }
+
+    isPaperTradingRunning = true;
+
+    try {
+        const result = await PaperTradingService.tick(config);
+        console.log(`Paper trading tick finished. opened=${result.opened} updated=${result.updated} closed=${result.closed}`);
+    } catch (error) {
+        console.error('Error occurred in paper trading tick:', error);
+    } finally {
+        isPaperTradingRunning = false;
+    }
+};
+
 export function startTradingProcess(config: RobotConfig = getRobotConfig()): TradingProcess {
     console.log('Trading process started.');
     console.log('Accounts: ' + config.accountIds.join(', '));
@@ -569,6 +589,8 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
     console.log('Max consecutive tick errors: ' + config.maxConsecutiveTickErrors);
     console.log('Snapshot interval: ' + config.snapshotIntervalMs + ' ms');
     console.log('Buy signal journal interval: ' + config.buySignalJournalIntervalMs + ' ms');
+    console.log('Paper trading: ' + config.paperTradingEnabled);
+    console.log('Paper trading interval: ' + config.paperTradingIntervalMs + ' ms');
 
     void executeRobotTick(config);
     const interval = setInterval(() => void executeRobotTick(config), config.intervalMs);
@@ -580,10 +602,19 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
         void executeBuySignalJournalTick(config);
     }
 
+    const paperTradingInterval = config.paperTradingEnabled && config.paperTradingIntervalMs > 0
+        ? setInterval(() => void executePaperTradingTick(config), config.paperTradingIntervalMs)
+        : undefined;
+
+    if (config.paperTradingEnabled && config.paperTradingIntervalMs > 0) {
+        void executePaperTradingTick(config);
+    }
+
     return {
         stop: () => {
             clearInterval(interval);
             if (buySignalJournalInterval) clearInterval(buySignalJournalInterval);
+            if (paperTradingInterval) clearInterval(paperTradingInterval);
             console.log('Trading process stopped.');
         }
     };

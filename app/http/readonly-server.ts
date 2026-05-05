@@ -19,6 +19,7 @@ import BuyOptimizerService from '../services/buy-optimizer.service';
 import BuySignalJournalService from '../services/buy-signal-journal.service';
 import ScanUniverseService from '../services/scan-universe.service';
 import ScanTargetsService from '../services/scan-targets.service';
+import PaperTradingService from '../services/paper-trading.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -119,6 +120,10 @@ const safeConfig = (config: RobotConfig) => ({
     signalCooldownMs: config.signalCooldownMs,
     signalPriceChangePercent: config.signalPriceChangePercent,
     buySignalJournalIntervalMs: config.buySignalJournalIntervalMs,
+    paperTradingEnabled: config.paperTradingEnabled,
+    paperTradingIntervalMs: config.paperTradingIntervalMs,
+    paperMaxPositions: config.paperMaxPositions,
+    paperMaxPositionRub: config.paperMaxPositionRub,
     snapshotIntervalMs: config.snapshotIntervalMs
 });
 
@@ -383,6 +388,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
     if (url.pathname === '/api/buy-signals') {
         const requestedLimit = Number(url.searchParams.get('limit') ?? 100);
         json(res, 200, await BuySignalJournalService.list(
+            Number.isFinite(requestedLimit) ? requestedLimit : 100
+        ));
+        return;
+    }
+
+    if (url.pathname === '/api/paper-positions') {
+        const requestedLimit = Number(url.searchParams.get('limit') ?? 100);
+        json(res, 200, await PaperTradingService.list(
             Number.isFinite(requestedLimit) ? requestedLimit : 100
         ));
         return;

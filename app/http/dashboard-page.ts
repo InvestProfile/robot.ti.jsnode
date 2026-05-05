@@ -136,6 +136,10 @@ export const dashboardPage = `<!doctype html>
         <div style="overflow:auto"><table id="buySignals"></table></div>
       </section>
       <section>
+        <h2>Paper Portfolio</h2>
+        <div style="overflow:auto"><table id="paperPositions"></table></div>
+      </section>
+      <section>
         <h2>Latest Decisions</h2>
         <div style="overflow:auto"><table id="decisions"></table></div>
       </section>
@@ -178,7 +182,7 @@ export const dashboardPage = `<!doctype html>
       return res.json();
     }
     async function load() {
-      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse] = await Promise.all([
+      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
         api('/api/limits'),
@@ -189,7 +193,8 @@ export const dashboardPage = `<!doctype html>
         api('/api/positions'),
         api('/api/preview'),
         api('/api/buy-signals?limit=30'),
-        api('/api/scan-universe')
+        api('/api/scan-universe'),
+        api('/api/paper-positions?limit=50')
       ]);
       document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString('ru-RU');
       document.getElementById('mode').innerHTML = status.config.dryRun ? '<span class="pill warn">DRY RUN</span>' : '<span class="pill bad">LIVE</span>';
@@ -209,6 +214,7 @@ export const dashboardPage = `<!doctype html>
         'observe accounts: ' + esc(status.config.observeAccountIds.join(', ')),
         'buy tickers: ' + esc(status.config.buyTickers.join(', ')),
         'scan universe: ' + esc(status.config.scanUniverse) + ', limit ' + esc(status.config.scanUniverseLimit) + ', max lot ' + esc(status.config.scanMaxLotRub) + ' RUB',
+        'paper trading: ' + esc(status.config.paperTradingEnabled) + ', max positions ' + esc(status.config.paperMaxPositions) + ', max position ' + esc(status.config.paperMaxPositionRub) + ' RUB',
         'buy score: min ' + esc(status.config.buyMinScore) + ', trend ' + esc(status.config.buyTrendDays) + 'd, +' + esc(status.config.buyMinTrendPercent) + '%, momentum +' + esc(status.config.buyMinMomentumPercent) + '%',
         'max order RUB: ' + esc(status.config.maxOrderRub),
         'max daily orders: ' + esc(status.config.maxDailyOrders),
@@ -224,6 +230,9 @@ export const dashboardPage = `<!doctype html>
       );
       document.getElementById('buySignals').innerHTML = rows(['Time', 'Ticker', 'Profile', 'Score', 'Price', '1d', '3d', '5d', '10d'], buySignals.signals, s =>
         '<tr><td>' + time(s.signaledAt) + '</td><td>' + esc(s.ticker) + '<div class="small">' + esc(s.name) + '</div></td><td class="right">' + esc(s.profileTrendDays) + '/' + esc(s.profileMinScore) + '</td><td class="right">' + esc(s.signalScore) + '</td><td class="right">' + money(s.signalPrice) + '</td><td class="right">' + percent(s.return1dPercent) + '</td><td class="right">' + percent(s.return3dPercent) + '</td><td class="right">' + percent(s.return5dPercent) + '</td><td class="right">' + percent(s.return10dPercent) + '</td></tr>'
+      );
+      document.getElementById('paperPositions').innerHTML = rows(['Status', 'Ticker', 'Score', 'Entry', 'Current', 'P/L', 'Reason'], paperPositions.positions, p =>
+        '<tr><td>' + esc(p.status) + '</td><td>' + esc(p.ticker) + '<div class="small">' + esc(p.name) + '</div></td><td class="right">' + esc(p.entryScore) + '</td><td class="right">' + money(p.entryPrice) + '</td><td class="right">' + money(p.currentPrice || p.exitPrice) + '</td><td class="right">' + money(p.profitRub) + '<div class="small">' + percent(p.profitPercent) + '</div></td><td>' + esc(p.exitReason || p.entryReason) + '</td></tr>'
       );
       document.getElementById('accounts').innerHTML = rows(['Account', 'Mode', 'Cash RUB', 'Total', 'Positions'], accounts.accounts, a =>
         '<tr><td>' + esc(a.alias || a.accountId) + '<div class="small">' + esc(a.accountId) + '</div></td><td>' + esc(a.mode) + '</td><td class="right">' + money(a.cashRub) + '</td><td class="right">' + money(a.totalRub) + '</td><td class="right">' + esc(a.positionsCount) + '</td></tr>'

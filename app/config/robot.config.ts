@@ -181,6 +181,10 @@ export interface RobotConfig {
     signalCooldownMs: number;
     signalPriceChangePercent: number;
     buySignalJournalIntervalMs: number;
+    paperTradingEnabled: boolean;
+    paperTradingIntervalMs: number;
+    paperMaxPositions: number;
+    paperMaxPositionRub: number;
 }
 
 export const getRobotConfig = (): RobotConfig => {
@@ -240,7 +244,11 @@ export const getRobotConfig = (): RobotConfig => {
         maxDailyRub: Math.max(0, parseNumber(env.ROBOT_MAX_DAILY_RUB, 2_000)),
         signalCooldownMs: Math.max(0, parseNumber(env.ROBOT_SIGNAL_COOLDOWN_MS, 30 * 60 * 1000)),
         signalPriceChangePercent: Math.max(0, parseNumber(env.ROBOT_SIGNAL_PRICE_CHANGE_PERCENT, 1)),
-        buySignalJournalIntervalMs: Math.max(0, parseNumber(env.ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS, 15 * 60 * 1000))
+        buySignalJournalIntervalMs: Math.max(0, parseNumber(env.ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS, 15 * 60 * 1000)),
+        paperTradingEnabled: parseBoolean(env.ROBOT_PAPER_TRADING_ENABLED, true),
+        paperTradingIntervalMs: Math.max(0, parseNumber(env.ROBOT_PAPER_TRADING_INTERVAL_MS, 15 * 60 * 1000)),
+        paperMaxPositions: Math.max(1, Math.trunc(parseNumber(env.ROBOT_PAPER_MAX_POSITIONS, 10))),
+        paperMaxPositionRub: Math.max(0, parseNumber(env.ROBOT_PAPER_MAX_POSITION_RUB, 1_000))
     };
 };
 
