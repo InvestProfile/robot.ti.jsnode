@@ -107,6 +107,7 @@ ROBOT_OBSERVE_ACCOUNT_IDS=2002465405,2006532697,2201800992
 ROBOT_ACCOUNT_ALIASES=2054310628:торговый счет,2002465405:долгосрочный счет,2006532697:ИИС,2201800992:Инвесткопилка
 ROBOT_PROTECTED_ACCOUNT_IDS=2002465405,2006532697,2091363693,2045881687,2051251635,2201800992,2011287614
 ROBOT_DRY_RUN=true
+ROBOT_LIVE_ALLOWED_ACTIONS=buy
 ROBOT_INTERVAL_MS=60000
 ROBOT_POSITION_DELAY_MS=1000
 ROBOT_ENABLED_STRATEGIES=stop-loss,trailing-stop,profit-take
@@ -139,6 +140,8 @@ ROBOT_LIVE_CONFIRMATION=I_UNDERSTAND_THIS_TRADES_REAL_MONEY
 ```
 
 Do not enable live mode until dry-run decisions in `trade_decisions` look correct.
+By default, live trading is buy-only through `ROBOT_LIVE_ALLOWED_ACTIONS=buy`.
+Selling requires explicitly setting `ROBOT_LIVE_ALLOWED_ACTIONS=buy,sell`.
 
 `ROBOT_OBSERVE_ACCOUNT_IDS` is read-only from the robot's point of view. The
 robot may write analysis into `trade_decisions`, but order execution is only

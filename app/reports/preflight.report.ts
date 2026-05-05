@@ -44,6 +44,7 @@ const main = async () => {
     console.log('-------');
     console.log(`Dry run: ${config.dryRun}`);
     console.log(`Live enabled: ${!config.dryRun}`);
+    console.log(`Live allowed actions: ${config.liveAllowedActions.join(', ')}`);
     console.log(`Strategies: ${config.enabledStrategies.join(', ')}`);
     console.log(`Trading accounts: ${config.accountIds.join(', ')}`);
     console.log(`Observe accounts: ${config.observeAccountIds.join(', ') || '<none>'}`);

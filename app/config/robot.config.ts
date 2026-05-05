@@ -3,8 +3,10 @@ import { getEnv } from './env.config';
 const LIVE_CONFIRMATION = 'I_UNDERSTAND_THIS_TRADES_REAL_MONEY';
 const DEFAULT_STRATEGIES = ['stop-loss', 'trailing-stop', 'profit-take', 'watchlist-buy'];
 const TRAILING_BASELINES = ['observed', 'history_30d', 'history_90d'] as const;
+const LIVE_ACTIONS = ['buy', 'sell'] as const;
 
 export type TrailingBaseline = typeof TRAILING_BASELINES[number];
+export type LiveAction = typeof LIVE_ACTIONS[number];
 
 const parseBoolean = (value: string | undefined, defaultValue: boolean) => {
     if (value === undefined) return defaultValue;
@@ -74,6 +76,17 @@ const parseStrategies = (value: string | undefined) => {
     return strategies.length > 0 ? strategies : DEFAULT_STRATEGIES;
 };
 
+const parseLiveActions = (value: string | undefined) => {
+    if (!value) return ['buy'] as LiveAction[];
+
+    const actions = value
+        .split(',')
+        .map(action => action.trim())
+        .filter((action): action is LiveAction => LIVE_ACTIONS.includes(action as LiveAction));
+
+    return actions.length > 0 ? actions : ['buy'] as LiveAction[];
+};
+
 const parseTrailingBaseline = (value: string | undefined): TrailingBaseline => {
     if (!value) return 'observed';
 
@@ -92,6 +105,7 @@ export interface RobotConfig {
     protectedAccountIds: string[];
     dryRun: boolean;
     liveConfirmationRequired: boolean;
+    liveAllowedActions: LiveAction[];
     intervalMs: number;
     positionDelayMs: number;
     enabledStrategies: string[];
@@ -135,6 +149,7 @@ export const getRobotConfig = (): RobotConfig => {
         protectedAccountIds,
         dryRun,
         liveConfirmationRequired: !dryRun,
+        liveAllowedActions: parseLiveActions(env.ROBOT_LIVE_ALLOWED_ACTIONS),
         intervalMs: parseNumber(env.ROBOT_INTERVAL_MS, 60_000),
         positionDelayMs: parseNumber(env.ROBOT_POSITION_DELAY_MS, 1_000),
         enabledStrategies: parseStrategies(env.ROBOT_ENABLED_STRATEGIES),

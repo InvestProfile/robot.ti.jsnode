@@ -4,6 +4,7 @@ import { getEnv } from '../config/env.config';
 import { getRobotConfig, RobotConfig } from '../config/robot.config';
 import { getTradingRuntimeState } from '../modules/common.module';
 import { TradeDecisionModel } from '../models/trade-decision.model';
+import BuySignalEvaluatorService from '../services/buy-signal-evaluator.service';
 import OperationsService from '../services/operations.service';
 import InstrumentsService from '../services/instruments.service';
 import { quotationToNumber } from '../utils/money';
@@ -81,6 +82,7 @@ const safeConfig = (config: RobotConfig) => ({
     protectedAccountIds: config.protectedAccountIds,
     dryRun: config.dryRun,
     liveConfirmationRequired: config.liveConfirmationRequired,
+    liveAllowedActions: config.liveAllowedActions,
     intervalMs: config.intervalMs,
     positionDelayMs: config.positionDelayMs,
     enabledStrategies: config.enabledStrategies,
@@ -168,6 +170,20 @@ const getDecisionsPayload = async (url: URL) => {
     };
 };
 
+const getPreviewPayload = async (config: RobotConfig) => {
+    const previews = [];
+
+    for (const accountId of config.accountIds) {
+        previews.push(...await BuySignalEvaluatorService.evaluateAccount(accountId, config));
+    }
+
+    return {
+        mode: config.dryRun ? 'dry-run' : 'live',
+        liveAllowedActions: config.liveAllowedActions,
+        previews
+    };
+};
+
 const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedAt: string) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
 
@@ -208,6 +224,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/decisions') {
         json(res, 200, await getDecisionsPayload(url));
+        return;
+    }
+
+    if (url.pathname === '/api/preview') {
+        json(res, 200, await getPreviewPayload(config));
         return;
     }
 

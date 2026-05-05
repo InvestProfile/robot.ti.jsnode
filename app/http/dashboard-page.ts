@@ -114,6 +114,10 @@ export const dashboardPage = `<!doctype html>
     </div>
     <div class="stack">
       <section>
+        <h2>Action Preview</h2>
+        <div style="overflow:auto"><table id="preview"></table></div>
+      </section>
+      <section>
         <h2>Latest Decisions</h2>
         <div style="overflow:auto"><table id="decisions"></table></div>
       </section>
@@ -139,11 +143,12 @@ export const dashboardPage = `<!doctype html>
       return res.json();
     }
     async function load() {
-      const [status, accounts, decisions, positions] = await Promise.all([
+      const [status, accounts, decisions, positions, preview] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
         api('/api/decisions?limit=80'),
-        api('/api/positions')
+        api('/api/positions'),
+        api('/api/preview')
       ]);
       document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString('ru-RU');
       document.getElementById('mode').innerHTML = status.config.dryRun ? '<span class="pill warn">DRY RUN</span>' : '<span class="pill bad">LIVE</span>';
@@ -158,9 +163,13 @@ export const dashboardPage = `<!doctype html>
         'max order RUB: ' + esc(status.config.maxOrderRub),
         'max daily orders: ' + esc(status.config.maxDailyOrders),
         'max daily RUB: ' + esc(status.config.maxDailyRub),
+        'live actions: ' + esc(status.config.liveAllowedActions.join(', ')),
         'signal cooldown: ' + esc(Math.round(status.config.signalCooldownMs / 60000)) + ' min',
         'signal price change: ' + esc(status.config.signalPriceChangePercent) + '%'
       ].join('<br>');
+      document.getElementById('preview').innerHTML = rows(['Ticker', 'Status', 'Price', 'Amount', 'Reason'], preview.previews, p =>
+        '<tr><td>' + esc(p.ticker || p.figi) + '<div class="small">' + esc(p.name) + '</div></td><td>' + esc(p.status) + '</td><td class="right">' + money(p.currentPrice) + '</td><td class="right">' + money(p.estimatedOrderRub) + '</td><td>' + esc(p.reason) + '</td></tr>'
+      );
       document.getElementById('accounts').innerHTML = rows(['Account', 'Mode', 'Cash RUB', 'Total', 'Positions'], accounts.accounts, a =>
         '<tr><td>' + esc(a.alias || a.accountId) + '<div class="small">' + esc(a.accountId) + '</div></td><td>' + esc(a.mode) + '</td><td class="right">' + money(a.cashRub) + '</td><td class="right">' + money(a.totalRub) + '</td><td class="right">' + esc(a.positionsCount) + '</td></tr>'
       );
