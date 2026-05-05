@@ -1,4 +1,4 @@
-import { RobotConfig } from '../config/robot.config';
+import { getBuyScoreConfigForTicker, RobotConfig } from '../config/robot.config';
 import InstrumentsService from './instruments.service';
 import MarketDataService from './marketData.service';
 import ScoreBuyStrategy, { BuyScoreAnalysis } from '../strategies/score-buy.strategy';
@@ -16,6 +16,10 @@ export interface BuyScanItem {
     score?: number;
     passed?: boolean;
     reason: string;
+    profile?: {
+        trendDays: number;
+        minScore: number;
+    };
     analysis?: BuyScoreAnalysis;
 }
 
@@ -31,11 +35,6 @@ export default class BuyScannerService {
             !selected.some(instrument => instrument.ticker?.toUpperCase() === ticker)
         );
         const prices = await MarketDataService.getLastPrices(selected.map(instrument => instrument.uid));
-        const scanConfig = {
-            ...config,
-            buyTickers: normalizedTickers,
-            maxOrderRub: Number.MAX_SAFE_INTEGER
-        };
         const items: BuyScanItem[] = [];
 
         for (const instrument of selected) {
@@ -52,7 +51,13 @@ export default class BuyScannerService {
                 continue;
             }
 
-            const candles = await MarketDataService.getDailyCandles(instrument.uid, config.buyTrendDays);
+            const baseScanConfig = getBuyScoreConfigForTicker(config, instrument.ticker);
+            const scanConfig = {
+                ...baseScanConfig,
+                buyTickers: normalizedTickers,
+                maxOrderRub: Number.MAX_SAFE_INTEGER
+            };
+            const candles = await MarketDataService.getDailyCandles(instrument.uid, scanConfig.buyTrendDays);
             const analysis = ScoreBuyStrategy.analyze({
                 accountId: 'scan',
                 figi: instrument.figi,
@@ -76,6 +81,10 @@ export default class BuyScannerService {
                 score: analysis?.score,
                 passed: analysis?.passed,
                 reason: analysis?.reason ?? 'score analysis is empty',
+                profile: {
+                    trendDays: scanConfig.buyTrendDays,
+                    minScore: scanConfig.buyMinScore
+                },
                 analysis
             });
         }
@@ -83,6 +92,7 @@ export default class BuyScannerService {
         return {
             minScore: config.buyMinScore,
             trendDays: config.buyTrendDays,
+            profiles: config.buyScoreProfiles,
             missing,
             items: items.sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
         };

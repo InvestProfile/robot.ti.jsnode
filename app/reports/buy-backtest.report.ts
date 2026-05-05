@@ -33,8 +33,8 @@ const main = async () => {
     console.log(`History days: ${result.days}`);
     console.log(`Missing: ${result.missing.join(', ') || '-'}`);
     console.log('');
-    console.log('Ticker  Signals  Latest  1d WR/Avg      3d WR/Avg      5d WR/Avg      10d WR/Avg     Latest reason');
-    console.log('------  -------  ------  ------------   ------------   ------------   ------------   -------------');
+    console.log('Ticker  Profile  Signals  Latest  1d WR/Avg      3d WR/Avg      5d WR/Avg      10d WR/Avg     Latest reason');
+    console.log('------  -------  -------  ------  ------------   ------------   ------------   ------------   -------------');
 
     for (const item of result.results.sort((a, b) => (b.latestScore ?? -1) - (a.latestScore ?? -1))) {
         const row = result.horizons.map(horizon => {
@@ -44,6 +44,7 @@ const main = async () => {
 
         console.log([
             item.ticker.padEnd(6),
+            `${item.profile?.trendDays ?? result.trendDays}/${item.profile?.minScore ?? result.minScore}`.padStart(7),
             String(item.signals).padStart(7),
             String(item.latestScore ?? '-').padStart(6),
             ...row,

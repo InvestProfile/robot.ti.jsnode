@@ -8,6 +8,11 @@ const LIVE_ACTIONS = ['buy', 'sell'] as const;
 export type TrailingBaseline = typeof TRAILING_BASELINES[number];
 export type LiveAction = typeof LIVE_ACTIONS[number];
 
+export interface BuyScoreProfile {
+    buyTrendDays: number;
+    buyMinScore: number;
+}
+
 const parseBoolean = (value: string | undefined, defaultValue: boolean) => {
     if (value === undefined) return defaultValue;
     return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
@@ -98,6 +103,35 @@ const parseTrailingBaseline = (value: string | undefined): TrailingBaseline => {
     throw new Error(`Unsupported ROBOT_TRAILING_BASELINE=${value}. Use: ${TRAILING_BASELINES.join(', ')}`);
 };
 
+const parseBuyScoreProfiles = (value: string | undefined) => {
+    if (!value) return {};
+
+    return value
+        .split(',')
+        .map(item => item.trim())
+        .filter(Boolean)
+        .reduce<Record<string, BuyScoreProfile>>((profiles, item) => {
+            const [ticker, trendDays, minScore] = item.split(':').map(part => part.trim());
+            const parsedTrendDays = Number(trendDays);
+            const parsedMinScore = Number(minScore);
+
+            if (
+                ticker
+                && Number.isFinite(parsedTrendDays)
+                && parsedTrendDays >= 2
+                && Number.isFinite(parsedMinScore)
+                && parsedMinScore >= 1
+            ) {
+                profiles[ticker.toUpperCase()] = {
+                    buyTrendDays: Math.trunc(parsedTrendDays),
+                    buyMinScore: Math.min(100, Math.trunc(parsedMinScore))
+                };
+            }
+
+            return profiles;
+        }, {});
+};
+
 export interface RobotConfig {
     accountIds: string[];
     observeAccountIds: string[];
@@ -124,6 +158,7 @@ export interface RobotConfig {
     buyMinTrendPercent: number;
     buyMinMomentumPercent: number;
     buyMinScore: number;
+    buyScoreProfiles: Record<string, BuyScoreProfile>;
     maxOrderRub: number;
     maxDailyOrders: number;
     maxDailyRub: number;
@@ -179,10 +214,23 @@ export const getRobotConfig = (): RobotConfig => {
         buyMinTrendPercent: parseNumber(env.ROBOT_BUY_MIN_TREND_PERCENT, 0.5),
         buyMinMomentumPercent: parseNumber(env.ROBOT_BUY_MIN_MOMENTUM_PERCENT, 0),
         buyMinScore: Math.max(1, Math.min(100, parseNumber(env.ROBOT_BUY_MIN_SCORE, 70))),
+        buyScoreProfiles: parseBuyScoreProfiles(env.ROBOT_BUY_SCORE_PROFILES),
         maxOrderRub: parseNumber(env.ROBOT_MAX_ORDER_RUB, 1_000),
         maxDailyOrders: Math.max(0, Math.trunc(parseNumber(env.ROBOT_MAX_DAILY_ORDERS, 3))),
         maxDailyRub: Math.max(0, parseNumber(env.ROBOT_MAX_DAILY_RUB, 2_000)),
         signalCooldownMs: Math.max(0, parseNumber(env.ROBOT_SIGNAL_COOLDOWN_MS, 30 * 60 * 1000)),
         signalPriceChangePercent: Math.max(0, parseNumber(env.ROBOT_SIGNAL_PRICE_CHANGE_PERCENT, 1))
+    };
+};
+
+export const getBuyScoreConfigForTicker = (config: RobotConfig, ticker?: string): RobotConfig => {
+    const profile = ticker ? config.buyScoreProfiles[ticker.toUpperCase()] : undefined;
+
+    if (!profile) return config;
+
+    return {
+        ...config,
+        buyTrendDays: profile.buyTrendDays,
+        buyMinScore: profile.buyMinScore
     };
 };

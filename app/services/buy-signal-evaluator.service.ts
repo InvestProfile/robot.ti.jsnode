@@ -1,4 +1,4 @@
-import { RobotConfig } from '../config/robot.config';
+import { getBuyScoreConfigForTicker, RobotConfig } from '../config/robot.config';
 import InstrumentsService from './instruments.service';
 import marketData from './marketData.service';
 import operationService from './operations.service';
@@ -82,11 +82,12 @@ export default class BuySignalEvaluatorService {
             const estimatedOrderRub = lastPrice * Math.max(1, instrument.lot ?? 1);
             const alreadyInPortfolio = portfolioInstrumentIds.has(instrument.uid);
             const tradingStatus = await marketData.getStatus(instrument.figi, instrument.uid);
-            const dailyCandles = config.enabledStrategies.includes('score-buy')
-                ? await marketData.getDailyCandles(instrument.uid, config.buyTrendDays)
+            const buyConfig = getBuyScoreConfigForTicker(config, instrument.ticker);
+            const dailyCandles = buyConfig.enabledStrategies.includes('score-buy')
+                ? await marketData.getDailyCandles(instrument.uid, buyConfig.buyTrendDays)
                 : undefined;
-            const dailyCloses = config.enabledStrategies.includes('trend-follow-buy')
-                ? await marketData.getDailyClosePrices(instrument.uid, config.buyTrendDays)
+            const dailyCloses = buyConfig.enabledStrategies.includes('trend-follow-buy')
+                ? await marketData.getDailyClosePrices(instrument.uid, buyConfig.buyTrendDays)
                 : undefined;
             const signal = StrategyEngine.evaluateBuy({
                 accountId,
@@ -100,8 +101,8 @@ export default class BuySignalEvaluatorService {
                 alreadyInPortfolio,
                 dailyCloses,
                 dailyCandles
-            }, config);
-            const scoreAnalysis = config.enabledStrategies.includes('score-buy')
+            }, buyConfig);
+            const scoreAnalysis = buyConfig.enabledStrategies.includes('score-buy')
                 ? ScoreBuyStrategy.analyze({
                     accountId,
                     figi: instrument.figi,
@@ -114,7 +115,7 @@ export default class BuySignalEvaluatorService {
                     alreadyInPortfolio,
                     dailyCloses,
                     dailyCandles
-                }, config)
+                }, buyConfig)
                 : undefined;
             const risk = RiskManagerService.evaluateBuySignal({
                 availableCashRub: remainingCashRub,

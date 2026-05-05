@@ -106,6 +106,7 @@ const safeConfig = (config: RobotConfig) => ({
     buyMinTrendPercent: config.buyMinTrendPercent,
     buyMinMomentumPercent: config.buyMinMomentumPercent,
     buyMinScore: config.buyMinScore,
+    buyScoreProfiles: config.buyScoreProfiles,
     maxOrderRub: config.maxOrderRub,
     maxDailyOrders: config.maxDailyOrders,
     maxDailyRub: config.maxDailyRub,

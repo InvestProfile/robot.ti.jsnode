@@ -18,13 +18,14 @@ const main = async () => {
     console.log(`Trend days: ${result.trendDays}`);
     console.log(`Missing: ${result.missing.join(', ') || '-'}`);
     console.log('');
-    console.log('Ticker  Score  Price       Amount      Trend    Momentum  HighGap  Vol      Result');
-    console.log('------  -----  ----------  ----------  -------  --------  -------  -------  ------');
+    console.log('Ticker  Profile  Score  Price       Amount      Trend    Momentum  HighGap  Vol      Result');
+    console.log('------  -------  -----  ----------  ----------  -------  --------  -------  -------  ------');
 
     for (const item of result.items) {
         const factors = item.analysis?.factors;
         console.log([
             item.ticker.padEnd(6),
+            `${item.profile?.trendDays ?? result.trendDays}/${item.profile?.minScore ?? result.minScore}`.padStart(7),
             String(item.score ?? '-').padStart(5),
             formatNumber(item.lastPrice).padStart(10),
             formatNumber(item.estimatedOrderRub).padStart(10),

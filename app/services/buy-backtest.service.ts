@@ -1,4 +1,4 @@
-import { RobotConfig } from '../config/robot.config';
+import { getBuyScoreConfigForTicker, RobotConfig } from '../config/robot.config';
 import InstrumentsService from './instruments.service';
 import MarketDataService from './marketData.service';
 import ScoreBuyStrategy from '../strategies/score-buy.strategy';
@@ -51,27 +51,27 @@ export default class BuyBacktestService {
         const missing = normalizedTickers.filter(ticker =>
             !selected.some(instrument => instrument.ticker?.toUpperCase() === ticker)
         );
-        const backtestConfig = {
-            ...config,
-            buyTickers: normalizedTickers,
-            maxOrderRub: Number.MAX_SAFE_INTEGER,
-            buyMinScore: config.buyMinScore
-        };
         const results = [];
 
         for (const instrument of selected) {
+            const baseBacktestConfig = getBuyScoreConfigForTicker(config, instrument.ticker);
+            const backtestConfig = {
+                ...baseBacktestConfig,
+                buyTickers: normalizedTickers,
+                maxOrderRub: Number.MAX_SAFE_INTEGER
+            };
             const candles = await MarketDataService.getDailyCandles(
                 instrument.uid,
-                days + config.buyTrendDays + Math.max(...horizons)
+                days + backtestConfig.buyTrendDays + Math.max(...horizons)
             );
             const completeCandles = candles
                 .filter((candle): candle is DailyCandle => Number.isFinite(candle.close) && candle.close > 0)
-                .slice(-(days + config.buyTrendDays + Math.max(...horizons)));
+                .slice(-(days + backtestConfig.buyTrendDays + Math.max(...horizons)));
             const signals: SignalResult[] = [];
 
-            for (let index = config.buyTrendDays; index < completeCandles.length - Math.max(...horizons); index += 1) {
+            for (let index = backtestConfig.buyTrendDays; index < completeCandles.length - Math.max(...horizons); index += 1) {
                 const candle = completeCandles[index];
-                const history = completeCandles.slice(index - config.buyTrendDays + 1, index + 1);
+                const history = completeCandles.slice(index - backtestConfig.buyTrendDays + 1, index + 1);
                 const analysis = ScoreBuyStrategy.analyze({
                     accountId: 'backtest',
                     figi: instrument.figi,
@@ -105,7 +105,7 @@ export default class BuyBacktestService {
             }
 
             const latest = completeCandles[completeCandles.length - 1];
-            const latestHistory = completeCandles.slice(-config.buyTrendDays);
+            const latestHistory = completeCandles.slice(-backtestConfig.buyTrendDays);
             const latestAnalysis = latest
                 ? ScoreBuyStrategy.analyze({
                     accountId: 'backtest',
@@ -127,6 +127,10 @@ export default class BuyBacktestService {
                 figi: instrument.figi,
                 instrumentUid: instrument.uid,
                 candles: completeCandles.length,
+                profile: {
+                    trendDays: backtestConfig.buyTrendDays,
+                    minScore: backtestConfig.buyMinScore
+                },
                 signals: signals.length,
                 latestScore: latestAnalysis?.score,
                 latestPassed: latestAnalysis?.passed,
@@ -142,6 +146,7 @@ export default class BuyBacktestService {
         return {
             minScore: config.buyMinScore,
             trendDays: config.buyTrendDays,
+            profiles: config.buyScoreProfiles,
             days,
             horizons,
             missing,
