@@ -1,5 +1,6 @@
 import http, { IncomingMessage, ServerResponse } from 'http';
 import { URL } from 'url';
+import { readFile, writeFile } from 'fs/promises';
 import { getEnv } from '../config/env.config';
 import { getRobotConfig, RobotConfig } from '../config/robot.config';
 import { getTradingRuntimeState } from '../modules/common.module';
@@ -26,6 +27,7 @@ import SocialSignalService from '../services/social-signal.service';
 import SellBrainService from '../services/sell-brain.service';
 import SocialCollectorService from '../services/social-collector.service';
 import SocialConsensusService from '../services/social-consensus.service';
+import SocialSignalEvidenceService from '../services/social-signal-evidence.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -54,6 +56,94 @@ const text = (res: ServerResponse, statusCode: number, body: string, contentType
         'cache-control': 'no-store'
     });
     res.end(body);
+};
+
+const SOCIAL_COOKIE_ALLOWLIST = ['investpublicPsid', 'navi_token', 'psid', 'sso_api_session'];
+
+const readJsonBody = async (req: IncomingMessage, maxBytes = 16_384) => new Promise<any>((resolve, reject) => {
+    let body = '';
+
+    req.on('data', chunk => {
+        body += chunk;
+        if (Buffer.byteLength(body) > maxBytes) {
+            reject(new Error('request body is too large'));
+            req.destroy();
+        }
+    });
+    req.on('end', () => {
+        try {
+            resolve(body ? JSON.parse(body) : {});
+        } catch {
+            reject(new Error('invalid JSON body'));
+        }
+    });
+    req.on('error', reject);
+});
+
+const updateEnvLine = (content: string, key: string, value: string) => {
+    const line = `${key}=${value}`;
+    if (new RegExp(`^${key}=`, 'm').test(content)) {
+        return content.replace(new RegExp(`^${key}=.*`, 'm'), line);
+    }
+
+    return `${content.trimEnd()}\n${line}\n`;
+};
+
+const persistSocialCookies = async (sessionId: string | undefined, authCookie: string) => {
+    if (sessionId) process.env.ROBOT_SOCIAL_SESSION_ID = sessionId;
+    process.env.ROBOT_SOCIAL_AUTH_COOKIE = authCookie;
+
+    const envPath = process.env.ROBOT_ENV_PATH || '.env';
+    let content = await readFile(envPath, 'utf8');
+    if (sessionId) {
+        content = updateEnvLine(content, 'ROBOT_SOCIAL_SESSION_ID', sessionId);
+    }
+    content = updateEnvLine(content, 'ROBOT_SOCIAL_AUTH_COOKIE', authCookie);
+    await writeFile(envPath, content);
+};
+
+const handleSocialCookieUpdate = async (req: IncomingMessage, res: ServerResponse) => {
+    const env = getEnv();
+    const secret = env.ROBOT_SOCIAL_COOKIE_UPDATE_SECRET;
+
+    if (!secret) {
+        json(res, 403, { ok: false, error: 'ROBOT_SOCIAL_COOKIE_UPDATE_SECRET is not configured' });
+        return;
+    }
+
+    const payload = await readJsonBody(req);
+    const requestSecret = String(payload.secret ?? req.headers['x-robot-cookie-secret'] ?? '');
+    if (requestSecret !== secret) {
+        json(res, 401, { ok: false, error: 'invalid secret' });
+        return;
+    }
+
+    const cookies = payload.cookies && typeof payload.cookies === 'object' ? payload.cookies : {};
+    const parts = SOCIAL_COOKIE_ALLOWLIST
+        .filter(name => name !== 'psid')
+        .map(name => {
+            const value = cookies[name];
+            return typeof value === 'string' && value.trim() ? `${name}=${value.trim()}` : undefined;
+        })
+        .filter((value): value is string => Boolean(value));
+    const psid = typeof cookies.psid === 'string' && cookies.psid.trim()
+        ? cookies.psid.trim()
+        : undefined;
+
+    if (!psid && parts.length === 0) {
+        json(res, 400, { ok: false, error: 'no allowed cookies found' });
+        return;
+    }
+
+    await persistSocialCookies(psid, parts.join('; '));
+
+    json(res, 200, {
+        ok: true,
+        updated: {
+            sessionId: Boolean(psid),
+            authCookieNames: parts.map(part => part.split('=')[0])
+        }
+    });
 };
 
 const getAuthCredentials = () => {
@@ -284,6 +374,11 @@ const getPreviewPayload = async (config: RobotConfig) => {
 const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedAt: string) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
 
+    if (req.method === 'POST' && url.pathname === '/api/social-cookies') {
+        await handleSocialCookieUpdate(req, res);
+        return;
+    }
+
     if (req.method !== 'GET') {
         json(res, 405, { error: 'Read-only API supports GET requests only.' });
         return;
@@ -454,6 +549,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
             maxScoreAdjustment: config.socialConsensusMaxScoreAdjustment,
             minActors: config.socialConsensusMinActors
         }));
+        return;
+    }
+
+    if (url.pathname === '/api/social-evidence') {
+        const requestedLimit = Number(url.searchParams.get('limit') ?? 200);
+        json(res, 200, await SocialSignalEvidenceService.getEvidence(
+            Number.isFinite(requestedLimit) ? requestedLimit : 200
+        ));
         return;
     }
 

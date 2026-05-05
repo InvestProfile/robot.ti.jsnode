@@ -257,8 +257,9 @@ export const dashboardPage = `<!doctype html>
         <section>
           <h2>Buy Signal Returns <span class="help" title="Проверка buy-сигналов из журнала: что происходило через 1/3/5/10 торговых дней после сигнала.">?</span></h2>
           <div id="buyReturnEvidence" class="small" style="margin-bottom:12px"></div>
-          <h2>Social Alpha Summary <span class="help" title="Будущий слой Pulse/успешных людей. Сейчас это журнал и статистика, парсер подключим отдельным шагом.">?</span></h2>
+          <h2>Social Alpha Summary <span class="help" title="Сводка соц-сигналов и быстрый backtest: для sell прибыль считается как падение цены после сигнала, для buy как рост.">?</span></h2>
           <div id="socialEvidence" class="small"></div>
+          <div class="table-wrap" style="margin-top:12px"><table id="socialEvidenceTable"></table></div>
         </section>
       </div>
     </div>
@@ -366,7 +367,7 @@ export const dashboardPage = `<!doctype html>
       );
     }
     async function load() {
-      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions, marketRegime, strategyEvidence, socialSignals, socialCollector, socialConsensus, sellBrain] = await Promise.all([
+      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions, marketRegime, strategyEvidence, socialSignals, socialCollector, socialConsensus, socialSignalEvidence, sellBrain] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
         api('/api/limits'),
@@ -384,6 +385,7 @@ export const dashboardPage = `<!doctype html>
         api('/api/social-signals?limit=100'),
         api('/api/social-collector'),
         api('/api/social-consensus'),
+        api('/api/social-evidence?limit=100'),
         api('/api/sell-brain')
       ]);
       const readiness = getReadiness(status, limits, marketRegime, paperPositions, preview);
@@ -454,8 +456,13 @@ export const dashboardPage = `<!doctype html>
         'signals 30d: ' + esc(strategyEvidence.socialAlpha.signals),
         'actors: ' + esc(strategyEvidence.socialAlpha.actors),
         'tickers: ' + esc(strategyEvidence.socialAlpha.tickers),
-        'avg actor return: ' + percent(strategyEvidence.socialAlpha.averageActorReturnPercent)
+        'avg actor return: ' + percent(strategyEvidence.socialAlpha.averageActorReturnPercent),
+        'measured: ' + esc(socialSignalEvidence.measured) + ' / ' + esc(socialSignalEvidence.signals),
+        '1d action avg: ' + percent(socialSignalEvidence.summary['1d'].avgActionReturnPercent) + ', WR ' + percent(socialSignalEvidence.summary['1d'].winRatePercent)
       ].join('<br>');
+      document.getElementById('socialEvidenceTable').innerHTML = rows(['Time', 'Actor', 'Ticker', 'Action', '1d', '3d', '5d', '10d', 'Status'], socialSignalEvidence.rows.slice(0, 30), s =>
+        '<tr><td class="nowrap">' + time(s.observedAt) + '</td><td>' + esc(s.actorName || s.actorKey) + '</td><td>' + esc(s.ticker) + '<div class="small">' + esc(s.name) + '</div></td><td>' + esc(s.action) + '</td><td class="right">' + percent(s.actionReturn1dPercent) + '</td><td class="right">' + percent(s.actionReturn3dPercent) + '</td><td class="right">' + percent(s.actionReturn5dPercent) + '</td><td class="right">' + percent(s.actionReturn10dPercent) + '</td><td>' + esc(s.status) + '</td></tr>'
+      );
       document.getElementById('socialSummary').innerHTML = [
         'signals 30d: ' + esc(socialSignals.summary.signals),
         'actors: ' + esc(socialSignals.summary.actors),

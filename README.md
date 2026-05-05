@@ -191,6 +191,7 @@ ROBOT_SOCIAL_CONSENSUS_ENABLED=true
 ROBOT_SOCIAL_CONSENSUS_DAYS=3
 ROBOT_SOCIAL_CONSENSUS_MAX_SCORE_ADJUSTMENT=10
 ROBOT_SOCIAL_CONSENSUS_MIN_ACTORS=1
+ROBOT_SOCIAL_COOKIE_UPDATE_SECRET=
 ROBOT_MIN_PROFIT_PERCENT=0.5
 ROBOT_STOP_LOSS_PERCENT=3
 ROBOT_TRAILING_STOP_PERCENT=2
@@ -322,6 +323,14 @@ classifies the ticker as bullish/bearish/mixed/quiet, and applies a bounded
 `score-buy` adjustment controlled by `ROBOT_SOCIAL_CONSENSUS_MAX_SCORE_ADJUSTMENT`.
 This is intentionally a small buy-score modifier, not a direct social-trading
 order.
+`/api/social-evidence` and `npm run social:evidence` backtest collected social
+signals against future daily candles. For `buy`, a later price increase is good;
+for `sell`, a later price decrease is good. This becomes the factual layer for
+raising or lowering profile trust over time.
+`POST /api/social-cookies` is the optional cookie refresh endpoint for a local
+browser helper. It requires `ROBOT_SOCIAL_COOKIE_UPDATE_SECRET`, accepts only
+`psid`, `investpublicPsid`, `sso_api_session`, and `navi_token`, then updates the
+server `.env` without exposing cookie values in the response.
 
 `ROBOT_MARKET_REGIME_ENABLED=true` blocks new buy signals when the market
 backdrop is weak. It checks `ROBOT_MARKET_REGIME_TICKERS` against their
