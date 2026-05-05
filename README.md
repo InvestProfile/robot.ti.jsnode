@@ -36,6 +36,8 @@ To inspect recent decisions:
 ```bash
 npm run decisions
 npm run decisions -- 50
+npm run scan:buy
+npm run scan:buy -- SBER T YDEX
 ```
 
 To estimate or apply a safe cleanup of noisy `dry-run` / `skip` decisions:
@@ -90,6 +92,7 @@ Read-only endpoints:
 - `/api/accounts`
 - `/api/positions`
 - `/api/preview`
+- `/api/buy-scan`
 - `/api/decisions`
 - `/api/trades`
 - `/api/snapshots`
@@ -133,6 +136,7 @@ ROBOT_INTERVAL_MS=60000
 ROBOT_POSITION_DELAY_MS=1000
 ROBOT_ENABLED_STRATEGIES=stop-loss,trailing-stop,profit-take,score-buy,trend-follow-buy,watchlist-buy
 ROBOT_BUY_TICKERS=SBER,T,YDEX
+ROBOT_SCAN_TICKERS=SBER,T,YDEX,GAZP,MOEX,LKOH,ROSN,VTBR,MGNT,NVTK
 ROBOT_BUY_TREND_DAYS=20
 ROBOT_BUY_MIN_TREND_PERCENT=0.5
 ROBOT_BUY_MIN_MOMENTUM_PERCENT=0

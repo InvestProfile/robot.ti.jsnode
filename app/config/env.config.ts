@@ -28,6 +28,7 @@ interface EnvConfig {
     ROBOT_TRAILING_BASELINE: string | undefined;
     ROBOT_MAX_LOTS_PER_ORDER: string | undefined;
     ROBOT_BUY_TICKERS: string | undefined;
+    ROBOT_SCAN_TICKERS: string | undefined;
     ROBOT_BUY_TREND_DAYS: string | undefined;
     ROBOT_BUY_MIN_TREND_PERCENT: string | undefined;
     ROBOT_BUY_MIN_MOMENTUM_PERCENT: string | undefined;
@@ -71,6 +72,7 @@ export const getEnv = () => {
         ROBOT_TRAILING_BASELINE: process.env.ROBOT_TRAILING_BASELINE,
         ROBOT_MAX_LOTS_PER_ORDER: process.env.ROBOT_MAX_LOTS_PER_ORDER,
         ROBOT_BUY_TICKERS: process.env.ROBOT_BUY_TICKERS,
+        ROBOT_SCAN_TICKERS: process.env.ROBOT_SCAN_TICKERS,
         ROBOT_BUY_TREND_DAYS: process.env.ROBOT_BUY_TREND_DAYS,
         ROBOT_BUY_MIN_TREND_PERCENT: process.env.ROBOT_BUY_MIN_TREND_PERCENT,
         ROBOT_BUY_MIN_MOMENTUM_PERCENT: process.env.ROBOT_BUY_MIN_MOMENTUM_PERCENT,

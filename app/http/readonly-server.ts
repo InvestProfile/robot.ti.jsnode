@@ -13,6 +13,7 @@ import { TradesModel } from '../models/trades.model';
 import TradesService from '../services/trades.service';
 import { PortfolioSnapshotModel } from '../models/portfolio-snapshot.model';
 import PerformanceService from '../services/performance.service';
+import BuyScannerService from '../services/buy-scanner.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -98,6 +99,7 @@ const safeConfig = (config: RobotConfig) => ({
     trailingBaseline: config.trailingBaseline,
     maxLotsPerOrder: config.maxLotsPerOrder,
     buyTickers: config.buyTickers,
+    scanTickers: config.scanTickers,
     buyTrendDays: config.buyTrendDays,
     buyMinTrendPercent: config.buyMinTrendPercent,
     buyMinMomentumPercent: config.buyMinMomentumPercent,
@@ -310,6 +312,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/preview') {
         json(res, 200, await getPreviewPayload(config));
+        return;
+    }
+
+    if (url.pathname === '/api/buy-scan') {
+        const tickers = url.searchParams.get('tickers')
+            ?.split(',')
+            .map(ticker => ticker.trim().toUpperCase())
+            .filter(Boolean);
+        json(res, 200, await BuyScannerService.scan(config, tickers?.length ? tickers : config.scanTickers));
         return;
     }
 

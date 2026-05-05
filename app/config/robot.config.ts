@@ -119,6 +119,7 @@ export interface RobotConfig {
     trailingBaseline: TrailingBaseline;
     maxLotsPerOrder: number;
     buyTickers: string[];
+    scanTickers: string[];
     buyTrendDays: number;
     buyMinTrendPercent: number;
     buyMinMomentumPercent: number;
@@ -149,6 +150,9 @@ export const getRobotConfig = (): RobotConfig => {
         throw new Error(`Live trading requires ROBOT_LIVE_CONFIRMATION=${LIVE_CONFIRMATION}`);
     }
 
+    const buyTickers = parseOptionalAccountIds(env.ROBOT_BUY_TICKERS).map(ticker => ticker.toUpperCase());
+    const scanTickers = parseOptionalAccountIds(env.ROBOT_SCAN_TICKERS).map(ticker => ticker.toUpperCase());
+
     return {
         accountIds,
         observeAccountIds,
@@ -169,7 +173,8 @@ export const getRobotConfig = (): RobotConfig => {
         trailingStopPercent: parseNumber(env.ROBOT_TRAILING_STOP_PERCENT, 2),
         trailingBaseline: parseTrailingBaseline(env.ROBOT_TRAILING_BASELINE),
         maxLotsPerOrder: Math.max(1, Math.trunc(parseNumber(env.ROBOT_MAX_LOTS_PER_ORDER, 1))),
-        buyTickers: parseOptionalAccountIds(env.ROBOT_BUY_TICKERS).map(ticker => ticker.toUpperCase()),
+        buyTickers,
+        scanTickers: scanTickers.length > 0 ? scanTickers : buyTickers,
         buyTrendDays: Math.max(2, Math.trunc(parseNumber(env.ROBOT_BUY_TREND_DAYS, 20))),
         buyMinTrendPercent: parseNumber(env.ROBOT_BUY_MIN_TREND_PERCENT, 0.5),
         buyMinMomentumPercent: parseNumber(env.ROBOT_BUY_MIN_MOMENTUM_PERCENT, 0),

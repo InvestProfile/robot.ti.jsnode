@@ -10,6 +10,7 @@
     "local": "npm run build && npm run start",
     "robot": "npm run build && npm run start",
     "decisions": "npm run build && node build/reports/decisions.report.js",
+    "scan:buy": "npm run build && node build/reports/buy-scan.report.js",
     "cleanup:decisions": "npm run build && node build/reports/cleanup-decisions.report.js",
     "preflight": "npm run build && node build/reports/preflight.report.js",
     "preflight:live": "npm run build && node build/reports/preflight.report.js --live",
