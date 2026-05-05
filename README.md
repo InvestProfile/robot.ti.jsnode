@@ -15,6 +15,7 @@ The runtime is intentionally conservative:
 - opens a circuit breaker after repeated tick errors;
 - writes every decision into the `trade_decisions` table;
 - writes posted orders into the `trades` table;
+- writes portfolio history into the `portfolio_snapshots` table;
 - reconciles posted orders against the broker order state.
 
 ## Local Run
@@ -91,6 +92,7 @@ Read-only endpoints:
 - `/api/preview`
 - `/api/decisions`
 - `/api/trades`
+- `/api/snapshots`
 - `/api/limits`
 
 Useful checks:
@@ -125,6 +127,7 @@ ROBOT_DRY_RUN=true
 ROBOT_LIVE_ALLOWED_ACTIONS=buy
 ROBOT_TRADING_PAUSED=false
 ROBOT_MAX_CONSECUTIVE_TICK_ERRORS=3
+ROBOT_SNAPSHOT_INTERVAL_MS=900000
 ROBOT_INTERVAL_MS=60000
 ROBOT_POSITION_DELAY_MS=1000
 ROBOT_ENABLED_STRATEGIES=stop-loss,trailing-stop,profit-take

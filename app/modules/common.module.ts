@@ -8,6 +8,7 @@ import RiskManagerService from '../services/risk-manager.service';
 import TradeJournalService from '../services/trade-journal.service';
 import TradesService from '../services/trades.service';
 import OrderReconciliationService from '../services/order-reconciliation.service';
+import PortfolioSnapshotService from '../services/portfolio-snapshot.service';
 import StrategyEngine from '../strategies/strategy-engine';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
 import { normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
@@ -506,6 +507,7 @@ const executeRobotTick = async (config: RobotConfig) => {
         }
 
         await OrderReconciliationService.reconcileOpenOrders();
+        await PortfolioSnapshotService.capture(config);
         consecutiveTickErrors = 0;
     } catch (error) {
         console.error('Error occurred in trading tick:', error);
@@ -544,6 +546,7 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
     console.log('Live confirmation required: ' + config.liveConfirmationRequired);
     console.log('Trading paused: ' + config.tradingPaused);
     console.log('Max consecutive tick errors: ' + config.maxConsecutiveTickErrors);
+    console.log('Snapshot interval: ' + config.snapshotIntervalMs + ' ms');
 
     void executeRobotTick(config);
     const interval = setInterval(() => void executeRobotTick(config), config.intervalMs);

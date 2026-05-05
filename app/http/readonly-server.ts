@@ -11,6 +11,7 @@ import { quotationToNumber } from '../utils/money';
 import { dashboardPage } from './dashboard-page';
 import { TradesModel } from '../models/trades.model';
 import TradesService from '../services/trades.service';
+import { PortfolioSnapshotModel } from '../models/portfolio-snapshot.model';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -100,7 +101,8 @@ const safeConfig = (config: RobotConfig) => ({
     maxDailyOrders: config.maxDailyOrders,
     maxDailyRub: config.maxDailyRub,
     signalCooldownMs: config.signalCooldownMs,
-    signalPriceChangePercent: config.signalPriceChangePercent
+    signalPriceChangePercent: config.signalPriceChangePercent,
+    snapshotIntervalMs: config.snapshotIntervalMs
 });
 
 const getAllAccounts = (config: RobotConfig) => [
@@ -187,6 +189,21 @@ const getTradesPayload = async (url: URL) => {
     };
 };
 
+const getSnapshotsPayload = async (url: URL) => {
+    const requestedLimit = Number(url.searchParams.get('limit') ?? 50);
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 50, 1), 500);
+    const accountId = url.searchParams.get('accountId');
+    const snapshots = await PortfolioSnapshotModel.findAll({
+        where: accountId ? { accountId } : undefined,
+        order: [['createdAt', 'DESC']],
+        limit
+    });
+
+    return {
+        snapshots: snapshots.map(snapshot => snapshot.toJSON())
+    };
+};
+
 const getLimitsPayload = async (config: RobotConfig) => {
     const limits = [];
 
@@ -268,6 +285,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/trades') {
         json(res, 200, await getTradesPayload(url));
+        return;
+    }
+
+    if (url.pathname === '/api/snapshots') {
+        json(res, 200, await getSnapshotsPayload(url));
         return;
     }
 

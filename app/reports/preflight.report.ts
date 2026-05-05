@@ -3,6 +3,7 @@ import { getRobotConfig } from '../config/robot.config';
 import { TradeDecisionModel } from '../models/trade-decision.model';
 import { TradesModel } from '../models/trades.model';
 import { Op } from 'sequelize';
+import { PortfolioSnapshotModel } from '../models/portfolio-snapshot.model';
 import InstrumentsService from '../services/instruments.service';
 import marketData from '../services/marketData.service';
 import operationService from '../services/operations.service';
@@ -105,7 +106,9 @@ const main = async () => {
 
     const decisionCount = await TradeDecisionModel.count();
     const tradeCount = await TradesModel.count();
+    const snapshotCount = await PortfolioSnapshotModel.count();
     const latestDecision = await TradeDecisionModel.findOne({ order: [['createdAt', 'DESC']] });
+    const latestSnapshot = await PortfolioSnapshotModel.findOne({ order: [['createdAt', 'DESC']] });
     const openTrades = await TradesModel.findAll({
         where: {
             orderId: {
@@ -123,12 +126,19 @@ const main = async () => {
 
     console.log(`Decisions: ${decisionCount}`);
     console.log(`Trades: ${tradeCount}`);
+    console.log(`Portfolio snapshots: ${snapshotCount}`);
     console.log(`Open broker orders tracked: ${openOrderCount}`);
     console.log(`Latest decision: ${latestDecision?.getDataValue('createdAt')?.toISOString?.() ?? '-'}`);
+    console.log(`Latest snapshot: ${latestSnapshot?.getDataValue('createdAt')?.toISOString?.() ?? '-'}`);
 
     if (decisionCount === 0) {
         warnings.push('No decisions have been recorded yet');
         warn('Decision history', 'empty');
+    }
+
+    if (snapshotCount === 0) {
+        warnings.push('No portfolio snapshots have been recorded yet');
+        warn('Portfolio history', 'empty');
     }
 
     if (openOrderCount > 0) {

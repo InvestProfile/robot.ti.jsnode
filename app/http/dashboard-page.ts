@@ -132,6 +132,10 @@ export const dashboardPage = `<!doctype html>
         <div style="overflow:auto"><table id="trades"></table></div>
       </section>
       <section>
+        <h2>Portfolio History</h2>
+        <div style="overflow:auto"><table id="snapshots"></table></div>
+      </section>
+      <section>
         <h2>Positions</h2>
         <div style="overflow:auto"><table id="positions"></table></div>
       </section>
@@ -162,12 +166,13 @@ export const dashboardPage = `<!doctype html>
       return res.json();
     }
     async function load() {
-      const [status, accounts, limits, decisions, trades, positions, preview] = await Promise.all([
+      const [status, accounts, limits, decisions, trades, snapshots, positions, preview] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
         api('/api/limits'),
         api('/api/decisions?limit=80'),
         api('/api/trades?limit=20'),
+        api('/api/snapshots?limit=20'),
         api('/api/positions'),
         api('/api/preview')
       ]);
@@ -193,6 +198,7 @@ export const dashboardPage = `<!doctype html>
         'max daily RUB: ' + esc(status.config.maxDailyRub),
         'live actions: ' + esc(status.config.liveAllowedActions.join(', ')),
         'trading paused: ' + esc(status.config.tradingPaused),
+        'snapshot interval: ' + esc(Math.round(status.config.snapshotIntervalMs / 60000)) + ' min',
         'signal cooldown: ' + esc(Math.round(status.config.signalCooldownMs / 60000)) + ' min',
         'signal price change: ' + esc(status.config.signalPriceChangePercent) + '%'
       ].join('<br>');
@@ -210,6 +216,9 @@ export const dashboardPage = `<!doctype html>
       );
       document.getElementById('trades').innerHTML = rows(['Time', 'Account', 'Ticker', 'Side', 'Lots', 'Done', 'Amount', 'Status', 'Order'], trades.trades, t =>
         '<tr><td>' + time(t.createdAt) + '</td><td>' + esc(t.accountId) + '</td><td>' + esc(t.ticker || t.figi) + '<div class="small">' + esc(t.name) + '</div></td><td>' + esc(tradeDirection(t.direction)) + '</td><td class="right">' + esc(t.lotsRequested || t.lot || t.quantity) + '</td><td class="right">' + esc(t.lotsExecuted) + '</td><td class="right">' + money(tradeAmount(t)) + '</td><td>' + esc(t.status) + '</td><td>' + esc(t.orderId) + '</td></tr>'
+      );
+      document.getElementById('snapshots').innerHTML = rows(['Time', 'Account', 'Mode', 'Cash', 'Total', 'Positions'], snapshots.snapshots, s =>
+        '<tr><td>' + time(s.createdAt) + '</td><td>' + esc(s.accountAlias || s.accountId) + '</td><td>' + esc(s.accountMode) + '</td><td class="right">' + money(s.cashRub) + '</td><td class="right">' + money(s.totalRub) + '</td><td class="right">' + esc(s.positionsCount) + '</td></tr>'
       );
       document.getElementById('positions').innerHTML = rows(['Account', 'Ticker', 'Name', 'Lots', 'Average', 'Current', 'P/L'], positions.positions, p =>
         '<tr><td>' + esc(p.accountAlias || p.accountId) + '</td><td>' + esc(p.ticker || p.figi) + '</td><td>' + esc(p.name) + '</td><td class="right">' + esc(p.quantityLots) + '</td><td class="right">' + money(p.averagePrice) + '</td><td class="right">' + money(p.currentPrice) + '</td><td class="right">' + percent(p.profitPercent) + '</td></tr>'
