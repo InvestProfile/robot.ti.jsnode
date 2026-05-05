@@ -1,5 +1,6 @@
 import { RobotConfig } from '../config/robot.config';
 import ProfitTakeStrategy from './profit-take.strategy';
+import HoldWinnerStrategy from './hold-winner.strategy';
 import ScoreBuyStrategy from './score-buy.strategy';
 import StopLossStrategy from './stop-loss.strategy';
 import TrendFollowBuyStrategy from './trend-follow-buy.strategy';
@@ -13,6 +14,7 @@ export default class StrategyEngine {
         const trailingStopSignal = enabledStrategies.has('trailing-stop')
             ? await TrailingStopStrategy.evaluate(input, config)
             : undefined;
+        const highestPrice = trailingStopSignal?.factors?.highestPrice;
 
         if (enabledStrategies.has('stop-loss')) {
             const stopLossSignal = StopLossStrategy.evaluate(input, config);
@@ -20,6 +22,14 @@ export default class StrategyEngine {
         }
 
         if (trailingStopSignal) return trailingStopSignal;
+
+        if (enabledStrategies.has('hold-winner')) {
+            const holdWinnerSignal = await HoldWinnerStrategy.evaluate({
+                ...input,
+                highestPrice
+            }, config);
+            if (holdWinnerSignal) return holdWinnerSignal;
+        }
 
         if (enabledStrategies.has('profit-take')) {
             const profitTakeSignal = ProfitTakeStrategy.evaluate(input, config);

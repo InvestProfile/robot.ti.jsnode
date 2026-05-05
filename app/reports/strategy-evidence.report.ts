@@ -22,8 +22,8 @@ const main = async () => {
     console.log(`5d: n=${returns.return5d.count} avg=${format(returns.return5d.avg)}% wr=${format(returns.return5d.winRatePercent, 0)}%`);
     console.log(`10d: n=${returns.return10d.count} avg=${format(returns.return10d.avg)}% wr=${format(returns.return10d.winRatePercent, 0)}%`);
     console.log('');
-    console.log('Strategy          Type      Data                         WR       Avg      P/L       Fee       Status');
-    console.log('----------------  --------  ---------------------------  -------  -------  --------  --------  -----------');
+    console.log('Strategy          Type      Data                         Conf   WR       Avg      P/L       Fee       Status');
+    console.log('----------------  --------  ---------------------------  -----  -------  -------  --------  --------  -----------');
 
     for (const row of evidence.strategies as Array<Record<string, unknown>>) {
         const data = [
@@ -37,6 +37,7 @@ const main = async () => {
             String(row.strategy).padEnd(16),
             String(row.type).padEnd(8),
             data.padEnd(27),
+            String(row.confidence ?? '-').padStart(5),
             `${format(row.winRatePercent as number | undefined, 0)}%`.padStart(7),
             `${format(row.averageProfitPercent as number | undefined)}%`.padStart(7),
             format(row.profitRub as number | undefined).padStart(8),

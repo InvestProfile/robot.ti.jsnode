@@ -32,7 +32,11 @@ export default class TrailingStopStrategy {
             quantityLots: Math.min(availableLots, config.maxLotsPerOrder),
             profitPercent: input.averagePrice > 0
                 ? ((input.currentPrice - input.averagePrice) / input.averagePrice) * 100
-                : 0
+                : 0,
+            factors: {
+                highestPrice: state.highestPrice,
+                drawdownPercent
+            }
         };
     }
 }

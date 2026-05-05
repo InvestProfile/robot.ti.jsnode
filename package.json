@@ -18,6 +18,7 @@
     "signals:buy": "npm run build && node build/reports/buy-signals.report.js",
     "paper": "npm run build && node build/reports/paper-positions.report.js",
     "evidence": "npm run build && node build/reports/strategy-evidence.report.js",
+    "sell:brain": "npm run build && node build/reports/sell-brain.report.js",
     "cleanup:decisions": "npm run build && node build/reports/cleanup-decisions.report.js",
     "preflight": "npm run build && node build/reports/preflight.report.js",
     "preflight:live": "npm run build && node build/reports/preflight.report.js --live",

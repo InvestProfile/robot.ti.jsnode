@@ -1,7 +1,7 @@
 import { getEnv } from './env.config';
 
 const LIVE_CONFIRMATION = 'I_UNDERSTAND_THIS_TRADES_REAL_MONEY';
-const DEFAULT_STRATEGIES = ['stop-loss', 'trailing-stop', 'profit-take', 'score-buy', 'trend-follow-buy', 'watchlist-buy'];
+const DEFAULT_STRATEGIES = ['stop-loss', 'trailing-stop', 'hold-winner', 'profit-take', 'score-buy', 'trend-follow-buy', 'watchlist-buy'];
 const TRAILING_BASELINES = ['observed', 'history_30d', 'history_90d'] as const;
 const LIVE_ACTIONS = ['buy', 'sell'] as const;
 const SCAN_UNIVERSES = ['manual', 'auto'] as const;
@@ -164,6 +164,8 @@ export interface RobotConfig {
     stopLossPercent: number;
     trailingStopPercent: number;
     trailingBaseline: TrailingBaseline;
+    sellHoldWinnerMinProfitPercent: number;
+    sellHoldWinnerMaxDrawdownPercent: number;
     maxLotsPerOrder: number;
     buyTickers: string[];
     scanTickers: string[];
@@ -235,6 +237,11 @@ export const getRobotConfig = (): RobotConfig => {
         stopLossPercent: parseNumber(env.ROBOT_STOP_LOSS_PERCENT, 3),
         trailingStopPercent: parseNumber(env.ROBOT_TRAILING_STOP_PERCENT, 2),
         trailingBaseline: parseTrailingBaseline(env.ROBOT_TRAILING_BASELINE),
+        sellHoldWinnerMinProfitPercent: Math.max(
+            minProfitPercent,
+            parseNumber(env.ROBOT_SELL_HOLD_WINNER_MIN_PROFIT_PERCENT, 2)
+        ),
+        sellHoldWinnerMaxDrawdownPercent: Math.max(0, parseNumber(env.ROBOT_SELL_HOLD_WINNER_MAX_DRAWDOWN_PERCENT, 1)),
         maxLotsPerOrder: Math.max(1, Math.trunc(parseNumber(env.ROBOT_MAX_LOTS_PER_ORDER, 1))),
         buyTickers,
         scanTickers: scanTickers.length > 0 ? scanTickers : buyTickers,

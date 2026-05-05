@@ -1,5 +1,5 @@
-export type TradeAction = 'buy' | 'sell';
-export type TradeSignalSource = 'profit-take' | 'stop-loss' | 'trailing-stop' | 'watchlist-buy' | 'trend-follow-buy' | 'score-buy';
+export type TradeAction = 'buy' | 'sell' | 'hold';
+export type TradeSignalSource = 'profit-take' | 'stop-loss' | 'trailing-stop' | 'hold-winner' | 'watchlist-buy' | 'trend-follow-buy' | 'score-buy';
 
 export interface TradeSignal {
     action: TradeAction;

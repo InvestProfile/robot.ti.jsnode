@@ -28,6 +28,26 @@ const getEntrySource = (position: PaperPositionModel) => {
     return 'paper-entry';
 };
 
+const getConfidence = (closed: number, winRatePercent: number | undefined, averageProfitPercent: number | undefined) => {
+    const sampleScore = Math.min(60, closed * 6);
+    const winScore = winRatePercent === undefined ? 0 : Math.max(0, Math.min(25, (winRatePercent - 40) * 0.8));
+    const avgScore = averageProfitPercent === undefined ? 0 : Math.max(0, Math.min(15, averageProfitPercent * 10));
+
+    return Math.round(sampleScore + winScore + avgScore);
+};
+
+const getStrategyStatus = (confidence: number) => {
+    if (confidence >= 75) return 'enough-data';
+    if (confidence >= 40) return 'watch';
+    return 'learning';
+};
+
+const getRecommendation = (status: string) => {
+    if (status === 'enough-data') return 'Можно рассматривать для осторожного live-расширения, если risk limits тоже зеленые.';
+    if (status === 'watch') return 'Стратегия выглядит интересно, но ей нужно больше закрытых сделок.';
+    return 'Собирать данные, не увеличивать риск.';
+};
+
 export default class StrategyEvidenceService {
     static async getEvidence() {
         const [buySignals, paperPositions, decisions, socialSummary] = await Promise.all([
@@ -62,6 +82,10 @@ export default class StrategyEvidenceService {
             const profits = getNumbers(rows, 'profitRub');
             const closedPercents = getNumbers(closed, 'profitPercent');
             const fees = getNumbers(rows, 'totalCommissionRub');
+            const wr = winRate(closedPercents);
+            const avg = average(closedPercents);
+            const confidence = getConfidence(closed.length, wr, avg);
+            const status = getStrategyStatus(confidence);
 
             return {
                 strategy,
@@ -69,31 +93,35 @@ export default class StrategyEvidenceService {
                 signals: strategy === 'score-buy' ? buySignals.length : undefined,
                 paperPositions: rows.length,
                 closed: closed.length,
-                winRatePercent: winRate(closedPercents),
-                averageProfitPercent: average(closedPercents),
+                winRatePercent: wr,
+                averageProfitPercent: avg,
                 profitRub: profits.reduce((sum, value) => sum + value, 0),
                 commissionRub: fees.reduce((sum, value) => sum + value, 0),
-                status: closed.length >= 10 ? 'enough-data' : closed.length >= 3 ? 'watch' : 'learning',
-                note: closed.length >= 10
-                    ? 'Есть материал для оценки.'
-                    : 'Пока мало закрытых paper-сделок, выводы предварительные.'
+                confidence,
+                status,
+                note: getRecommendation(status)
             };
         });
 
         const exitRows = Array.from(paperByExit.entries()).map(([strategy, rows]) => {
             const percents = getNumbers(rows, 'profitPercent');
             const profits = getNumbers(rows, 'profitRub');
+            const wr = winRate(percents);
+            const avg = average(percents);
+            const confidence = getConfidence(rows.length, wr, avg);
+            const status = getStrategyStatus(confidence);
 
             return {
                 strategy,
                 type: 'exit',
                 paperPositions: rows.length,
                 closed: rows.length,
-                winRatePercent: winRate(percents),
-                averageProfitPercent: average(percents),
+                winRatePercent: wr,
+                averageProfitPercent: avg,
                 profitRub: profits.reduce((sum, value) => sum + value, 0),
-                status: rows.length >= 10 ? 'enough-data' : rows.length >= 3 ? 'watch' : 'learning',
-                note: 'Оценивает только виртуальные закрытия, реальные продажи пока не включены.'
+                confidence,
+                status,
+                note: getRecommendation(status)
             };
         });
 
@@ -116,6 +144,11 @@ export default class StrategyEvidenceService {
                 return10d: { count: buyReturn10d.length, avg: average(buyReturn10d), winRatePercent: winRate(buyReturn10d) }
             },
             socialAlpha: socialSummary,
+            recommendation: {
+                minClosedTradesForLive: 10,
+                minConfidenceForLive: 75,
+                note: 'Evidence не включает live сам по себе. Он только показывает, какие стратегии заслужили больше доверия.'
+            },
             strategies: [...entryRows, ...exitRows, ...decisionRows]
         };
     }

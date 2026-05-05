@@ -168,6 +168,7 @@ export const dashboardPage = `<!doctype html>
     <button class="tab active" data-tab="overview">Overview</button>
     <button class="tab" data-tab="signals">Signals</button>
     <button class="tab" data-tab="paper">Paper</button>
+    <button class="tab" data-tab="sell">Sell Brain</button>
     <button class="tab" data-tab="evidence">Evidence</button>
     <button class="tab" data-tab="social">Social</button>
     <button class="tab" data-tab="market">Market</button>
@@ -236,6 +237,14 @@ export const dashboardPage = `<!doctype html>
         <h2>Paper Portfolio <span class="help" title="Виртуальный портфель: робот как будто покупает/продает, считает P/L с учетом комиссии, но не трогает деньги.">?</span></h2>
         <div id="paperSummary" class="small" style="margin:8px 0 12px"></div>
         <div class="table-wrap"><table id="paperPositions"></table></div>
+      </section>
+    </div>
+
+    <div id="sell" class="view">
+      <section>
+        <h2>Sell Brain <span class="help" title="Предпросмотр продажной логики по всем счетам. Hold означает: робот видит прибыль, но не хочет резать растущую позицию слишком рано.">?</span></h2>
+        <div id="sellSummary" class="small" style="margin:8px 0 12px"></div>
+        <div class="table-wrap"><table id="sellBrain"></table></div>
       </section>
     </div>
 
@@ -351,7 +360,7 @@ export const dashboardPage = `<!doctype html>
       );
     }
     async function load() {
-      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions, marketRegime, strategyEvidence, socialSignals] = await Promise.all([
+      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions, marketRegime, strategyEvidence, socialSignals, sellBrain] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
         api('/api/limits'),
@@ -366,7 +375,8 @@ export const dashboardPage = `<!doctype html>
         api('/api/paper-positions?limit=50'),
         api('/api/market-regime'),
         api('/api/strategy-evidence'),
-        api('/api/social-signals?limit=100')
+        api('/api/social-signals?limit=100'),
+        api('/api/sell-brain')
       ]);
       const readiness = getReadiness(status, limits, marketRegime, paperPositions, preview);
       document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString('ru-RU');
@@ -390,6 +400,7 @@ export const dashboardPage = `<!doctype html>
         'scan universe: ' + esc(status.config.scanUniverse) + ', ' + esc(status.config.scanUniverseLimit) + ' tickers',
         'market tickers: ' + esc(status.config.marketRegimeTickers.join(', ')),
         'paper: ' + esc(status.config.paperTradingEnabled) + ', fee ' + esc(status.config.paperCommissionPercent) + '%, cooldown ' + Math.round((status.config.paperReentryCooldownMs || 0) / 60000) + ' min',
+        'sell brain: hold winners until ' + esc(status.config.sellHoldWinnerMinProfitPercent) + '%, unless drawdown > ' + esc(status.config.sellHoldWinnerMaxDrawdownPercent) + '%',
         'max order: ' + esc(status.config.maxOrderRub) + ' RUB, daily ' + esc(status.config.maxDailyOrders) + ' orders / ' + esc(status.config.maxDailyRub) + ' RUB',
         'live actions: ' + esc(status.config.liveAllowedActions.join(', '))
       ].join('<br>');
@@ -410,8 +421,17 @@ export const dashboardPage = `<!doctype html>
       document.getElementById('paperPositions').innerHTML = rows(['Status', 'Ticker', 'Score', 'Entry', 'Current', 'Gross', 'Fee', 'Net', 'Reason'], paperPositions.positions, p =>
         '<tr><td>' + esc(p.status) + '</td><td>' + esc(p.ticker) + '<div class="small">' + esc(p.name) + '</div></td><td class="right">' + esc(p.entryScore) + '</td><td class="right">' + money(p.entryPrice) + '</td><td class="right">' + money(p.currentPrice || p.exitPrice) + '</td><td class="right">' + money(p.grossProfitRub) + '</td><td class="right">' + money(p.totalCommissionRub) + '</td><td class="right">' + money(p.profitRub) + '<div class="small">' + percent(p.profitPercent) + '</div></td><td class="reason">' + esc(p.exitReason || p.entryReason) + '</td></tr>'
       );
-      document.getElementById('strategyEvidence').innerHTML = rows(['Strategy', 'Type', 'Data', 'Win-rate', 'Avg', 'P/L', 'Fee', 'Status', 'Note'], strategyEvidence.strategies, s =>
-        '<tr><td>' + esc(s.strategy) + '</td><td>' + esc(s.type) + '</td><td>signals ' + esc(s.signals) + '<div class="small">paper ' + esc(s.paperPositions) + ', closed ' + esc(s.closed) + ', decisions ' + esc(s.decisions) + '</div></td><td class="right">' + percent(s.winRatePercent) + '</td><td class="right">' + percent(s.averageProfitPercent) + '</td><td class="right">' + money(s.profitRub) + '</td><td class="right">' + money(s.commissionRub) + '</td><td>' + (s.status === 'enough-data' ? pill('good', s.status) : pill('warn', s.status || 'log')) + '</td><td class="reason">' + esc(s.note || ('dry-run ' + (s.dryRun || 0) + ', skip ' + (s.skipped || 0) + ', orders ' + (s.orders || 0))) + '</td></tr>'
+      document.getElementById('sellSummary').innerHTML = [
+        'positions: ' + esc(sellBrain.summary.positions),
+        'sell: ' + esc(sellBrain.summary.sell),
+        'hold: ' + esc(sellBrain.summary.hold),
+        'blocked/skip: ' + esc(sellBrain.summary.blocked)
+      ].join('<br>');
+      document.getElementById('sellBrain').innerHTML = rows(['Account', 'Ticker', 'Action', 'Source', 'P/L', 'Lots', 'Reason'], sellBrain.items, s =>
+        '<tr><td>' + esc(s.accountAlias || s.accountId) + '<div class="small">' + esc(s.accountMode) + '</div></td><td>' + esc(s.ticker || s.figi) + '<div class="small">' + esc(s.name) + '</div></td><td>' + (s.status === 'allowed' ? pill('bad', s.action) : s.status === 'hold' ? pill('good', 'hold') : pill('warn', s.action)) + '</td><td>' + esc(s.source) + '</td><td class="right">' + percent(s.profitPercent) + '</td><td class="right">' + esc(s.orderLots || s.signalLots || s.quantityLots) + '</td><td class="reason">' + esc(s.reason) + '</td></tr>'
+      );
+      document.getElementById('strategyEvidence').innerHTML = rows(['Strategy', 'Type', 'Data', 'Confidence', 'Win-rate', 'Avg', 'P/L', 'Fee', 'Status', 'Note'], strategyEvidence.strategies, s =>
+        '<tr><td>' + esc(s.strategy) + '</td><td>' + esc(s.type) + '</td><td>signals ' + esc(s.signals) + '<div class="small">paper ' + esc(s.paperPositions) + ', closed ' + esc(s.closed) + ', decisions ' + esc(s.decisions) + '</div></td><td class="right">' + esc(s.confidence) + '</td><td class="right">' + percent(s.winRatePercent) + '</td><td class="right">' + percent(s.averageProfitPercent) + '</td><td class="right">' + money(s.profitRub) + '</td><td class="right">' + money(s.commissionRub) + '</td><td>' + (s.status === 'enough-data' ? pill('good', s.status) : pill('warn', s.status || 'log')) + '</td><td class="reason">' + esc(s.note || ('dry-run ' + (s.dryRun || 0) + ', skip ' + (s.skipped || 0) + ', orders ' + (s.orders || 0))) + '</td></tr>'
       );
       const returns = strategyEvidence.buySignalJournal;
       document.getElementById('buyReturnEvidence').innerHTML = [

@@ -182,6 +182,8 @@ ROBOT_MIN_PROFIT_PERCENT=0.5
 ROBOT_STOP_LOSS_PERCENT=3
 ROBOT_TRAILING_STOP_PERCENT=2
 ROBOT_TRAILING_BASELINE=observed
+ROBOT_SELL_HOLD_WINNER_MIN_PROFIT_PERCENT=2
+ROBOT_SELL_HOLD_WINNER_MAX_DRAWDOWN_PERCENT=1
 ROBOT_MAX_LOTS_PER_ORDER=1
 ROBOT_LIVE_CONFIRMATION=
 
@@ -277,7 +279,10 @@ after a paper close. This does not post broker orders and is available through
 
 `/api/strategy-evidence` and `npm run evidence` summarize whether the robot has
 enough data to trust each strategy: buy-signal returns, paper P/L, win-rate,
-commissions, and decision counts. `/api/social-signals` is the read-only landing
+commissions, confidence, and decision counts. `/api/sell-brain` and
+`npm run sell:brain` show the current sell/hold/skip view across accounts. The
+`hold-winner` strategy can suppress early profit-taking while a profitable
+position is still close to its observed high. `/api/social-signals` is the read-only landing
 zone for future Pulse/social-alpha parsing; those signals are stored separately
 and should be treated as an extra decision factor, not as direct trade commands.
 

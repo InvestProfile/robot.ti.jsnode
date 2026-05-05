@@ -23,6 +23,7 @@ import PaperTradingService from '../services/paper-trading.service';
 import MarketRegimeService from '../services/market-regime.service';
 import StrategyEvidenceService from '../services/strategy-evidence.service';
 import SocialSignalService from '../services/social-signal.service';
+import SellBrainService from '../services/sell-brain.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -106,6 +107,8 @@ const safeConfig = (config: RobotConfig) => ({
     stopLossPercent: config.stopLossPercent,
     trailingStopPercent: config.trailingStopPercent,
     trailingBaseline: config.trailingBaseline,
+    sellHoldWinnerMinProfitPercent: config.sellHoldWinnerMinProfitPercent,
+    sellHoldWinnerMaxDrawdownPercent: config.sellHoldWinnerMaxDrawdownPercent,
     maxLotsPerOrder: config.maxLotsPerOrder,
     buyTickers: config.buyTickers,
     scanTickers: config.scanTickers,
@@ -418,6 +421,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/strategy-evidence') {
         json(res, 200, await StrategyEvidenceService.getEvidence());
+        return;
+    }
+
+    if (url.pathname === '/api/sell-brain') {
+        json(res, 200, await SellBrainService.evaluate(config));
         return;
     }
 

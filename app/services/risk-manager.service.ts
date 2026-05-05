@@ -51,6 +51,14 @@ export default class RiskManagerService {
             };
         }
 
+        if (input.signal.action === 'hold') {
+            return {
+                allowed: false,
+                reason: `${input.signal.source}: ${input.signal.reason}`,
+                profitPercent: input.signal.profitPercent
+            };
+        }
+
         if (input.signal.action !== 'sell') {
             return { allowed: false, reason: `unsupported signal action: ${input.signal.action}`, profitPercent };
         }
