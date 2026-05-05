@@ -14,5 +14,16 @@ services:
       - .:/code
       - robot_ti_node_modules:/code/node_modules
 
+  social_collector:
+    image: node:20.0.0-slim
+    container_name: robot_ti_social_collector
+    restart: always
+    working_dir: /code
+    env_file: ./.env
+    command: bash -c 'npm run social:collector'
+    volumes:
+      - .:/code
+      - robot_ti_node_modules:/code/node_modules
+
 volumes:
   robot_ti_node_modules:

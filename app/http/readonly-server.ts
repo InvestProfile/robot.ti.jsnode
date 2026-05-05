@@ -24,6 +24,7 @@ import MarketRegimeService from '../services/market-regime.service';
 import StrategyEvidenceService from '../services/strategy-evidence.service';
 import SocialSignalService from '../services/social-signal.service';
 import SellBrainService from '../services/sell-brain.service';
+import SocialCollectorService from '../services/social-collector.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -434,6 +435,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
         json(res, 200, await SocialSignalService.list(
             Number.isFinite(requestedLimit) ? requestedLimit : 100
         ));
+        return;
+    }
+
+    if (url.pathname === '/api/social-collector') {
+        json(res, 200, await SocialCollectorService.status());
         return;
     }
 

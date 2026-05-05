@@ -178,6 +178,10 @@ ROBOT_PAPER_MAX_POSITIONS=10
 ROBOT_PAPER_MAX_POSITION_RUB=1000
 ROBOT_PAPER_COMMISSION_PERCENT=0.05
 ROBOT_PAPER_REENTRY_COOLDOWN_MS=10800000
+ROBOT_SOCIAL_PROFILE_URLS=
+ROBOT_SOCIAL_MIN_RETURN_PERCENT=100
+ROBOT_SOCIAL_COLLECTOR_INTERVAL_MS=900000
+ROBOT_SOCIAL_AUTH_COOKIE=
 ROBOT_MIN_PROFIT_PERCENT=0.5
 ROBOT_STOP_LOSS_PERCENT=3
 ROBOT_TRAILING_STOP_PERCENT=2
@@ -285,6 +289,12 @@ commissions, confidence, and decision counts. `/api/sell-brain` and
 position is still close to its observed high. `/api/social-signals` is the read-only landing
 zone for future Pulse/social-alpha parsing; those signals are stored separately
 and should be treated as an extra decision factor, not as direct trade commands.
+`npm run social:collect` performs one isolated social collector tick, while
+`npm run social:collector` runs that collector as a separate long-running
+process. It only writes social profile/signal data and is intentionally not part
+of the main trading loop. In Docker it can be started separately with
+`docker-compose up -d social_collector`; the normal robot deploy command starts
+only the `robot` service.
 
 `ROBOT_MARKET_REGIME_ENABLED=true` blocks new buy signals when the market
 backdrop is weak. It checks `ROBOT_MARKET_REGIME_TICKERS` against their

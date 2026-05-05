@@ -271,6 +271,9 @@ export const dashboardPage = `<!doctype html>
           <div class="table-wrap"><table id="socialSignals"></table></div>
         </section>
         <section>
+          <h2>Collector Health <span class="help" title="Отдельный read-only процесс для Pulse/социальных профилей. Если он упадет, основной робот продолжит работать.">?</span></h2>
+          <div id="socialCollectorSummary" class="small" style="margin:8px 0 12px"></div>
+          <div class="table-wrap" style="margin-bottom:14px"><table id="socialProfiles"></table></div>
           <h2>Top Social Tickers</h2>
           <div class="table-wrap"><table id="socialTickers"></table></div>
         </section>
@@ -360,7 +363,7 @@ export const dashboardPage = `<!doctype html>
       );
     }
     async function load() {
-      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions, marketRegime, strategyEvidence, socialSignals, sellBrain] = await Promise.all([
+      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions, marketRegime, strategyEvidence, socialSignals, socialCollector, sellBrain] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
         api('/api/limits'),
@@ -376,6 +379,7 @@ export const dashboardPage = `<!doctype html>
         api('/api/market-regime'),
         api('/api/strategy-evidence'),
         api('/api/social-signals?limit=100'),
+        api('/api/social-collector'),
         api('/api/sell-brain')
       ]);
       const readiness = getReadiness(status, limits, marketRegime, paperPositions, preview);
@@ -456,6 +460,16 @@ export const dashboardPage = `<!doctype html>
       ].join('<br>');
       document.getElementById('socialSignals').innerHTML = rows(['Time', 'Actor', 'Return', 'Ticker', 'Action', 'Confidence', 'Reason'], socialSignals.signals, s =>
         '<tr><td class="nowrap">' + time(s.observedAt) + '</td><td>' + esc(s.actorName || s.actorKey) + '<div class="small">' + esc(s.source) + '</div></td><td class="right">' + percent(s.actorReturnPercent) + '</td><td>' + esc(s.ticker) + '<div class="small">' + esc(s.name) + '</div></td><td>' + esc(s.action) + '</td><td class="right">' + percent(s.confidence) + '</td><td class="reason">' + esc(s.reason) + '</td></tr>'
+      );
+      document.getElementById('socialCollectorSummary').innerHTML = [
+        socialCollector.ok ? pill('good', 'OK') : pill('warn', 'WAITING'),
+        'profiles: ' + esc(socialCollector.health.activeProfiles) + ' / configured ' + esc(socialCollector.config.configuredProfiles),
+        'pending auth: ' + esc(socialCollector.health.pendingAuth),
+        'stale: ' + esc(socialCollector.health.staleProfiles),
+        'auth cookie: ' + esc(socialCollector.config.hasAuthCookie)
+      ].join('<br>');
+      document.getElementById('socialProfiles').innerHTML = rows(['Status', 'Profile', 'Return', 'Checked', 'Error'], socialCollector.profiles, p =>
+        '<tr><td>' + (p.status === 'ready' ? pill('good', p.status) : pill('warn', p.status)) + '</td><td>' + esc(p.displayName || p.profileKey) + '<div class="small">' + esc(p.profileUrl) + '</div></td><td class="right">' + percent(p.lastReturnPercent) + '</td><td class="nowrap">' + time(p.lastCheckedAt) + '</td><td class="reason">' + esc(p.lastError) + '</td></tr>'
       );
       document.getElementById('socialTickers').innerHTML = rows(['Ticker', 'Signals', 'Buy', 'Sell', 'Watch', 'Hold'], socialSignals.summary.topTickers, s =>
         '<tr><td>' + esc(s.ticker) + '</td><td class="right">' + esc(s.count) + '</td><td class="right">' + esc(s.buy) + '</td><td class="right">' + esc(s.sell) + '</td><td class="right">' + esc(s.watch) + '</td><td class="right">' + esc(s.hold) + '</td></tr>'
