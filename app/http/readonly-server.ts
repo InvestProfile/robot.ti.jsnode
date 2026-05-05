@@ -15,6 +15,7 @@ import { PortfolioSnapshotModel } from '../models/portfolio-snapshot.model';
 import PerformanceService from '../services/performance.service';
 import BuyScannerService from '../services/buy-scanner.service';
 import BuyBacktestService from '../services/buy-backtest.service';
+import BuyOptimizerService from '../services/buy-optimizer.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -335,6 +336,27 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
             config,
             tickers?.length ? tickers : config.scanTickers,
             Number.isFinite(days) && days > 0 ? Math.trunc(days) : 180
+        ));
+        return;
+    }
+
+    if (url.pathname === '/api/buy-optimize') {
+        const tickers = url.searchParams.get('tickers')
+            ?.split(',')
+            .map(ticker => ticker.trim().toUpperCase())
+            .filter(Boolean);
+        const days = Number(url.searchParams.get('days') ?? 180);
+        const windows = BuyOptimizerService.parseWindows(url.searchParams.get('windows') ?? undefined);
+        const thresholds = BuyOptimizerService.parseThresholds(url.searchParams.get('thresholds') ?? undefined);
+        const horizons = BuyOptimizerService.parseHorizons(url.searchParams.get('horizons') ?? undefined);
+
+        json(res, 200, await BuyOptimizerService.optimize(
+            config,
+            tickers?.length ? tickers : config.scanTickers,
+            Number.isFinite(days) && days > 0 ? Math.trunc(days) : 180,
+            windows,
+            thresholds,
+            horizons
         ));
         return;
     }
