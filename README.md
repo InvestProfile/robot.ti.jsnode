@@ -275,6 +275,12 @@ net of `ROBOT_PAPER_COMMISSION_PERCENT` on entry and estimated exit, while
 after a paper close. This does not post broker orders and is available through
 `/api/paper-positions`.
 
+`/api/strategy-evidence` and `npm run evidence` summarize whether the robot has
+enough data to trust each strategy: buy-signal returns, paper P/L, win-rate,
+commissions, and decision counts. `/api/social-signals` is the read-only landing
+zone for future Pulse/social-alpha parsing; those signals are stored separately
+and should be treated as an extra decision factor, not as direct trade commands.
+
 `ROBOT_MARKET_REGIME_ENABLED=true` blocks new buy signals when the market
 backdrop is weak. It checks `ROBOT_MARKET_REGIME_TICKERS` against their
 `ROBOT_MARKET_REGIME_DAYS` average and requires at least

@@ -168,6 +168,8 @@ export const dashboardPage = `<!doctype html>
     <button class="tab active" data-tab="overview">Overview</button>
     <button class="tab" data-tab="signals">Signals</button>
     <button class="tab" data-tab="paper">Paper</button>
+    <button class="tab" data-tab="evidence">Evidence</button>
+    <button class="tab" data-tab="social">Social</button>
     <button class="tab" data-tab="market">Market</button>
     <button class="tab" data-tab="accounts">Accounts</button>
     <button class="tab" data-tab="logs">Logs</button>
@@ -235,6 +237,35 @@ export const dashboardPage = `<!doctype html>
         <div id="paperSummary" class="small" style="margin:8px 0 12px"></div>
         <div class="table-wrap"><table id="paperPositions"></table></div>
       </section>
+    </div>
+
+    <div id="evidence" class="view">
+      <div class="layout">
+        <section>
+          <h2>Strategy Evidence <span class="help" title="Зачетка стратегий: сколько данных собрано, какой paper P/L, win-rate и можно ли уже доверять выводам.">?</span></h2>
+          <div class="table-wrap"><table id="strategyEvidence"></table></div>
+        </section>
+        <section>
+          <h2>Buy Signal Returns <span class="help" title="Проверка buy-сигналов из журнала: что происходило через 1/3/5/10 торговых дней после сигнала.">?</span></h2>
+          <div id="buyReturnEvidence" class="small" style="margin-bottom:12px"></div>
+          <h2>Social Alpha Summary <span class="help" title="Будущий слой Pulse/успешных людей. Сейчас это журнал и статистика, парсер подключим отдельным шагом.">?</span></h2>
+          <div id="socialEvidence" class="small"></div>
+        </section>
+      </div>
+    </div>
+
+    <div id="social" class="view">
+      <div class="layout">
+        <section>
+          <h2>Social Signals <span class="help" title="Сигналы от наблюдаемых успешных участников. Они не торгуют сами по себе, а дают дополнительный вес нашему алгоритму.">?</span></h2>
+          <div id="socialSummary" class="small" style="margin:8px 0 12px"></div>
+          <div class="table-wrap"><table id="socialSignals"></table></div>
+        </section>
+        <section>
+          <h2>Top Social Tickers</h2>
+          <div class="table-wrap"><table id="socialTickers"></table></div>
+        </section>
+      </div>
     </div>
 
     <div id="market" class="view">
@@ -320,7 +351,7 @@ export const dashboardPage = `<!doctype html>
       );
     }
     async function load() {
-      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions, marketRegime] = await Promise.all([
+      const [status, accounts, limits, performance, decisions, trades, snapshots, positions, preview, buySignals, scanUniverse, paperPositions, marketRegime, strategyEvidence, socialSignals] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
         api('/api/limits'),
@@ -333,7 +364,9 @@ export const dashboardPage = `<!doctype html>
         api('/api/buy-signals?limit=30'),
         api('/api/scan-universe'),
         api('/api/paper-positions?limit=50'),
-        api('/api/market-regime')
+        api('/api/market-regime'),
+        api('/api/strategy-evidence'),
+        api('/api/social-signals?limit=100')
       ]);
       const readiness = getReadiness(status, limits, marketRegime, paperPositions, preview);
       document.getElementById('updated').textContent = 'updated ' + new Date().toLocaleTimeString('ru-RU');
@@ -376,6 +409,36 @@ export const dashboardPage = `<!doctype html>
       ].join('<br>');
       document.getElementById('paperPositions').innerHTML = rows(['Status', 'Ticker', 'Score', 'Entry', 'Current', 'Gross', 'Fee', 'Net', 'Reason'], paperPositions.positions, p =>
         '<tr><td>' + esc(p.status) + '</td><td>' + esc(p.ticker) + '<div class="small">' + esc(p.name) + '</div></td><td class="right">' + esc(p.entryScore) + '</td><td class="right">' + money(p.entryPrice) + '</td><td class="right">' + money(p.currentPrice || p.exitPrice) + '</td><td class="right">' + money(p.grossProfitRub) + '</td><td class="right">' + money(p.totalCommissionRub) + '</td><td class="right">' + money(p.profitRub) + '<div class="small">' + percent(p.profitPercent) + '</div></td><td class="reason">' + esc(p.exitReason || p.entryReason) + '</td></tr>'
+      );
+      document.getElementById('strategyEvidence').innerHTML = rows(['Strategy', 'Type', 'Data', 'Win-rate', 'Avg', 'P/L', 'Fee', 'Status', 'Note'], strategyEvidence.strategies, s =>
+        '<tr><td>' + esc(s.strategy) + '</td><td>' + esc(s.type) + '</td><td>signals ' + esc(s.signals) + '<div class="small">paper ' + esc(s.paperPositions) + ', closed ' + esc(s.closed) + ', decisions ' + esc(s.decisions) + '</div></td><td class="right">' + percent(s.winRatePercent) + '</td><td class="right">' + percent(s.averageProfitPercent) + '</td><td class="right">' + money(s.profitRub) + '</td><td class="right">' + money(s.commissionRub) + '</td><td>' + (s.status === 'enough-data' ? pill('good', s.status) : pill('warn', s.status || 'log')) + '</td><td class="reason">' + esc(s.note || ('dry-run ' + (s.dryRun || 0) + ', skip ' + (s.skipped || 0) + ', orders ' + (s.orders || 0))) + '</td></tr>'
+      );
+      const returns = strategyEvidence.buySignalJournal;
+      document.getElementById('buyReturnEvidence').innerHTML = [
+        'signals: ' + esc(returns.signals),
+        '1d: n=' + esc(returns.return1d.count) + ', avg ' + percent(returns.return1d.avg) + ', WR ' + percent(returns.return1d.winRatePercent),
+        '3d: n=' + esc(returns.return3d.count) + ', avg ' + percent(returns.return3d.avg) + ', WR ' + percent(returns.return3d.winRatePercent),
+        '5d: n=' + esc(returns.return5d.count) + ', avg ' + percent(returns.return5d.avg) + ', WR ' + percent(returns.return5d.winRatePercent),
+        '10d: n=' + esc(returns.return10d.count) + ', avg ' + percent(returns.return10d.avg) + ', WR ' + percent(returns.return10d.winRatePercent)
+      ].join('<br>');
+      document.getElementById('socialEvidence').innerHTML = [
+        'signals 30d: ' + esc(strategyEvidence.socialAlpha.signals),
+        'actors: ' + esc(strategyEvidence.socialAlpha.actors),
+        'tickers: ' + esc(strategyEvidence.socialAlpha.tickers),
+        'avg actor return: ' + percent(strategyEvidence.socialAlpha.averageActorReturnPercent)
+      ].join('<br>');
+      document.getElementById('socialSummary').innerHTML = [
+        'signals 30d: ' + esc(socialSignals.summary.signals),
+        'actors: ' + esc(socialSignals.summary.actors),
+        'tickers: ' + esc(socialSignals.summary.tickers),
+        'avg confidence: ' + percent(socialSignals.summary.averageConfidence),
+        'avg actor return: ' + percent(socialSignals.summary.averageActorReturnPercent)
+      ].join('<br>');
+      document.getElementById('socialSignals').innerHTML = rows(['Time', 'Actor', 'Return', 'Ticker', 'Action', 'Confidence', 'Reason'], socialSignals.signals, s =>
+        '<tr><td class="nowrap">' + time(s.observedAt) + '</td><td>' + esc(s.actorName || s.actorKey) + '<div class="small">' + esc(s.source) + '</div></td><td class="right">' + percent(s.actorReturnPercent) + '</td><td>' + esc(s.ticker) + '<div class="small">' + esc(s.name) + '</div></td><td>' + esc(s.action) + '</td><td class="right">' + percent(s.confidence) + '</td><td class="reason">' + esc(s.reason) + '</td></tr>'
+      );
+      document.getElementById('socialTickers').innerHTML = rows(['Ticker', 'Signals', 'Buy', 'Sell', 'Watch', 'Hold'], socialSignals.summary.topTickers, s =>
+        '<tr><td>' + esc(s.ticker) + '</td><td class="right">' + esc(s.count) + '</td><td class="right">' + esc(s.buy) + '</td><td class="right">' + esc(s.sell) + '</td><td class="right">' + esc(s.watch) + '</td><td class="right">' + esc(s.hold) + '</td></tr>'
       );
       document.getElementById('marketRegimeSummary').innerHTML = [
         marketRegime.passed ? pill('good', 'PASSED') : pill('bad', 'BLOCKED'),
