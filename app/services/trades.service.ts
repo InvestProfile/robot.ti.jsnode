@@ -84,4 +84,31 @@ export default class TradesService {
             } as any
         });
     }
+
+    static async sumTodayBuyTradesRub(accountId: string | undefined) {
+        if (!accountId) return 0;
+
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+
+        const trades = await TradesModel.findAll({
+            where: {
+                accountId,
+                direction: '1',
+                createdAt: {
+                    [Op.gte]: startOfDay
+                }
+            } as any
+        });
+
+        return trades.reduce((sum, trade) => {
+            const data = trade.get({ plain: true }) as Record<string, unknown>;
+            const units = Number(data.price_units ?? 0);
+            const nano = Number(data.price_nano ?? 0);
+            const lot = Number(data.lot ?? data.quantity ?? 1);
+            const price = units + nano * 1e-9;
+
+            return Number.isFinite(price) && Number.isFinite(lot) ? sum + price * Math.max(1, lot) : sum;
+        }, 0);
+    }
 }

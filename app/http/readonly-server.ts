@@ -91,7 +91,10 @@ const safeConfig = (config: RobotConfig) => ({
     maxLotsPerOrder: config.maxLotsPerOrder,
     buyTickers: config.buyTickers,
     maxOrderRub: config.maxOrderRub,
-    maxDailyOrders: config.maxDailyOrders
+    maxDailyOrders: config.maxDailyOrders,
+    maxDailyRub: config.maxDailyRub,
+    signalCooldownMs: config.signalCooldownMs,
+    signalPriceChangePercent: config.signalPriceChangePercent
 });
 
 const getAllAccounts = (config: RobotConfig) => [

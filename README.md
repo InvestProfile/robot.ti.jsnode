@@ -106,6 +106,9 @@ ROBOT_ENABLED_STRATEGIES=stop-loss,trailing-stop,profit-take
 ROBOT_BUY_TICKERS=SBER,T,YDEX
 ROBOT_MAX_ORDER_RUB=1000
 ROBOT_MAX_DAILY_ORDERS=3
+ROBOT_MAX_DAILY_RUB=2000
+ROBOT_SIGNAL_COOLDOWN_MS=1800000
+ROBOT_SIGNAL_PRICE_CHANGE_PERCENT=1
 ROBOT_MIN_PROFIT_PERCENT=0.5
 ROBOT_STOP_LOSS_PERCENT=3
 ROBOT_TRAILING_STOP_PERCENT=2
@@ -159,4 +162,10 @@ Buy-side risk limits:
 
 - `ROBOT_MAX_ORDER_RUB` caps a single estimated order amount;
 - `ROBOT_MAX_DAILY_ORDERS` caps accepted buy orders per account per day;
+- `ROBOT_MAX_DAILY_RUB` caps accepted buy order amount per account per day;
 - the robot refuses buy signals when there is not enough available RUB cash.
+
+Decision logging is de-duplicated through `signal_states`. Repeated decisions
+with the same account, instrument, source, status, and reason are suppressed
+until `ROBOT_SIGNAL_COOLDOWN_MS` passes or price changes by at least
+`ROBOT_SIGNAL_PRICE_CHANGE_PERCENT`.

@@ -12,6 +12,7 @@ interface RiskInput {
 interface BuyRiskInput {
     availableCashRub: number;
     dailyOrdersCount: number;
+    dailyOrdersRub: number;
     signal?: TradeSignal;
     tradingStatus?: number;
 }
@@ -91,6 +92,10 @@ export default class RiskManagerService {
 
         if (estimatedOrderRub > config.maxOrderRub) {
             return { allowed: false, reason: 'estimated order amount is above max order RUB', profitPercent: 0 };
+        }
+
+        if (config.maxDailyRub > 0 && input.dailyOrdersRub + estimatedOrderRub > config.maxDailyRub) {
+            return { allowed: false, reason: 'daily RUB limit reached', profitPercent: 0 };
         }
 
         if (estimatedOrderRub > input.availableCashRub) {

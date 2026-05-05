@@ -156,7 +156,10 @@ export const dashboardPage = `<!doctype html>
         'observe accounts: ' + esc(status.config.observeAccountIds.join(', ')),
         'buy tickers: ' + esc(status.config.buyTickers.join(', ')),
         'max order RUB: ' + esc(status.config.maxOrderRub),
-        'max daily orders: ' + esc(status.config.maxDailyOrders)
+        'max daily orders: ' + esc(status.config.maxDailyOrders),
+        'max daily RUB: ' + esc(status.config.maxDailyRub),
+        'signal cooldown: ' + esc(Math.round(status.config.signalCooldownMs / 60000)) + ' min',
+        'signal price change: ' + esc(status.config.signalPriceChangePercent) + '%'
       ].join('<br>');
       document.getElementById('accounts').innerHTML = rows(['Account', 'Mode', 'Cash RUB', 'Total', 'Positions'], accounts.accounts, a =>
         '<tr><td>' + esc(a.alias || a.accountId) + '<div class="small">' + esc(a.accountId) + '</div></td><td>' + esc(a.mode) + '</td><td class="right">' + money(a.cashRub) + '</td><td class="right">' + money(a.totalRub) + '</td><td class="right">' + esc(a.positionsCount) + '</td></tr>'

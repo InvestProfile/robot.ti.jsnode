@@ -104,6 +104,9 @@ export interface RobotConfig {
     buyTickers: string[];
     maxOrderRub: number;
     maxDailyOrders: number;
+    maxDailyRub: number;
+    signalCooldownMs: number;
+    signalPriceChangePercent: number;
 }
 
 export const getRobotConfig = (): RobotConfig => {
@@ -143,6 +146,9 @@ export const getRobotConfig = (): RobotConfig => {
         maxLotsPerOrder: Math.max(1, Math.trunc(parseNumber(env.ROBOT_MAX_LOTS_PER_ORDER, 1))),
         buyTickers: parseOptionalAccountIds(env.ROBOT_BUY_TICKERS).map(ticker => ticker.toUpperCase()),
         maxOrderRub: parseNumber(env.ROBOT_MAX_ORDER_RUB, 1_000),
-        maxDailyOrders: Math.max(0, Math.trunc(parseNumber(env.ROBOT_MAX_DAILY_ORDERS, 3)))
+        maxDailyOrders: Math.max(0, Math.trunc(parseNumber(env.ROBOT_MAX_DAILY_ORDERS, 3))),
+        maxDailyRub: Math.max(0, parseNumber(env.ROBOT_MAX_DAILY_RUB, 2_000)),
+        signalCooldownMs: Math.max(0, parseNumber(env.ROBOT_SIGNAL_COOLDOWN_MS, 30 * 60 * 1000)),
+        signalPriceChangePercent: Math.max(0, parseNumber(env.ROBOT_SIGNAL_PRICE_CHANGE_PERCENT, 1))
     };
 };

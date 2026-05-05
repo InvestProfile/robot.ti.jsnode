@@ -56,6 +56,7 @@ const executeBuySignals = async (
             .filter(Boolean) ?? []
     );
     let dailyOrdersCount = await TradesService.countTodayTrades(accountId);
+    let dailyOrdersRub = await TradesService.sumTodayBuyTradesRub(accountId);
     const buyInstruments = config.buyTickers
         .map(ticker => instruments.find(instrument => instrument.ticker?.toUpperCase() === ticker))
         .filter((instrument): instrument is ShareInstrument => Boolean(instrument?.uid && instrument?.figi));
@@ -103,6 +104,7 @@ const executeBuySignals = async (
         const risk = RiskManagerService.evaluateBuySignal({
             availableCashRub: remainingCashRub,
             dailyOrdersCount,
+            dailyOrdersRub,
             signal,
             tradingStatus: tradingStatus?.tradingStatus
         }, config);
@@ -142,6 +144,7 @@ const executeBuySignals = async (
                 estimatedOrderRub: risk.estimatedOrderRub
             });
             dailyOrdersCount += 1;
+            dailyOrdersRub += risk.estimatedOrderRub ?? 0;
             remainingCashRub -= risk.estimatedOrderRub ?? 0;
             continue;
         }
@@ -175,6 +178,7 @@ const executeBuySignals = async (
         }
 
         dailyOrdersCount += 1;
+        dailyOrdersRub += risk.estimatedOrderRub ?? 0;
         remainingCashRub -= risk.estimatedOrderRub ?? 0;
 
         await TradesService.createTrade(
@@ -422,6 +426,7 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
     console.log('Max lots per order: ' + config.maxLotsPerOrder);
     console.log('Max order RUB: ' + config.maxOrderRub);
     console.log('Max daily orders: ' + config.maxDailyOrders);
+    console.log('Max daily RUB: ' + config.maxDailyRub);
     console.log('Buy tickers: ' + (config.buyTickers.join(', ') || '<none>'));
     console.log('Dry run: ' + config.dryRun);
     console.log('Live confirmation required: ' + config.liveConfirmationRequired);
