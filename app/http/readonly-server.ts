@@ -10,6 +10,7 @@ import InstrumentsService from '../services/instruments.service';
 import { quotationToNumber } from '../utils/money';
 import { dashboardPage } from './dashboard-page';
 import { TradesModel } from '../models/trades.model';
+import TradesService from '../services/trades.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -184,6 +185,28 @@ const getTradesPayload = async (url: URL) => {
     };
 };
 
+const getLimitsPayload = async (config: RobotConfig) => {
+    const limits = [];
+
+    for (const accountId of config.accountIds) {
+        const ordersUsed = await TradesService.countTodayTrades(accountId);
+        const rubUsed = await TradesService.sumTodayBuyTradesRub(accountId);
+
+        limits.push({
+            accountId,
+            accountAlias: config.accountAliases[accountId],
+            ordersUsed,
+            ordersLimit: config.maxDailyOrders,
+            ordersLeft: Math.max(0, config.maxDailyOrders - ordersUsed),
+            rubUsed,
+            rubLimit: config.maxDailyRub,
+            rubLeft: Math.max(0, config.maxDailyRub - rubUsed)
+        });
+    }
+
+    return { limits };
+};
+
 const getPreviewPayload = async (config: RobotConfig) => {
     const previews = [];
 
@@ -243,6 +266,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/trades') {
         json(res, 200, await getTradesPayload(url));
+        return;
+    }
+
+    if (url.pathname === '/api/limits') {
+        json(res, 200, await getLimitsPayload(config));
         return;
     }
 

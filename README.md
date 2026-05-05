@@ -12,7 +12,8 @@ The runtime is intentionally conservative:
 - starts in `ROBOT_DRY_RUN=true` by default;
 - requires an explicit live confirmation phrase before real-money trading can start;
 - writes every decision into the `trade_decisions` table;
-- writes executed orders into the `trades` table.
+- writes posted orders into the `trades` table;
+- reconciles posted orders against the broker order state.
 
 ## Local Run
 
@@ -87,6 +88,7 @@ Read-only endpoints:
 - `/api/preview`
 - `/api/decisions`
 - `/api/trades`
+- `/api/limits`
 
 Useful checks:
 

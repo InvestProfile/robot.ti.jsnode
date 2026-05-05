@@ -108,6 +108,10 @@ export const dashboardPage = `<!doctype html>
         <div style="overflow:auto"><table id="accounts"></table></div>
       </section>
       <section>
+        <h2>Daily Limits</h2>
+        <div style="overflow:auto"><table id="limits"></table></div>
+      </section>
+      <section>
         <h2>Config</h2>
         <div id="config" class="small"></div>
       </section>
@@ -143,6 +147,9 @@ export const dashboardPage = `<!doctype html>
     const rows = (headers, items, render) => '<thead><tr>' + headers.map(h => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>' + items.map(render).join('') + '</tbody>';
     const tradeDirection = value => String(value) === '2' ? 'sell' : String(value) === '1' ? 'buy' : '-';
     const tradeAmount = trade => {
+      const total = Number(trade.totalAmountUnits || 0) + Number(trade.totalAmountNano || 0) / 1e9;
+      if (Number.isFinite(total) && total > 0) return total;
+
       const price = Number(trade.price_units || 0) + Number(trade.price_nano || 0) / 1e9;
       const lots = Math.max(1, Number(trade.lot || trade.quantity || 1));
       return Number.isFinite(price) && Number.isFinite(lots) ? price * lots : undefined;
@@ -153,9 +160,10 @@ export const dashboardPage = `<!doctype html>
       return res.json();
     }
     async function load() {
-      const [status, accounts, decisions, trades, positions, preview] = await Promise.all([
+      const [status, accounts, limits, decisions, trades, positions, preview] = await Promise.all([
         api('/api/status'),
         api('/api/accounts'),
+        api('/api/limits'),
         api('/api/decisions?limit=80'),
         api('/api/trades?limit=20'),
         api('/api/positions'),
@@ -184,11 +192,14 @@ export const dashboardPage = `<!doctype html>
       document.getElementById('accounts').innerHTML = rows(['Account', 'Mode', 'Cash RUB', 'Total', 'Positions'], accounts.accounts, a =>
         '<tr><td>' + esc(a.alias || a.accountId) + '<div class="small">' + esc(a.accountId) + '</div></td><td>' + esc(a.mode) + '</td><td class="right">' + money(a.cashRub) + '</td><td class="right">' + money(a.totalRub) + '</td><td class="right">' + esc(a.positionsCount) + '</td></tr>'
       );
+      document.getElementById('limits').innerHTML = rows(['Account', 'Orders', 'Left', 'RUB used', 'RUB left'], limits.limits, l =>
+        '<tr><td>' + esc(l.accountAlias || l.accountId) + '</td><td class="right">' + esc(l.ordersUsed) + ' / ' + esc(l.ordersLimit) + '</td><td class="right">' + esc(l.ordersLeft) + '</td><td class="right">' + money(l.rubUsed) + ' / ' + money(l.rubLimit) + '</td><td class="right">' + money(l.rubLeft) + '</td></tr>'
+      );
       document.getElementById('decisions').innerHTML = rows(['Time', 'Account', 'Mode', 'Ticker', 'Signal', 'Status', 'P/L', 'Reason'], decisions.decisions, d =>
         '<tr><td>' + time(d.createdAt) + '</td><td>' + esc(d.accountAlias || d.accountId) + '</td><td>' + esc(d.accountMode) + '</td><td>' + esc(d.ticker || d.figi) + '</td><td>' + esc(d.signalSource) + '</td><td>' + esc(d.status) + '</td><td class="right">' + percent(d.profitPercent) + '</td><td>' + esc(d.reason) + '</td></tr>'
       );
-      document.getElementById('trades').innerHTML = rows(['Time', 'Account', 'Ticker', 'Side', 'Lots', 'Amount', 'Status', 'Order'], trades.trades, t =>
-        '<tr><td>' + time(t.createdAt) + '</td><td>' + esc(t.accountId) + '</td><td>' + esc(t.ticker || t.figi) + '<div class="small">' + esc(t.name) + '</div></td><td>' + esc(tradeDirection(t.direction)) + '</td><td class="right">' + esc(t.lot || t.quantity) + '</td><td class="right">' + money(tradeAmount(t)) + '</td><td>' + esc(t.status) + '</td><td>' + esc(t.orderId) + '</td></tr>'
+      document.getElementById('trades').innerHTML = rows(['Time', 'Account', 'Ticker', 'Side', 'Lots', 'Done', 'Amount', 'Status', 'Order'], trades.trades, t =>
+        '<tr><td>' + time(t.createdAt) + '</td><td>' + esc(t.accountId) + '</td><td>' + esc(t.ticker || t.figi) + '<div class="small">' + esc(t.name) + '</div></td><td>' + esc(tradeDirection(t.direction)) + '</td><td class="right">' + esc(t.lotsRequested || t.lot || t.quantity) + '</td><td class="right">' + esc(t.lotsExecuted) + '</td><td class="right">' + money(tradeAmount(t)) + '</td><td>' + esc(t.status) + '</td><td>' + esc(t.orderId) + '</td></tr>'
       );
       document.getElementById('positions').innerHTML = rows(['Account', 'Ticker', 'Name', 'Lots', 'Average', 'Current', 'P/L'], positions.positions, p =>
         '<tr><td>' + esc(p.accountAlias || p.accountId) + '</td><td>' + esc(p.ticker || p.figi) + '</td><td>' + esc(p.name) + '</td><td class="right">' + esc(p.quantityLots) + '</td><td class="right">' + money(p.averagePrice) + '</td><td class="right">' + money(p.currentPrice) + '</td><td class="right">' + percent(p.profitPercent) + '</td></tr>'

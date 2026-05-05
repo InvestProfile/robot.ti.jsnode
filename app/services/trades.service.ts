@@ -2,6 +2,7 @@
 // tradeService.ts
 import { TradesModel } from '../models/trades.model';
 import { Op } from 'sequelize';
+import { isFinalOrderStatus } from '../utils/order-status';
 
 export interface TradeOrderMetadata {
     orderId?: string;
@@ -9,6 +10,12 @@ export interface TradeOrderMetadata {
     status?: string;
     tradeDateTime?: string;
     instrumentId?: string;
+    lotsRequested?: number;
+    lotsExecuted?: number;
+    executedPriceUnits?: string | number;
+    executedPriceNano?: string | number;
+    totalAmountUnits?: string | number;
+    totalAmountNano?: string | number;
 }
 
 export default class TradesService {
@@ -72,7 +79,13 @@ export default class TradesService {
                 orderType: metadata.orderType,
                 status: metadata.status,
                 tradeDateTime: metadata.tradeDateTime,
-                instrumentId: metadata.instrumentId ?? instrumentUid
+                instrumentId: metadata.instrumentId ?? instrumentUid,
+                lotsRequested: metadata.lotsRequested,
+                lotsExecuted: metadata.lotsExecuted,
+                executedPriceUnits: metadata.executedPriceUnits,
+                executedPriceNano: metadata.executedPriceNano,
+                totalAmountUnits: metadata.totalAmountUnits,
+                totalAmountNano: metadata.totalAmountNano
             });
 
             console.log("New trade created successfully.", newTrade);
@@ -124,5 +137,35 @@ export default class TradesService {
 
             return Number.isFinite(price) && Number.isFinite(lot) ? sum + price * Math.max(1, lot) : sum;
         }, 0);
+    }
+
+    static async hasOpenOrderForInstrument(
+        accountId: string | undefined,
+        figi: string | undefined,
+        instrumentUid: string | undefined,
+        direction?: string
+    ) {
+        if (!accountId || (!figi && !instrumentUid)) return false;
+
+        const trades = await TradesModel.findAll({
+            where: {
+                accountId,
+                ...(direction ? { direction } : {})
+            } as any,
+            order: [['createdAt', 'DESC']],
+            limit: 100
+        });
+
+        return trades.some(trade => {
+            const data = trade.get({ plain: true }) as Record<string, unknown>;
+            const sameInstrument = Boolean(
+                (instrumentUid && (data.instrumentUid === instrumentUid || data.instrumentId === instrumentUid || data.uid === instrumentUid))
+                || (figi && data.figi === figi)
+            );
+            const orderId = data.orderId ? String(data.orderId) : undefined;
+            const status = data.status ? String(data.status) : undefined;
+
+            return sameInstrument && Boolean(orderId) && !isFinalOrderStatus(status);
+        });
     }
 }

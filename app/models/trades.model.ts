@@ -23,6 +23,12 @@ export class TradesModel extends Model {
     public uid!: string;
     public positionUid!: string;
     public status!: string;
+    public lotsRequested!: number;
+    public lotsExecuted!: number;
+    public executedPriceUnits!: string;
+    public executedPriceNano!: string;
+    public totalAmountUnits!: string;
+    public totalAmountNano!: string;
     // и так далее
 }
 
@@ -101,6 +107,30 @@ TradesModel.init({
         allowNull: true,
     },
     status: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    lotsRequested: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
+    lotsExecuted: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+    },
+    executedPriceUnits: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    executedPriceNano: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    totalAmountUnits: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
+    totalAmountNano: {
         type: DataTypes.STRING,
         allowNull: true,
     }

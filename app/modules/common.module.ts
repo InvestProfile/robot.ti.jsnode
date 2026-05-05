@@ -7,8 +7,10 @@ import orderService from '../services/orders.service';
 import RiskManagerService from '../services/risk-manager.service';
 import TradeJournalService from '../services/trade-journal.service';
 import TradesService from '../services/trades.service';
+import OrderReconciliationService from '../services/order-reconciliation.service';
 import StrategyEngine from '../strategies/strategy-engine';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
+import { normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
 
 const delay = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
 
@@ -47,12 +49,27 @@ const getOrderMetadata = (orderResult: unknown) => {
         const value = keys.map(key => data[key]).find(item => item !== undefined && item !== null);
         return value === undefined || value === null ? undefined : String(value);
     };
+    const moneyParts = (value: unknown) => {
+        const money = value as Record<string, unknown> | undefined;
+        return {
+            units: money?.units,
+            nano: money?.nano
+        };
+    };
+    const executedPrice = moneyParts(data.executedOrderPrice);
+    const totalAmount = moneyParts(data.totalOrderAmount);
 
     return {
-        orderId: getString('orderId'),
-        orderType: getString('orderType'),
-        status: getString('executionReportStatus', 'status'),
-        tradeDateTime: getString('tradeDateTime', 'createdAt')
+        orderId: getString('orderId', 'clientOrderId'),
+        orderType: normalizeOrderType(data.orderType),
+        status: normalizeOrderStatus(data.executionReportStatus ?? data.status),
+        tradeDateTime: getString('tradeDateTime', 'createdAt'),
+        lotsRequested: typeof data.lotsRequested === 'number' ? data.lotsRequested : undefined,
+        lotsExecuted: typeof data.lotsExecuted === 'number' ? data.lotsExecuted : undefined,
+        executedPriceUnits: executedPrice.units as string | number | undefined,
+        executedPriceNano: executedPrice.nano as string | number | undefined,
+        totalAmountUnits: totalAmount.units as string | number | undefined,
+        totalAmountNano: totalAmount.nano as string | number | undefined
     };
 };
 
@@ -113,6 +130,25 @@ const executeBuySignals = async (
                 status: 'skip',
                 signalSource: preview.signal?.source,
                 reason: 'buy preview is missing order parameters',
+                currentPrice: preview.currentPrice,
+                quantityLots: preview.quantityLots,
+                estimatedOrderRub: preview.estimatedOrderRub
+            });
+            continue;
+        }
+
+        if (await TradesService.hasOpenOrderForInstrument(accountId, preview.figi, preview.instrumentUid, '1')) {
+            await TradeJournalService.logDecision({
+                accountId,
+                accountAlias: preview.accountAlias,
+                accountMode: 'trade',
+                figi: preview.figi,
+                instrumentUid: preview.instrumentUid,
+                ticker: preview.ticker,
+                name: preview.name,
+                status: 'skip',
+                signalSource: preview.signal?.source,
+                reason: 'open buy order already exists',
                 currentPrice: preview.currentPrice,
                 quantityLots: preview.quantityLots,
                 estimatedOrderRub: preview.estimatedOrderRub
@@ -405,6 +441,8 @@ const executeRobotTick = async (config: RobotConfig) => {
         const shares = await InstrumentsService.getShares();
         const instruments = shares?.instruments ?? [];
 
+        await OrderReconciliationService.reconcileOpenOrders();
+
         for (const accountId of config.observeAccountIds) {
             await executeTrades(accountId, config, instruments, 'observe');
         }
@@ -413,6 +451,8 @@ const executeRobotTick = async (config: RobotConfig) => {
             await executeTrades(accountId, config, instruments, 'trade');
             await executeBuySignals(accountId, config, instruments);
         }
+
+        await OrderReconciliationService.reconcileOpenOrders();
     } catch (error) {
         console.error('Error occurred in trading tick:', error);
         lastTickError = error instanceof Error ? error.message : String(error);

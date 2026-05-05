@@ -26,11 +26,12 @@ export default class OrdersService {
     ) {
         if (envVariables.INVEST_TOKEN) {
             const {orders} = getSdk(envVariables.INVEST_TOKEN);
+            const clientOrderId = uuidv4();
 
             try {
-                return await orders.postOrder({
+                const response = await orders.postOrder({
                     accountId,
-                    orderId: uuidv4(),
+                    orderId: clientOrderId,
                     timeInForce: TimeInForceType.TIME_IN_FORCE_UNSPECIFIED,
                     direction: direction === 2?OrderDirection.ORDER_DIRECTION_SELL:OrderDirection.ORDER_DIRECTION_BUY,
                     orderType: OrderType.ORDER_TYPE_MARKET,
@@ -39,7 +40,12 @@ export default class OrdersService {
                     figi,
                     instrumentId,
                     priceType: PriceType.PRICE_TYPE_CURRENCY
-                })
+                });
+
+                return {
+                    ...response,
+                    clientOrderId
+                };
             } catch (error: any) {
                 // Обрабатываем ошибку, если инструмент недоступен для торгов
                 if (error?.message?.includes('instrument is not available for trading')) {
@@ -53,6 +59,17 @@ export default class OrdersService {
             }
 
 
+        }
+    }
+
+    static async getOrderState(accountId: string, orderId: string) {
+        if (envVariables.INVEST_TOKEN) {
+            const {orders} = getSdk(envVariables.INVEST_TOKEN);
+            return await orders.getOrderState({
+                accountId,
+                orderId,
+                priceType: PriceType.PRICE_TYPE_CURRENCY
+            });
         }
     }
 }
