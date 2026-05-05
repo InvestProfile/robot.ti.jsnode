@@ -28,6 +28,34 @@ const main = async () => {
     console.log(`Open P/L RUB: ${format(report.summary.openProfitRub)}`);
     console.log(`Closed P/L RUB: ${format(report.summary.closedProfitRub)}`);
     console.log(`Total P/L RUB: ${format(report.summary.totalProfitRub)}`);
+    console.log(`Closed win-rate: ${format(report.summary.closedWinRatePercent, 0)}%`);
+    console.log(`Avg open P/L: ${format(report.summary.averageOpenProfitPercent)}%`);
+    console.log(`Avg closed P/L: ${format(report.summary.averageClosedProfitPercent)}%`);
+    console.log('');
+    console.log('By Ticker');
+    console.log('---------');
+    for (const item of report.byTicker.slice(0, 10)) {
+        console.log([
+            item.ticker.padEnd(6),
+            `count=${item.count}`.padEnd(8),
+            `open=${item.open}`.padEnd(7),
+            `closed=${item.closed}`.padEnd(9),
+            `rub=${format(item.profitRub)}`.padEnd(12),
+            `avg=${format(item.averageProfitPercent)}%`
+        ].join('  '));
+    }
+    console.log('');
+    console.log('By Exit');
+    console.log('-------');
+    for (const item of report.byExitSource) {
+        console.log([
+            item.source.padEnd(14),
+            `count=${item.count}`.padEnd(8),
+            `wr=${format(item.winRatePercent, 0)}%`.padEnd(8),
+            `rub=${format(item.profitRub)}`.padEnd(12),
+            `avg=${format(item.averageProfitPercent)}%`
+        ].join('  '));
+    }
     console.log('');
     console.log('Status  Ticker  Score  Entry      Current    P/L %    P/L RUB   Reason');
     console.log('------  ------  -----  ---------  ---------  -------  --------  ------------------------------');

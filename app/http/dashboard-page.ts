@@ -137,6 +137,7 @@ export const dashboardPage = `<!doctype html>
       </section>
       <section>
         <h2>Paper Portfolio</h2>
+        <div id="paperSummary" class="small" style="margin-bottom:10px"></div>
         <div style="overflow:auto"><table id="paperPositions"></table></div>
       </section>
       <section>
@@ -231,6 +232,14 @@ export const dashboardPage = `<!doctype html>
       document.getElementById('buySignals').innerHTML = rows(['Time', 'Ticker', 'Profile', 'Score', 'Price', '1d', '3d', '5d', '10d'], buySignals.signals, s =>
         '<tr><td>' + time(s.signaledAt) + '</td><td>' + esc(s.ticker) + '<div class="small">' + esc(s.name) + '</div></td><td class="right">' + esc(s.profileTrendDays) + '/' + esc(s.profileMinScore) + '</td><td class="right">' + esc(s.signalScore) + '</td><td class="right">' + money(s.signalPrice) + '</td><td class="right">' + percent(s.return1dPercent) + '</td><td class="right">' + percent(s.return3dPercent) + '</td><td class="right">' + percent(s.return5dPercent) + '</td><td class="right">' + percent(s.return10dPercent) + '</td></tr>'
       );
+      document.getElementById('paperSummary').innerHTML = [
+        'open: ' + esc(paperPositions.summary.open),
+        'closed: ' + esc(paperPositions.summary.closed),
+        'total P/L: ' + money(paperPositions.summary.totalProfitRub) + ' RUB',
+        'closed win-rate: ' + percent(paperPositions.summary.closedWinRatePercent),
+        'avg open: ' + percent(paperPositions.summary.averageOpenProfitPercent),
+        'avg closed: ' + percent(paperPositions.summary.averageClosedProfitPercent)
+      ].join('<br>');
       document.getElementById('paperPositions').innerHTML = rows(['Status', 'Ticker', 'Score', 'Entry', 'Current', 'P/L', 'Reason'], paperPositions.positions, p =>
         '<tr><td>' + esc(p.status) + '</td><td>' + esc(p.ticker) + '<div class="small">' + esc(p.name) + '</div></td><td class="right">' + esc(p.entryScore) + '</td><td class="right">' + money(p.entryPrice) + '</td><td class="right">' + money(p.currentPrice || p.exitPrice) + '</td><td class="right">' + money(p.profitRub) + '<div class="small">' + percent(p.profitPercent) + '</div></td><td>' + esc(p.exitReason || p.entryReason) + '</td></tr>'
       );

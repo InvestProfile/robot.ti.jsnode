@@ -11,6 +11,66 @@ const calculateProfitPercent = (entryPrice: number, currentPrice: number) =>
 const calculateAmount = (price: number, lot: number, quantityLots: number) =>
     price * Math.max(1, lot) * Math.max(1, quantityLots);
 
+const average = (values: number[]) => values.length > 0
+    ? values.reduce((sum, value) => sum + value, 0) / values.length
+    : undefined;
+
+const groupByTicker = (positions: PaperPositionModel[]) => {
+    const groups = new Map<string, PaperPositionModel[]>();
+
+    for (const position of positions) {
+        const ticker = position.ticker;
+        groups.set(ticker, [...groups.get(ticker) ?? [], position]);
+    }
+
+    return [...groups.entries()]
+        .map(([ticker, items]) => {
+            const profitRub = items.reduce((sum, position) => sum + (position.profitRub ?? 0), 0);
+            const profitPercents = items
+                .map(position => position.profitPercent)
+                .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+
+            return {
+                ticker,
+                count: items.length,
+                open: items.filter(position => position.status === 'open').length,
+                closed: items.filter(position => position.status === 'closed').length,
+                profitRub,
+                averageProfitPercent: average(profitPercents)
+            };
+        })
+        .sort((a, b) => b.profitRub - a.profitRub);
+};
+
+const groupClosedByExitSource = (positions: PaperPositionModel[]) => {
+    const groups = new Map<string, PaperPositionModel[]>();
+
+    for (const position of positions) {
+        const source = position.exitSource ?? 'open';
+        groups.set(source, [...groups.get(source) ?? [], position]);
+    }
+
+    return [...groups.entries()]
+        .map(([source, items]) => {
+            const profits = items
+                .map(position => position.profitRub)
+                .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+            const profitPercents = items
+                .map(position => position.profitPercent)
+                .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+            const wins = profits.filter(value => value > 0).length;
+
+            return {
+                source,
+                count: items.length,
+                winRatePercent: profits.length > 0 ? wins / profits.length * 100 : undefined,
+                profitRub: profits.reduce((sum, value) => sum + value, 0),
+                averageProfitPercent: average(profitPercents)
+            };
+        })
+        .sort((a, b) => b.profitRub - a.profitRub);
+};
+
 export default class PaperTradingService {
     private static getExitSignal(position: PaperPositionModel, currentPrice: number, config: RobotConfig) {
         const highestPrice = Math.max(position.highestPrice, currentPrice);
@@ -176,6 +236,16 @@ export default class PaperTradingService {
         const closedPositions = positions.filter(position => position.status === 'closed');
         const openProfitRub = openPositions.reduce((sum, position) => sum + (position.profitRub ?? 0), 0);
         const closedProfitRub = closedPositions.reduce((sum, position) => sum + (position.profitRub ?? 0), 0);
+        const closedProfits = closedPositions
+            .map(position => position.profitRub)
+            .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+        const closedProfitPercents = closedPositions
+            .map(position => position.profitPercent)
+            .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+        const openProfitPercents = openPositions
+            .map(position => position.profitPercent)
+            .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+        const wins = closedProfits.filter(value => value > 0).length;
 
         return {
             summary: {
@@ -183,8 +253,15 @@ export default class PaperTradingService {
                 closed: closedPositions.length,
                 openProfitRub,
                 closedProfitRub,
-                totalProfitRub: openProfitRub + closedProfitRub
+                totalProfitRub: openProfitRub + closedProfitRub,
+                closedWinRatePercent: closedProfits.length > 0 ? wins / closedProfits.length * 100 : undefined,
+                averageClosedProfitPercent: average(closedProfitPercents),
+                averageOpenProfitPercent: average(openProfitPercents),
+                bestClosedProfitRub: closedProfits.length > 0 ? Math.max(...closedProfits) : undefined,
+                worstClosedProfitRub: closedProfits.length > 0 ? Math.min(...closedProfits) : undefined
             },
+            byTicker: groupByTicker(positions),
+            byExitSource: groupClosedByExitSource(closedPositions),
             positions: positions.map(position => position.toJSON())
         };
     }
