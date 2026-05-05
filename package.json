@@ -11,6 +11,7 @@
     "robot": "npm run build && npm run start",
     "decisions": "npm run build && node build/reports/decisions.report.js",
     "scan:buy": "npm run build && node build/reports/buy-scan.report.js",
+    "analyst:forecasts": "npm run build && node build/reports/analyst-forecasts.report.js",
     "scan:universe": "npm run build && node build/reports/scan-universe.report.js",
     "market:regime": "npm run build && node build/reports/market-regime.report.js",
     "backtest:buy": "npm run build && node build/reports/buy-backtest.report.js",

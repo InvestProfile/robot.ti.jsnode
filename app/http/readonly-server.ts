@@ -29,6 +29,7 @@ import SellBrainService from '../services/sell-brain.service';
 import SocialCollectorService from '../services/social-collector.service';
 import SocialConsensusService from '../services/social-consensus.service';
 import SocialSignalEvidenceService from '../services/social-signal-evidence.service';
+import AnalystForecastService from '../services/analyst-forecast.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -491,6 +492,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
             targets,
             ...await BuyScannerService.scan(config, targets.tickers)
         });
+        return;
+    }
+
+    if (url.pathname === '/api/analyst-forecasts') {
+        const tickers = url.searchParams.get('tickers')
+            ?.split(',')
+            .map(ticker => ticker.trim().toUpperCase())
+            .filter(Boolean);
+        json(res, 200, await AnalystForecastService.getForecasts(config, tickers?.length ? tickers : config.buyTickers));
         return;
     }
 

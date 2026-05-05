@@ -32,13 +32,14 @@ const endpoints = {
   socialConsensus: '/api/social-consensus',
   socialEvidence: '/api/social-evidence?limit=80',
   sellBrain: '/api/sell-brain',
-  buyScan: '/api/buy-scan'
+  buyScan: '/api/buy-scan',
+  analystForecasts: '/api/analyst-forecasts'
 };
 
 const endpointGroups = {
   core: ['status', 'limits', 'performance', 'paper', 'socialCollector'],
   overview: ['preview', 'market'],
-  signals: ['buyScan', 'sellBrain'],
+  signals: ['buyScan', 'sellBrain', 'analystForecasts'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   evidence: ['strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
@@ -70,6 +71,13 @@ const time = (value) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
   return date.toLocaleString('ru-RU');
+};
+
+const recTone = (recommendation) => {
+  if (recommendation === 'buy') return 'good';
+  if (recommendation === 'sell') return 'bad';
+  if (recommendation === 'hold') return 'warn';
+  return 'neutral';
 };
 
 const cls = (...names) => names.filter(Boolean).join(' ');
@@ -245,6 +253,20 @@ function Signals({ data }) {
             { key: 'reason', label: 'Reason', className: 'reason' }
           ]}
           rows={data.buyScan?.items || []}
+        />
+      </Card>
+      <Card title="Консенсус аналитиков" icon={BarChart3} help="Официальный консенсус-прогноз T-Invest API: рекомендации инвестдомов, целевая цена и потенциальный апсайд. Пока это только справочный слой и не влияет на реальные сделки.">
+        <Table
+          columns={[
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
+            { key: 'recommendation', label: 'Rec', render: (row) => <Pill tone={recTone(row.recommendation)}>{row.recommendation}</Pill> },
+            { key: 'currentPrice', label: 'Price', className: 'right', render: (row) => money(row.currentPrice) },
+            { key: 'targetPrice', label: 'Target', className: 'right', render: (row) => money(row.targetPrice) },
+            { key: 'priceChangePercent', label: 'Upside', className: 'right', render: (row) => percent(row.priceChangePercent) },
+            { key: 'targetCount', label: 'Analysts', className: 'right' },
+            { key: 'split', label: 'B/H/S', className: 'right', render: (row) => `${row.buyCount ?? 0}/${row.holdCount ?? 0}/${row.sellCount ?? 0}` }
+          ]}
+          rows={data.analystForecasts?.items || []}
         />
       </Card>
       <Card title="Продажи" icon={AlertTriangle} help="Мозг продаж смотрит позиции на всех счетах. На наблюдаемых счетах он только пишет мнение, на торговом сможет продавать позже, когда мы это явно включим.">
