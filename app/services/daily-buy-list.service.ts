@@ -27,6 +27,15 @@ type DailyBuyListResult = {
         passed?: boolean;
         reason: string;
     }>;
+    excluded: Array<{
+        ticker: string;
+        name?: string;
+        score?: number;
+        gap?: number;
+        lastPrice?: number;
+        estimatedOrderRub?: number;
+        reason: string;
+    }>;
 };
 
 let cache: { expiresAt: number; value: DailyBuyListResult } | undefined;
@@ -42,9 +51,8 @@ export default class DailyBuyListService {
         });
         const scan = await BuyScannerService.scan(config, universe.tickers);
         const minScore = scan.minScore ?? config.buyMinScore;
-        const items = scan.items
+        const scoredItems = scan.items
             .filter(item => item.lastPrice && item.estimatedOrderRub)
-            .filter(item => config.maxOrderRub <= 0 || (item.estimatedOrderRub ?? Number.POSITIVE_INFINITY) <= config.maxOrderRub)
             .map(item => ({
                 ticker: item.ticker,
                 name: item.name,
@@ -55,13 +63,31 @@ export default class DailyBuyListService {
                 passed: item.passed,
                 reason: item.reason
             }))
-            .filter(item => item.score !== undefined && item.score >= minScore - MIN_SCORE_GAP)
+            .filter(item => item.score !== undefined && item.score >= minScore - MIN_SCORE_GAP);
+        const items = scoredItems
+            .filter(item => config.maxOrderRub <= 0 || (item.estimatedOrderRub ?? Number.POSITIVE_INFINITY) <= config.maxOrderRub)
             .sort((a, b) => {
                 const aPass = a.passed ? 1 : 0;
                 const bPass = b.passed ? 1 : 0;
                 if (aPass !== bPass) return bPass - aPass;
                 return (b.score ?? -1) - (a.score ?? -1);
             })
+            .slice(0, MAX_DAILY_TICKERS);
+        const selectedTickers = new Set(items.map(item => item.ticker));
+        const excluded = scoredItems
+            .filter(item => !selectedTickers.has(item.ticker))
+            .map(item => ({
+                ticker: item.ticker,
+                name: item.name,
+                score: item.score,
+                gap: item.gap,
+                lastPrice: item.lastPrice,
+                estimatedOrderRub: item.estimatedOrderRub,
+                reason: config.maxOrderRub > 0 && (item.estimatedOrderRub ?? 0) > config.maxOrderRub
+                    ? `lot is above max order: ${Math.round(item.estimatedOrderRub ?? 0)} RUB > ${config.maxOrderRub} RUB`
+                    : item.reason
+            }))
+            .sort((a, b) => (b.score ?? -1) - (a.score ?? -1))
             .slice(0, MAX_DAILY_TICKERS);
         const tickers = items.map(item => item.ticker);
         const value = {
@@ -75,7 +101,8 @@ export default class DailyBuyListService {
                 scanned: universe.tickers.length,
                 maxLotRub: config.scanMaxLotRub
             },
-            items
+            items,
+            excluded
         };
 
         cache = {

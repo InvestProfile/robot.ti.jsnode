@@ -412,6 +412,8 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
 
 function Buy({ data, loadingKeys }) {
   const dailyBuyList = data.dailyBuyList || {};
+  const dailyItems = dailyBuyList.items || [];
+  const dailyExcluded = dailyBuyList.excluded || [];
 
   return (
     <div className="grid">
@@ -422,6 +424,16 @@ function Buy({ data, loadingKeys }) {
           <Stat label="Scanned" value={dailyBuyList.universe?.scanned ?? '-'} />
           <Stat label="Expires" value={dailyBuyList.expiresAt ? time(dailyBuyList.expiresAt) : '-'} />
         </div>
+        <div className="insight-strip">
+          <div>
+            <span>Выбраны</span>
+            <strong>{dailyItems.map((item) => item.ticker).join(', ') || '-'}</strong>
+          </div>
+          <div>
+            <span>Не вошли</span>
+            <strong>{dailyExcluded.length ? dailyExcluded.map((item) => item.ticker).join(', ') : '-'}</strong>
+          </div>
+        </div>
         <Table
           columns={[
             { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
@@ -431,8 +443,23 @@ function Buy({ data, loadingKeys }) {
             { key: 'estimatedOrderRub', label: 'Lot RUB', className: 'right', render: (row) => money(row.estimatedOrderRub) },
             { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
-          rows={dailyBuyList.items || []}
+          rows={dailyItems}
           empty="No daily candidates yet"
+          loading={loadingKeys.dailyBuyList}
+        />
+      </Card>
+
+      <Card title="Не вошли в день" icon={Eye} help="Бумаги из широкого сканера, которые были близко к проходному score, но не попали в дневной buy-list. Чаще всего причина простая: один лот дороже текущего лимита заявки.">
+        <Table
+          columns={[
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
+            { key: 'score', label: 'Score', className: 'right', render: (row) => row.score ?? '-' },
+            { key: 'gap', label: 'Gap', className: 'right', render: (row) => row.gap === undefined ? '-' : row.gap <= 0 ? <Pill tone="good">PASS</Pill> : row.gap },
+            { key: 'estimatedOrderRub', label: 'Lot RUB', className: 'right', render: (row) => money(row.estimatedOrderRub) },
+            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+          ]}
+          rows={dailyExcluded}
+          empty="No excluded candidates"
           loading={loadingKeys.dailyBuyList}
         />
       </Card>
