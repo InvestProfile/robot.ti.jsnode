@@ -12,6 +12,7 @@
     "decisions": "npm run build && node build/reports/decisions.report.js",
     "scan:buy": "npm run build && node build/reports/buy-scan.report.js",
     "analyst:forecasts": "npm run build && node build/reports/analyst-forecasts.report.js",
+    "tech:analysis": "npm run build && node build/reports/technical-analysis.report.js",
     "scan:universe": "npm run build && node build/reports/scan-universe.report.js",
     "market:regime": "npm run build && node build/reports/market-regime.report.js",
     "backtest:buy": "npm run build && node build/reports/buy-backtest.report.js",
@@ -53,7 +54,7 @@
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "sequelize": "^6.37.1",
-    "tinkoff-sdk-grpc-js": "^1.8.2",
+    "tinkoff-sdk-grpc-js": "^3.0.0",
     "typescript": "^5.3.3",
     "uuid": "^9.0.1"
   }

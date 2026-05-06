@@ -59,6 +59,7 @@ export default class BuySignalEvaluatorService {
             .map(ticker => allInstruments.find(instrument => instrument.ticker?.toUpperCase() === ticker))
             .filter((instrument): instrument is ShareInstrument => Boolean(instrument?.uid && instrument?.figi));
         const lastPrices = await marketData.getLastPrices(buyInstruments.map(instrument => instrument.uid));
+        const tradingStatuses = await marketData.getStatuses(buyInstruments.map(instrument => instrument.uid));
         const marketRegime = await MarketRegimeService.evaluate(config);
         const socialConsensus = config.socialConsensusEnabled
             ? await SocialConsensusService.getConsensus({
@@ -95,7 +96,7 @@ export default class BuySignalEvaluatorService {
 
             const estimatedOrderRub = lastPrice * Math.max(1, instrument.lot ?? 1);
             const alreadyInPortfolio = portfolioInstrumentIds.has(instrument.uid);
-            const tradingStatus = await marketData.getStatus(instrument.figi, instrument.uid);
+            const tradingStatus = tradingStatuses.get(instrument.uid);
             const buyConfig = getBuyScoreConfigForTicker(config, instrument.ticker);
             const dailyCandles = buyConfig.enabledStrategies.includes('score-buy')
                 ? await marketData.getDailyCandles(instrument.uid, buyConfig.buyTrendDays)

@@ -9,10 +9,11 @@ import { TradeDecisionModel } from '../models/trade-decision.model';
 import BuySignalEvaluatorService from '../services/buy-signal-evaluator.service';
 import OperationsService from '../services/operations.service';
 import InstrumentsService from '../services/instruments.service';
-import { quotationToNumber } from '../utils/money';
+import { numberToQuotation, quotationToNumber } from '../utils/money';
 import { dashboardPage } from './dashboard-page';
 import { TradesModel } from '../models/trades.model';
 import TradesService from '../services/trades.service';
+import OrdersService from '../services/orders.service';
 import { PortfolioSnapshotModel } from '../models/portfolio-snapshot.model';
 import PerformanceService from '../services/performance.service';
 import BuyScannerService from '../services/buy-scanner.service';
@@ -31,6 +32,7 @@ import SocialConsensusService from '../services/social-consensus.service';
 import SocialSignalEvidenceService from '../services/social-signal-evidence.service';
 import AnalystForecastService from '../services/analyst-forecast.service';
 import RuntimeConfigService from '../services/runtime-config.service';
+import TechnicalAnalysisService from '../services/technical-analysis.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -444,7 +446,41 @@ const getPreviewPayload = async (config: RobotConfig) => {
     const previews = [];
 
     for (const accountId of config.accountIds) {
-        previews.push(...await BuySignalEvaluatorService.evaluateAccount(accountId, config));
+        const accountPreviews = await BuySignalEvaluatorService.evaluateAccount(accountId, config);
+
+        for (const preview of accountPreviews) {
+            if (!preview.instrumentUid || !preview.currentPrice) {
+                previews.push(preview);
+                continue;
+            }
+
+            try {
+                const quantity = Math.max(1, Math.trunc(preview.quantityLots ?? 1));
+                const price = numberToQuotation(preview.currentPrice);
+                const [maxLots, orderPrice] = await Promise.all([
+                    OrdersService.getMaxLots(accountId, preview.instrumentUid, price),
+                    OrdersService.getOrderPrice(accountId, 1, quantity, price, preview.instrumentUid)
+                ]);
+
+                previews.push({
+                    ...preview,
+                    brokerQuote: {
+                        quantity,
+                        buyMaxLots: maxLots?.buyLimits?.buyMaxLots,
+                        buyMaxMarketLots: maxLots?.buyLimits?.buyMaxMarketLots,
+                        totalOrderAmount: quotationToNumber(orderPrice?.totalOrderAmount),
+                        initialOrderAmount: quotationToNumber(orderPrice?.initialOrderAmount),
+                        executedCommission: quotationToNumber(orderPrice?.executedCommission),
+                        executedCommissionRub: quotationToNumber(orderPrice?.executedCommissionRub)
+                    }
+                });
+            } catch (error) {
+                previews.push({
+                    ...preview,
+                    brokerQuoteError: error instanceof Error ? error.message : String(error)
+                });
+            }
+        }
     }
 
     return {
@@ -553,6 +589,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
             .map(ticker => ticker.trim().toUpperCase())
             .filter(Boolean);
         json(res, 200, await AnalystForecastService.getForecasts(config, tickers?.length ? tickers : config.buyTickers));
+        return;
+    }
+
+    if (url.pathname === '/api/tech-analysis') {
+        const tickers = url.searchParams.get('tickers')
+            ?.split(',')
+            .map(ticker => ticker.trim().toUpperCase())
+            .filter(Boolean);
+        json(res, 200, await TechnicalAnalysisService.getSummary(config, tickers?.length ? tickers : config.buyTickers));
         return;
     }
 

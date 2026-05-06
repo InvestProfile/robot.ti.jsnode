@@ -21,6 +21,9 @@ export default class SellBrainService {
 
         for (const account of getAllAccounts(config)) {
             const portfolio = await OperationsService.getPortfolio(account.accountId);
+            const tradingStatuses = await marketData.getStatuses(
+                portfolio?.positions?.map(position => position.instrumentUid).filter(Boolean) ?? []
+            );
 
             for (const position of portfolio?.positions ?? []) {
                 const averagePrice = quotationToNumber(position.averagePositionPrice);
@@ -48,7 +51,7 @@ export default class SellBrainService {
                     continue;
                 }
 
-                const tradingStatus = await marketData.getStatus(position.figi, position.instrumentUid);
+                const tradingStatus = tradingStatuses.get(position.instrumentUid);
                 const signal = await StrategyEngine.evaluate({
                     accountId: account.accountId,
                     figi: position.figi,

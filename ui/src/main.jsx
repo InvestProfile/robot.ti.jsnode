@@ -33,13 +33,14 @@ const endpoints = {
   socialEvidence: '/api/social-evidence?limit=80',
   sellBrain: '/api/sell-brain',
   buyScan: '/api/buy-scan',
-  analystForecasts: '/api/analyst-forecasts'
+  analystForecasts: '/api/analyst-forecasts',
+  techAnalysis: '/api/tech-analysis'
 };
 
 const endpointGroups = {
   core: ['status', 'limits', 'performance', 'paper', 'socialCollector'],
   overview: ['preview', 'market'],
-  signals: ['buyScan', 'sellBrain', 'analystForecasts'],
+  signals: ['buyScan', 'sellBrain', 'analystForecasts', 'techAnalysis'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   evidence: ['strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
@@ -77,6 +78,13 @@ const recTone = (recommendation) => {
   if (recommendation === 'buy') return 'good';
   if (recommendation === 'sell') return 'bad';
   if (recommendation === 'hold') return 'warn';
+  return 'neutral';
+};
+
+const signalTone = (value) => {
+  if (['bullish', 'oversold', 'buy'].includes(value)) return 'good';
+  if (['bearish', 'overbought', 'sell', 'error'].includes(value)) return 'bad';
+  if (value === 'neutral' || value === 'hold') return 'warn';
   return 'neutral';
 };
 
@@ -207,6 +215,7 @@ function Overview({ data }) {
             { key: 'status', label: 'Status', render: (row) => <Pill tone={row.status === 'allowed' ? 'good' : 'warn'}>{row.status}</Pill> },
             { key: 'currentPrice', label: 'Price', className: 'right', render: (row) => money(row.currentPrice) },
             { key: 'estimatedOrderRub', label: 'Amount', className: 'right', render: (row) => money(row.estimatedOrderRub) },
+            { key: 'brokerQuote', label: 'Broker', className: 'right', render: (row) => row.brokerQuote ? money(row.brokerQuote.totalOrderAmount) : '-' },
             { key: 'reason', label: 'Reason', className: 'reason' }
           ]}
           rows={data.preview?.previews || []}
@@ -267,6 +276,20 @@ function Signals({ data }) {
             { key: 'split', label: 'B/H/S', className: 'right', render: (row) => `${row.buyCount ?? 0}/${row.holdCount ?? 0}/${row.sellCount ?? 0}` }
           ]}
           rows={data.analystForecasts?.items || []}
+        />
+      </Card>
+      <Card title="Теханализ API" icon={LineChart} help="Официальные индикаторы T-Invest API: RSI, SMA/EMA, MACD и Bollinger Bands. Пока это диагностика, дальше дадим этому маленький вес в score-buy.">
+        <Table
+          columns={[
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
+            { key: 'rsi14', label: 'RSI14', className: 'right', render: (row) => money(row.rsi14) },
+            { key: 'rsiState', label: 'RSI', render: (row) => <Pill tone={signalTone(row.rsiState)}>{row.rsiState}</Pill> },
+            { key: 'sma20', label: 'SMA20', className: 'right', render: (row) => money(row.sma20) },
+            { key: 'ema20', label: 'EMA20', className: 'right', render: (row) => money(row.ema20) },
+            { key: 'macdState', label: 'MACD', render: (row) => <Pill tone={signalTone(row.macdState)}>{row.macdState}</Pill> },
+            { key: 'bb', label: 'BB', className: 'right', render: (row) => `${money(row.bbLower)} / ${money(row.bbUpper)}` }
+          ]}
+          rows={data.techAnalysis?.items || []}
         />
       </Card>
       <Card title="Продажи" icon={AlertTriangle} help="Мозг продаж смотрит позиции на всех счетах. На наблюдаемых счетах он только пишет мнение, на торговом сможет продавать позже, когда мы это явно включим.">

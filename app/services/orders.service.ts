@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 
 import {OrderDirection, OrderType, TimeInForceType} from "tinkoff-sdk-grpc-js/dist/generated/orders";
 import {PriceType} from "tinkoff-sdk-grpc-js/dist/generated/common";
+import TInvestApiCacheService from './tinvest-api-cache.service';
 
 const envVariables = getEnv();
 
@@ -29,7 +30,7 @@ export default class OrdersService {
             const clientOrderId = uuidv4();
 
             try {
-                const response = await orders.postOrder({
+                const response = await TInvestApiCacheService.withRetry(() => orders.postOrder({
                     accountId,
                     orderId: clientOrderId,
                     timeInForce: TimeInForceType.TIME_IN_FORCE_UNSPECIFIED,
@@ -40,7 +41,7 @@ export default class OrdersService {
                     figi,
                     instrumentId,
                     priceType: PriceType.PRICE_TYPE_CURRENCY
-                });
+                }));
 
                 return {
                     ...response,
@@ -65,11 +66,49 @@ export default class OrdersService {
     static async getOrderState(accountId: string, orderId: string) {
         if (envVariables.INVEST_TOKEN) {
             const {orders} = getSdk(envVariables.INVEST_TOKEN);
-            return await orders.getOrderState({
+            return await TInvestApiCacheService.withRetry(() => orders.getOrderState({
                 accountId,
                 orderId,
                 priceType: PriceType.PRICE_TYPE_CURRENCY
-            });
+            }));
+        }
+    }
+
+    static async getMaxLots(accountId: string, instrumentId: string, price?: Price) {
+        if (envVariables.INVEST_TOKEN) {
+            const {orders} = getSdk(envVariables.INVEST_TOKEN);
+            return await TInvestApiCacheService.cached(
+                `orders:max-lots:${accountId}:${instrumentId}:${price?.units ?? ''}:${price?.nano ?? ''}`,
+                10_000,
+                () => orders.getMaxLots({
+                    accountId,
+                    instrumentId,
+                    price
+                })
+            );
+        }
+    }
+
+    static async getOrderPrice(
+        accountId: string,
+        direction: number,
+        quantity: number,
+        price: Price,
+        instrumentId: string
+    ) {
+        if (envVariables.INVEST_TOKEN) {
+            const {orders} = getSdk(envVariables.INVEST_TOKEN);
+            return await TInvestApiCacheService.cached(
+                `orders:price:${accountId}:${direction}:${quantity}:${instrumentId}:${price.units}:${price.nano}`,
+                10_000,
+                () => orders.getOrderPrice({
+                    accountId,
+                    instrumentId,
+                    price,
+                    direction: direction === 2 ? OrderDirection.ORDER_DIRECTION_SELL : OrderDirection.ORDER_DIRECTION_BUY,
+                    quantity
+                })
+            );
         }
     }
 }

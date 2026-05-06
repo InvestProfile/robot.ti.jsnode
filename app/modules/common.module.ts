@@ -279,6 +279,10 @@ export const executeTrades = async (
         return;
     }
 
+    const tradingStatuses = await marketData.getStatuses(
+        portfolio.positions.map(position => position.instrumentUid).filter(Boolean)
+    );
+
     for (const position of portfolio.positions) {
         const averagePrice = quotationToNumber(position?.averagePositionPrice);
         const currentPrice = quotationToNumber(position?.currentPrice);
@@ -318,7 +322,7 @@ export const executeTrades = async (
             await delay(config.positionDelayMs);
         }
 
-        const tradingStatus = await marketData.getStatus(position.figi, position.instrumentUid);
+        const tradingStatus = tradingStatuses.get(position.instrumentUid);
         const signal = await StrategyEngine.evaluate({
             accountId,
             figi: position.figi,

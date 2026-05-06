@@ -3,6 +3,7 @@ dotenv.config();
 
 interface EnvConfig {
     INVEST_TOKEN: string | undefined;
+    INVEST_API_URL: string | undefined;
     DB_HOST: string | undefined;
     DB_USER: string | undefined;
     DB_PASSWORD: string | undefined;
@@ -79,6 +80,7 @@ interface EnvConfig {
 export const getEnv = () => {
     return {
         INVEST_TOKEN: process.env.INVEST_TOKEN,
+        INVEST_API_URL: process.env.INVEST_API_URL,
         DB_HOST: process.env.DB_HOST,
         DB_USER: process.env.DB_USER,
         DB_PASSWORD: process.env.DB_PASSWORD,

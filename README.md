@@ -132,6 +132,7 @@ a non-secret template.
 
 ```env
 INVEST_TOKEN=
+INVEST_API_URL=invest-public-api.tinkoff.ru:443
 DB_HOST=
 DB_USER=
 DB_PASSWORD=
