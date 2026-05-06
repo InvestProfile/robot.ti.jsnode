@@ -12,6 +12,7 @@ import PortfolioSnapshotService from '../services/portfolio-snapshot.service';
 import BuySignalJournalService from '../services/buy-signal-journal.service';
 import PaperTradingService from '../services/paper-trading.service';
 import RuntimeConfigService from '../services/runtime-config.service';
+import SellPolicyService from '../services/sell-policy.service';
 import StrategyEngine from '../strategies/strategy-engine';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
 import { normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
@@ -381,6 +382,33 @@ export const executeTrades = async (
             continue;
         }
 
+        const sellPolicy = await SellPolicyService.evaluateSellPermission({
+            accountId,
+            figi: position?.figi,
+            instrumentUid: position?.instrumentUid,
+            requestedLots: risk.quantity
+        });
+
+        if (!sellPolicy.allowed) {
+            await TradeJournalService.logDecision({
+                accountId,
+                accountAlias,
+                accountMode,
+                figi: position?.figi,
+                instrumentUid: position?.instrumentUid,
+                ticker: instrument?.ticker,
+                name: instrument?.name,
+                status: 'skip',
+                signalSource: signal?.source,
+                reason: sellPolicy.reason,
+                averagePrice,
+                currentPrice,
+                profitPercent: risk.profitPercent,
+                quantityLots: risk.quantity
+            });
+            continue;
+        }
+
         if (!config.liveAllowedActions.includes('sell')) {
             await TradeJournalService.logDecision({
                 accountId,
@@ -392,11 +420,11 @@ export const executeTrades = async (
                 name: instrument?.name,
                 status: 'skip',
                 signalSource: signal?.source,
-                reason: 'live sell is disabled by ROBOT_LIVE_ALLOWED_ACTIONS',
+                reason: `live sell is disabled by ROBOT_LIVE_ALLOWED_ACTIONS; ${sellPolicy.reason}`,
                 averagePrice,
                 currentPrice,
                 profitPercent: risk.profitPercent,
-                quantityLots: risk.quantity
+                quantityLots: sellPolicy.allowedLots
             });
             continue;
         }
@@ -417,7 +445,7 @@ export const executeTrades = async (
                 averagePrice,
                 currentPrice,
                 profitPercent: risk.profitPercent,
-                quantityLots: risk.quantity
+                quantityLots: sellPolicy.allowedLots
             });
             continue;
         }
@@ -425,7 +453,7 @@ export const executeTrades = async (
         const orderResult = await orderService.postOrder(
             accountId,
             2,
-            risk.quantity,
+            sellPolicy.allowedLots,
             orderPrice,
             position.figi,
             position.instrumentUid
@@ -446,7 +474,7 @@ export const executeTrades = async (
                 averagePrice,
                 currentPrice,
                 profitPercent: risk.profitPercent,
-                quantityLots: risk.quantity
+                quantityLots: sellPolicy.allowedLots
             });
             continue;
         }
@@ -462,7 +490,7 @@ export const executeTrades = async (
             accountId,
             instrument?.ticker,
             instrument?.name,
-            risk.quantity,
+            sellPolicy.allowedLots,
             {
                 ...getOrderMetadata(orderResult),
                 instrumentId: position?.instrumentUid
@@ -479,11 +507,11 @@ export const executeTrades = async (
             name: instrument?.name,
             status: 'order-posted',
             signalSource: signal?.source,
-            reason: risk.reason,
+            reason: `${risk.reason}; ${sellPolicy.reason}`,
             averagePrice,
             currentPrice,
             profitPercent: risk.profitPercent,
-            quantityLots: risk.quantity
+            quantityLots: sellPolicy.allowedLots
         });
     }
 };

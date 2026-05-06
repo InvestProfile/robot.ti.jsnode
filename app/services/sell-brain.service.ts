@@ -5,6 +5,7 @@ import OperationsService from './operations.service';
 import InstrumentsService from './instruments.service';
 import marketData from './marketData.service';
 import { quotationToNumber } from '../utils/money';
+import SellPolicyService from './sell-policy.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -69,6 +70,15 @@ export default class SellBrainService {
                     tradingStatus: tradingStatus?.tradingStatus,
                     signal
                 }, config);
+                const sellPolicy = risk.allowed
+                    ? await SellPolicyService.evaluateSellPermission({
+                        accountId: account.accountId,
+                        figi: position.figi,
+                        instrumentUid: position.instrumentUid,
+                        requestedLots: risk.quantity
+                    })
+                    : undefined;
+                const policyBlocked = account.mode === 'trade' && risk.allowed && sellPolicy && !sellPolicy.allowed;
 
                 items.push({
                     accountId: account.accountId,
@@ -80,12 +90,16 @@ export default class SellBrainService {
                     name: instrument?.name,
                     action: signal?.action ?? 'skip',
                     source: signal?.source,
-                    status: risk.allowed
+                    status: policyBlocked
+                        ? 'blocked'
+                        : risk.allowed
                         ? 'allowed'
                         : signal?.action === 'hold' && risk.reason.startsWith('hold-winner:')
                             ? 'hold'
                             : 'blocked',
-                    reason: account.mode === 'observe' && risk.allowed
+                    reason: policyBlocked
+                        ? sellPolicy.reason
+                        : account.mode === 'observe' && risk.allowed
                         ? 'observe-only: ' + risk.reason
                         : risk.reason,
                     averagePrice,
@@ -93,7 +107,9 @@ export default class SellBrainService {
                     profitPercent: risk.profitPercent,
                     quantityLots,
                     signalLots: signal?.quantityLots,
-                    orderLots: risk.quantity,
+                    orderLots: sellPolicy?.allowedLots ?? risk.quantity,
+                    robotOwnedLots: sellPolicy?.robotOwnedLots,
+                    sellPolicy: sellPolicy?.reason,
                     confidence: signal?.confidence,
                     factors: signal?.factors
                 });

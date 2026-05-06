@@ -415,6 +415,8 @@ function Signals({ data, loadingKeys }) {
             { key: 'accountAlias', label: 'Account' },
             { key: 'source', label: 'Signal' },
             { key: 'status', label: 'Status', render: (row) => <Pill tone={row.status === 'allowed' ? 'bad' : row.status === 'dry-run' ? 'warn' : 'neutral'}>{row.status}</Pill> },
+            { key: 'robotOwnedLots', label: 'Robot', className: 'right', render: (row) => row.robotOwnedLots ?? '-' },
+            { key: 'orderLots', label: 'Lots', className: 'right', render: (row) => row.orderLots ?? '-' },
             { key: 'profitPercent', label: 'P/L', className: 'right', render: (row) => percent(row.profitPercent) },
             { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
