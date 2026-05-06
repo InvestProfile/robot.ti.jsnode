@@ -46,6 +46,7 @@ const endpointGroups = {
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   evidence: ['strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
+  sell: ['sellBrain', 'positions'],
   logs: ['decisions']
 };
 
@@ -55,6 +56,7 @@ const tabs = [
   { id: 'social', label: 'Пульс', icon: Users },
   { id: 'evidence', label: 'Проверка', icon: BarChart3 },
   { id: 'accounts', label: 'Счета', icon: Database },
+  { id: 'sell', label: 'Продажи', icon: AlertTriangle },
   { id: 'logs', label: 'Журнал', icon: Eye }
 ];
 
@@ -408,19 +410,72 @@ function Signals({ data, loadingKeys }) {
           loading={loadingKeys.techAnalysis}
         />
       </Card>
-      <Card title="Продажи" icon={AlertTriangle} help="Мозг продаж смотрит позиции на всех счетах. На наблюдаемых счетах он только пишет мнение, на торговом сможет продавать позже, когда мы это явно включим.">
+    </div>
+  );
+}
+
+function Sell({ data, loadingKeys }) {
+  const liveActions = data.status?.config?.liveAllowedActions || [];
+  const sellArmed = liveActions.includes('sell');
+  const items = data.sellBrain?.items || [];
+  const liveCandidates = items.filter((row) => row.accountMode === 'trade' && row.action === 'sell');
+  const executable = liveCandidates.filter((row) => row.status === 'allowed' && Number(row.orderLots || 0) > 0);
+  const policyBlocked = liveCandidates.filter((row) => row.status !== 'allowed');
+  const observeSignals = items.filter((row) => row.accountMode === 'observe' && row.action === 'sell');
+
+  const sellColumns = [
+    { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
+    { key: 'source', label: 'Signal' },
+    { key: 'status', label: 'Status', render: (row) => <Pill tone={row.status === 'allowed' ? 'bad' : row.status === 'hold' ? 'good' : 'neutral'}>{row.status}</Pill> },
+    { key: 'robotOwnedLots', label: 'Robot', className: 'right', render: (row) => row.robotOwnedLots ?? '-' },
+    { key: 'orderLots', label: 'Sell', className: 'right', render: (row) => row.orderLots ?? '-' },
+    { key: 'quantityLots', label: 'Total', className: 'right', render: (row) => row.quantityLots ?? '-' },
+    { key: 'profitPercent', label: 'P/L', className: 'right', render: (row) => percent(row.profitPercent) },
+    { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+  ];
+
+  return (
+    <div className="grid">
+      <Card title="Боевой sell-лист" icon={AlertTriangle} help="Это список позиций торгового счета, которые робот смог бы продать, если sell включен. Даже при включенном sell заявка пройдет только на robot-owned лоты.">
+        <div className="readiness">
+          <Pill tone={sellArmed ? 'bad' : 'good'}>{sellArmed ? 'SELL ARMED' : 'SELL OFF'}</Pill>
+          <span>{sellArmed ? 'Реальные продажи разрешены политикой действий.' : 'Реальные продажи выключены. Список ниже только показывает готовность.'}</span>
+        </div>
+        <div className="stats compact">
+          <Stat label="Executable" value={executable.length} tone={executable.length ? 'bad' : 'good'} />
+          <Stat label="Policy blocked" value={policyBlocked.length} />
+          <Stat label="Robot lots" value={money(executable.reduce((sum, row) => sum + Number(row.orderLots || 0), 0))} />
+          <Stat label="Live actions" value={liveActions.join(', ') || '-'} tone={sellArmed ? 'bad' : 'good'} />
+        </div>
+        <Table
+          columns={sellColumns}
+          rows={liveCandidates}
+          empty="No robot-owned sell candidates"
+          loading={loadingKeys.sellBrain}
+        />
+      </Card>
+
+      <Card title="Защита продаж" icon={ShieldCheck} help="Почему робот не должен случайно продать ручные позиции. Robot - сколько лотов доказано куплено роботом, Sell - сколько лотов можно выставить сейчас.">
         <Table
           columns={[
-            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
             { key: 'accountAlias', label: 'Account' },
             { key: 'source', label: 'Signal' },
-            { key: 'status', label: 'Status', render: (row) => <Pill tone={row.status === 'allowed' ? 'bad' : row.status === 'dry-run' ? 'warn' : 'neutral'}>{row.status}</Pill> },
             { key: 'robotOwnedLots', label: 'Robot', className: 'right', render: (row) => row.robotOwnedLots ?? '-' },
-            { key: 'orderLots', label: 'Lots', className: 'right', render: (row) => row.orderLots ?? '-' },
-            { key: 'profitPercent', label: 'P/L', className: 'right', render: (row) => percent(row.profitPercent) },
-            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+            { key: 'orderLots', label: 'Sell', className: 'right', render: (row) => row.orderLots ?? '-' },
+            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.sellPolicy || row.reason}</Reason> }
           ]}
-          rows={data.sellBrain?.items || []}
+          rows={liveCandidates}
+          empty="No sell policy checks yet"
+          loading={loadingKeys.sellBrain}
+        />
+      </Card>
+
+      <Card title="Наблюдаемые sell-сигналы" icon={Eye} help="Это мнения по долгосрочному счету, ИИС и Инвесткопилке. Они не исполняются, а нужны, чтобы учить и проверять стратегию продаж.">
+        <Table
+          columns={sellColumns}
+          rows={observeSignals}
+          empty="No observe sell signals"
           loading={loadingKeys.sellBrain}
         />
       </Card>
@@ -709,6 +764,7 @@ function App() {
     social: <Social data={data} loadingKeys={loadingKeys} />,
     evidence: <Evidence data={data} loadingKeys={loadingKeys} />,
     accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} onLiveSellToggle={updateLiveSell} />,
+    sell: <Sell data={data} loadingKeys={loadingKeys} />,
     logs: <Logs data={data} loadingKeys={loadingKeys} />
   }[active.id];
 
