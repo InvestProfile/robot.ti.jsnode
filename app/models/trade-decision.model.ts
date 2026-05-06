@@ -64,7 +64,7 @@ TradeDecisionModel.init({
         allowNull: true,
     },
     reason: {
-        type: DataTypes.STRING,
+        type: DataTypes.TEXT,
         allowNull: false,
     },
     averagePrice: {

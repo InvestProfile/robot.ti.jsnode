@@ -70,7 +70,7 @@ BuySignalJournalModel.init({
         allowNull: false,
     },
     reason: {
-        type: DataTypes.STRING,
+        type: DataTypes.TEXT,
         allowNull: false,
     },
     return1dPercent: {

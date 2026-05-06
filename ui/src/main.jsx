@@ -34,6 +34,7 @@ const endpoints = {
   sellBrain: '/api/sell-brain',
   buyScan: '/api/buy-scan',
   buyLab: '/api/buy-lab?hours=24&limit=30',
+  buyRecommendations: '/api/buy-recommendations?limit=30',
   analystForecasts: '/api/analyst-forecasts',
   techAnalysis: '/api/tech-analysis'
 };
@@ -41,7 +42,7 @@ const endpoints = {
 const endpointGroups = {
   core: ['status', 'limits', 'performance', 'paper', 'socialCollector'],
   overview: ['preview', 'market'],
-  signals: ['buyScan', 'buyLab', 'sellBrain', 'analystForecasts', 'techAnalysis'],
+  signals: ['buyRecommendations', 'buyScan', 'buyLab', 'sellBrain', 'analystForecasts', 'techAnalysis'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   evidence: ['strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
@@ -177,8 +178,9 @@ const Stat = ({ label, value, tone, title }) => (
   </div>
 );
 
-const Table = ({ columns, rows, empty = 'No data' }) => (
+const Table = ({ columns, rows, empty = 'No data', loading = false }) => (
   <div className="table-wrap">
+    {loading && rows?.length ? <div className="table-loading">Updating...</div> : null}
     <table>
       <thead>
         <tr>{columns.map((column) => <th key={column.key} className={column.className}>{column.label}</th>)}</tr>
@@ -189,7 +191,7 @@ const Table = ({ columns, rows, empty = 'No data' }) => (
             {columns.map((column) => <td key={column.key} className={column.className}>{column.render ? column.render(row) : row[column.key]}</td>)}
           </tr>
         )) : (
-          <tr><td colSpan={columns.length} className="empty">{empty}</td></tr>
+          <tr><td colSpan={columns.length} className="empty">{loading ? 'Loading...' : empty}</td></tr>
         )}
       </tbody>
     </table>
@@ -198,28 +200,40 @@ const Table = ({ columns, rows, empty = 'No data' }) => (
 
 const useDashboardData = (activeTab) => {
   const [data, setData] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [loadingKeys, setLoadingKeys] = useState({});
   const [error, setError] = useState('');
   const [updatedAt, setUpdatedAt] = useState(null);
   const activeTabRef = useRef(activeTab);
 
   const load = async (keys) => {
+    const uniqueKeys = [...new Set(keys)];
     setError('');
-    try {
-      const uniqueKeys = [...new Set(keys)];
-      const entries = await Promise.all(uniqueKeys.map(async (key) => {
+    setLoadingKeys((current) => ({
+      ...current,
+      ...Object.fromEntries(uniqueKeys.map((key) => [key, true]))
+    }));
+
+    const results = await Promise.allSettled(uniqueKeys.map(async (key) => {
         const url = endpoints[key];
         const response = await fetch(url, { cache: 'no-store' });
         if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
-        return [key, await response.json()];
-      }));
-      setData((current) => ({ ...current, ...Object.fromEntries(entries) }));
-      setUpdatedAt(new Date());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
+        const payload = await response.json();
+
+        setData((current) => ({ ...current, [key]: payload }));
+        setUpdatedAt(new Date());
+        setLoadingKeys((current) => ({ ...current, [key]: false }));
+        return [key, payload];
+    }));
+
+    const failures = results
+      .filter((result) => result.status === 'rejected')
+      .map((result) => result.reason instanceof Error ? result.reason.message : String(result.reason));
+
+    if (failures.length) setError(failures.join('; '));
+    setLoadingKeys((current) => ({
+      ...current,
+      ...Object.fromEntries(uniqueKeys.map((key) => [key, false]))
+    }));
   };
 
   const loadActiveTab = () => load([...(endpointGroups.core || []), ...(endpointGroups[activeTabRef.current] || [])]);
@@ -234,7 +248,9 @@ const useDashboardData = (activeTab) => {
     return () => window.clearInterval(interval);
   }, []);
 
-  return { data, loading, error, updatedAt, reload: loadActiveTab };
+  const loading = Object.values(loadingKeys).some(Boolean);
+
+  return { data, loading, loadingKeys, error, updatedAt, reload: loadActiveTab };
 };
 
 const getReadiness = (data) => {
@@ -253,7 +269,7 @@ const getReadiness = (data) => {
   return blockers;
 };
 
-function Overview({ data }) {
+function Overview({ data, loadingKeys }) {
   const blockers = getReadiness(data);
   const status = data.status;
   const social = data.socialCollector;
@@ -286,6 +302,7 @@ function Overview({ data }) {
             { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
           rows={data.preview?.previews || []}
+          loading={loadingKeys.preview}
         />
       </Card>
 
@@ -310,15 +327,30 @@ function Overview({ data }) {
             { key: 'passed', label: 'Passed', render: (row) => <Pill tone={row.passed ? 'good' : 'warn'}>{String(row.passed)}</Pill> }
           ]}
           rows={data.market?.items || []}
+          loading={loadingKeys.market}
         />
       </Card>
     </div>
   );
 }
 
-function Signals({ data }) {
+function Signals({ data, loadingKeys }) {
   return (
     <div className="grid">
+      <Card title="Авторекомендации" icon={ShieldCheck} help="Сжатый список того, что робот предлагает делать с кандидатами: buy-candidate можно покупать при пройденных фильтрах, wait-market ждет рынок, watch близко к порогу, scan-only просто наблюдать.">
+        <Table
+          columns={[
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
+            { key: 'recommendation', label: 'Rec', render: (row) => <Pill tone={row.recommendation === 'buy-candidate' ? 'good' : row.recommendation === 'wait-market' || row.recommendation === 'watch' ? 'warn' : 'neutral'}>{row.recommendation}</Pill> },
+            { key: 'score', label: 'Score', className: 'right', render: (row) => <strong>{row.score}</strong> },
+            { key: 'scoreGap', label: 'Gap', className: 'right', render: (row) => row.scoreGap ? row.scoreGap : <Pill tone="good">PASS</Pill> },
+            { key: 'lastPrice', label: 'Price', className: 'right', render: (row) => money(row.lastPrice) },
+            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+          ]}
+          rows={data.buyRecommendations?.items || []}
+          loading={loadingKeys.buyRecommendations}
+        />
+      </Card>
       <Card title="Кандидаты на покупку" icon={Signal} help="Оценка бумаг из текущего списка наблюдения. Score 70/100 и выше обычно считается проходным. Base - сама цена/объем, pulse - Пульс, analyst - прогнозы, tech - индикаторы.">
         <Table
           columns={[
@@ -329,6 +361,7 @@ function Signals({ data }) {
             { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
           rows={data.buyScan?.items || []}
+          loading={loadingKeys.buyScan}
         />
       </Card>
       <Card title="Лаборатория 24ч" icon={BarChart3} help="Агрегация решений за последние 24 часа. Показывает, какие бумаги чаще всего подходили к порогу покупки, сколько баллов не хватило и что было главным стопором.">
@@ -342,6 +375,7 @@ function Signals({ data }) {
             { key: 'topReason', label: 'Top blocker', className: 'reason', render: (row) => <Reason>{row.topReason}</Reason> }
           ]}
           rows={data.buyLab?.items || []}
+          loading={loadingKeys.buyLab}
         />
       </Card>
       <Card title="Консенсус аналитиков" icon={BarChart3} help="Официальный консенсус-прогноз T-Invest API: рекомендации инвестдомов, целевая цена и потенциальный апсайд. Сейчас дает небольшую ограниченную поправку к score-buy.">
@@ -356,6 +390,7 @@ function Signals({ data }) {
             { key: 'split', label: 'B/H/S', className: 'right', render: (row) => `${row.buyCount ?? 0}/${row.holdCount ?? 0}/${row.sellCount ?? 0}` }
           ]}
           rows={data.analystForecasts?.items || []}
+          loading={loadingKeys.analystForecasts}
         />
       </Card>
       <Card title="Теханализ API" icon={LineChart} help="Официальные индикаторы T-Invest API: RSI, SMA/EMA, MACD и Bollinger Bands. Сейчас дает небольшую ограниченную поправку к score-buy.">
@@ -370,6 +405,7 @@ function Signals({ data }) {
             { key: 'bb', label: 'BB', className: 'right', render: (row) => `${money(row.bbLower)} / ${money(row.bbUpper)}` }
           ]}
           rows={data.techAnalysis?.items || []}
+          loading={loadingKeys.techAnalysis}
         />
       </Card>
       <Card title="Продажи" icon={AlertTriangle} help="Мозг продаж смотрит позиции на всех счетах. На наблюдаемых счетах он только пишет мнение, на торговом сможет продавать позже, когда мы это явно включим.">
@@ -383,13 +419,14 @@ function Signals({ data }) {
             { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
           rows={data.sellBrain?.items || []}
+          loading={loadingKeys.sellBrain}
         />
       </Card>
     </div>
   );
 }
 
-function Social({ data }) {
+function Social({ data, loadingKeys }) {
   return (
     <div className="grid">
       <Card title="Консенсус Пульса" icon={Users} help="Сводное мнение выбранных успешных авторов по тикеру. Чем больше вес и свежесть сигнала, тем сильнее поправка к buy-score.">
@@ -404,6 +441,7 @@ function Social({ data }) {
             { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
           rows={data.socialConsensus?.items || []}
+          loading={loadingKeys.socialConsensus}
         />
       </Card>
       <Card title="Авторы" icon={ShieldCheck} help="Список профилей, которых собирает отдельный социальный механизм. Manual - твоя ручная оценка, Auto - автоматическая оценка по данным профиля, Effective - итоговый вес.">
@@ -418,6 +456,7 @@ function Social({ data }) {
             { key: 'recentSignalsCount', label: 'Signals', className: 'right' }
           ]}
           rows={data.socialCollector?.profiles || []}
+          loading={loadingKeys.socialCollector}
         />
       </Card>
       <Card title="Сделки авторов" icon={Signal} help="Последние найденные сделки/публичные действия из Пульса. Этот блок ничего не покупает сам, только складывает сигналы для проверки и усиления алгоритма.">
@@ -431,13 +470,14 @@ function Social({ data }) {
             { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
           rows={data.socialSignals?.signals || []}
+          loading={loadingKeys.socialSignals}
         />
       </Card>
     </div>
   );
 }
 
-function Evidence({ data }) {
+function Evidence({ data, loadingKeys }) {
   const socialSummary = data.socialEvidence?.summary || {};
   return (
     <div className="grid">
@@ -453,6 +493,7 @@ function Evidence({ data }) {
             { key: 'note', label: 'Note', className: 'reason', render: (row) => <Reason>{row.note}</Reason> }
           ]}
           rows={data.strategy?.strategies || []}
+          loading={loadingKeys.strategy}
         />
       </Card>
       <Card title="Проверка Пульса" icon={Users} help="Как вели себя бумаги после сигналов авторов через 1, 3, 5 и 10 дней. Пока данных мало, это скорее лаборатория, чем основание для автоторговли.">
@@ -476,13 +517,14 @@ function Evidence({ data }) {
             { key: 'status', label: 'Status' }
           ]}
           rows={data.socialEvidence?.rows || []}
+          loading={loadingKeys.socialEvidence}
         />
       </Card>
     </div>
   );
 }
 
-function Accounts({ data, onModeChange }) {
+function Accounts({ data, loadingKeys, onModeChange }) {
   return (
     <div className="grid">
       <Card title="Счета" icon={Database} help="Кнопка меняет режим счета без перезапуска робота. Protected-счет можно перевести в trade только после отдельного подтверждения номером счета.">
@@ -521,6 +563,7 @@ function Accounts({ data, onModeChange }) {
             }
           ]}
           rows={data.accounts?.accounts || []}
+          loading={loadingKeys.accounts}
         />
       </Card>
       <Card title="Позиции" icon={LineChart} help="Текущие позиции по всем счетам. P/L здесь считается от средней цены позиции к текущей цене из брокерского API.">
@@ -534,13 +577,14 @@ function Accounts({ data, onModeChange }) {
             { key: 'profitPercent', label: 'P/L', className: 'right', render: (row) => percent(row.profitPercent) }
           ]}
           rows={data.positions?.positions || []}
+          loading={loadingKeys.positions}
         />
       </Card>
     </div>
   );
 }
 
-function Logs({ data }) {
+function Logs({ data, loadingKeys }) {
   return (
     <div className="grid">
       <Card title="Последние решения" icon={Eye} help="Журнал решений робота: что он рассматривал, какой сигнал увидел, что разрешили/запретили фильтры и почему.">
@@ -555,6 +599,7 @@ function Logs({ data }) {
             { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
           rows={data.decisions?.decisions || []}
+          loading={loadingKeys.decisions}
         />
       </Card>
     </div>
@@ -563,7 +608,7 @@ function Logs({ data }) {
 
 function App() {
   const [activeTab, setActiveTab] = useState('overview');
-  const { data, loading, error, updatedAt, reload } = useDashboardData(activeTab);
+  const { data, loading, loadingKeys, error, updatedAt, reload } = useDashboardData(activeTab);
   const [actionError, setActionError] = useState('');
   const active = useMemo(() => tabs.find((tab) => tab.id === activeTab) || tabs[0], [activeTab]);
   const updateAccountMode = async (accountId, mode, options = {}) => {
@@ -603,12 +648,12 @@ function App() {
   };
 
   const content = {
-    overview: <Overview data={data} />,
-    signals: <Signals data={data} />,
-    social: <Social data={data} />,
-    evidence: <Evidence data={data} />,
-    accounts: <Accounts data={data} onModeChange={updateAccountMode} />,
-    logs: <Logs data={data} />
+    overview: <Overview data={data} loadingKeys={loadingKeys} />,
+    signals: <Signals data={data} loadingKeys={loadingKeys} />,
+    social: <Social data={data} loadingKeys={loadingKeys} />,
+    evidence: <Evidence data={data} loadingKeys={loadingKeys} />,
+    accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} />,
+    logs: <Logs data={data} loadingKeys={loadingKeys} />
   }[active.id];
 
   return (
@@ -637,7 +682,7 @@ function App() {
         <header className="topbar">
           <div>
             <h1>{active.label}</h1>
-            <p>{loading ? 'Loading robot telemetry...' : error || `Updated ${updatedAt ? updatedAt.toLocaleTimeString('ru-RU') : '-'}`}</p>
+            <p>{loading ? `Loading ${Object.values(loadingKeys).filter(Boolean).length} API...` : error || `Updated ${updatedAt ? updatedAt.toLocaleTimeString('ru-RU') : '-'}`}</p>
           </div>
           <button className="icon-button" onClick={() => void reload()} title="Refresh">
             <RefreshCw size={18} />

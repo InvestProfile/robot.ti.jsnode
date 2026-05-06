@@ -250,10 +250,17 @@ main {
   padding: 8px 14px 14px;
 }
 
+.table-loading {
+  margin: 0 0 8px;
+  color: #70b7ff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 680px;
+  min-width: 560px;
 }
 
 th,
@@ -263,6 +270,7 @@ td {
   text-align: left;
   vertical-align: top;
   font-size: 13px;
+  overflow-wrap: anywhere;
 }
 
 th {
@@ -277,27 +285,29 @@ td {
 
 .right {
   text-align: right;
+  white-space: nowrap;
 }
 
 .reason {
-  min-width: 220px;
-  max-width: 360px;
+  min-width: 170px;
+  max-width: 280px;
   overflow-wrap: anywhere;
 }
 
 .reason-short {
   display: block;
-  max-width: 340px;
+  max-width: 260px;
   color: #dce5ef;
   line-height: 1.35;
 }
 
 .reason-cell {
-  max-width: 340px;
+  max-width: 260px;
 }
 
 .reason-cell summary {
   display: inline-flex;
+  max-width: 100%;
   min-height: 24px;
   align-items: center;
   padding: 2px 8px;
@@ -309,6 +319,9 @@ td {
   font-weight: 800;
   cursor: pointer;
   list-style: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .reason-cell summary::-webkit-details-marker {
@@ -317,6 +330,7 @@ td {
 
 .reason-cell summary::after {
   content: "more";
+  flex: none;
   margin-left: 8px;
   color: #70b7ff;
   font-size: 11px;
@@ -333,15 +347,15 @@ td {
 
 .reason-cell p {
   margin: 8px 0 0;
-  max-width: 340px;
+  max-width: 260px;
   color: #dce5ef;
   line-height: 1.35;
 }
 
 .score-breakdown {
   display: flex;
-  min-width: 250px;
-  max-width: 310px;
+  min-width: 190px;
+  max-width: 260px;
   flex-wrap: wrap;
   gap: 5px;
   align-items: center;

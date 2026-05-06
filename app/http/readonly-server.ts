@@ -34,6 +34,7 @@ import AnalystForecastService from '../services/analyst-forecast.service';
 import RuntimeConfigService from '../services/runtime-config.service';
 import TechnicalAnalysisService from '../services/technical-analysis.service';
 import BuyCandidateLabService from '../services/buy-candidate-lab.service';
+import BuyRecommendationService from '../services/buy-recommendation.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -680,6 +681,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
         const limit = Number(url.searchParams.get('limit') ?? 30);
         json(res, 200, await BuyCandidateLabService.getSummary(
             Number.isFinite(hours) ? hours : 24,
+            Number.isFinite(limit) ? limit : 30
+        ));
+        return;
+    }
+
+    if (url.pathname === '/api/buy-recommendations') {
+        const limit = Number(url.searchParams.get('limit') ?? 30);
+        json(res, 200, await BuyRecommendationService.getRecommendations(
+            config,
             Number.isFinite(limit) ? limit : 30
         ));
         return;
