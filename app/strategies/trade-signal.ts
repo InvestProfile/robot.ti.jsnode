@@ -40,6 +40,10 @@ export interface BuyStrategyInput {
     socialScore?: number;
     socialMood?: string;
     socialReason?: string;
+    analystScoreAdjustment?: number;
+    analystReason?: string;
+    technicalScoreAdjustment?: number;
+    technicalReason?: string;
 }
 
 export interface DailyCandle {

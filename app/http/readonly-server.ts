@@ -311,6 +311,10 @@ const safeConfig = (config: RobotConfig) => ({
     socialConsensusDays: config.socialConsensusDays,
     socialConsensusMaxScoreAdjustment: config.socialConsensusMaxScoreAdjustment,
     socialConsensusMinActors: config.socialConsensusMinActors,
+    analystConsensusEnabled: config.analystConsensusEnabled,
+    analystConsensusMaxScoreAdjustment: config.analystConsensusMaxScoreAdjustment,
+    technicalScoreEnabled: config.technicalScoreEnabled,
+    technicalMaxScoreAdjustment: config.technicalMaxScoreAdjustment,
     snapshotIntervalMs: config.snapshotIntervalMs
 });
 

@@ -198,6 +198,10 @@ export interface RobotConfig {
     socialConsensusDays: number;
     socialConsensusMaxScoreAdjustment: number;
     socialConsensusMinActors: number;
+    analystConsensusEnabled: boolean;
+    analystConsensusMaxScoreAdjustment: number;
+    technicalScoreEnabled: boolean;
+    technicalMaxScoreAdjustment: number;
 }
 
 export const getRobotConfig = (): RobotConfig => {
@@ -280,7 +284,11 @@ export const getRobotConfig = (): RobotConfig => {
         socialConsensusEnabled: parseBoolean(env.ROBOT_SOCIAL_CONSENSUS_ENABLED, true),
         socialConsensusDays: Math.max(1, Math.trunc(parseNumber(env.ROBOT_SOCIAL_CONSENSUS_DAYS, 3))),
         socialConsensusMaxScoreAdjustment: Math.max(0, Math.min(25, parseNumber(env.ROBOT_SOCIAL_CONSENSUS_MAX_SCORE_ADJUSTMENT, 10))),
-        socialConsensusMinActors: Math.max(1, Math.trunc(parseNumber(env.ROBOT_SOCIAL_CONSENSUS_MIN_ACTORS, 1)))
+        socialConsensusMinActors: Math.max(1, Math.trunc(parseNumber(env.ROBOT_SOCIAL_CONSENSUS_MIN_ACTORS, 1))),
+        analystConsensusEnabled: parseBoolean(env.ROBOT_ANALYST_CONSENSUS_ENABLED, true),
+        analystConsensusMaxScoreAdjustment: Math.max(0, Math.min(15, parseNumber(env.ROBOT_ANALYST_CONSENSUS_MAX_SCORE_ADJUSTMENT, 5))),
+        technicalScoreEnabled: parseBoolean(env.ROBOT_TECHNICAL_SCORE_ENABLED, true),
+        technicalMaxScoreAdjustment: Math.max(0, Math.min(15, parseNumber(env.ROBOT_TECHNICAL_MAX_SCORE_ADJUSTMENT, 5)))
     };
 };
 

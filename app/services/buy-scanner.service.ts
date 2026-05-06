@@ -4,6 +4,7 @@ import MarketDataService from './marketData.service';
 import ScoreBuyStrategy, { BuyScoreAnalysis } from '../strategies/score-buy.strategy';
 import MarketRegimeService from './market-regime.service';
 import SocialConsensusService from './social-consensus.service';
+import BuyScoreAdjustmentService from './buy-score-adjustment.service';
 
 type SharesResponse = Awaited<ReturnType<typeof InstrumentsService.getShares>>;
 type ShareInstrument = NonNullable<NonNullable<SharesResponse>['instruments']>[number];
@@ -49,6 +50,10 @@ export default class BuyScannerService {
         const socialByTicker = new Map(
             socialConsensus?.items.map(item => [item.ticker, item]) ?? []
         );
+        const scoreAdjustments = await BuyScoreAdjustmentService.getAdjustments(
+            config,
+            selected.map(instrument => instrument.ticker)
+        );
         const items: BuyScanItem[] = [];
 
         for (const instrument of selected) {
@@ -73,6 +78,8 @@ export default class BuyScannerService {
             };
             const candles = await MarketDataService.getDailyCandles(instrument.uid, scanConfig.buyTrendDays);
             const social = socialByTicker.get(instrument.ticker.toUpperCase());
+            const analyst = scoreAdjustments.analyst.get(instrument.ticker.toUpperCase());
+            const technical = scoreAdjustments.technical.get(instrument.ticker.toUpperCase());
             const analysis = ScoreBuyStrategy.analyze({
                 accountId: 'scan',
                 figi: instrument.figi,
@@ -87,7 +94,11 @@ export default class BuyScannerService {
                 socialScoreAdjustment: social?.scoreAdjustment,
                 socialScore: social?.score,
                 socialMood: social?.mood,
-                socialReason: social?.reason
+                socialReason: social?.reason,
+                analystScoreAdjustment: analyst?.adjustment,
+                analystReason: analyst?.reason,
+                technicalScoreAdjustment: technical?.adjustment,
+                technicalReason: technical?.reason
             }, scanConfig);
 
             items.push({

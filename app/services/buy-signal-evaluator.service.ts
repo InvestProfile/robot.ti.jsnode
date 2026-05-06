@@ -10,6 +10,7 @@ import ScoreBuyStrategy, { BuyScoreAnalysis } from '../strategies/score-buy.stra
 import { quotationToNumber } from '../utils/money';
 import MarketRegimeService from './market-regime.service';
 import SocialConsensusService from './social-consensus.service';
+import BuyScoreAdjustmentService from './buy-score-adjustment.service';
 
 type SharesResponse = Awaited<ReturnType<typeof InstrumentsService.getShares>>;
 type ShareInstrument = NonNullable<NonNullable<SharesResponse>['instruments']>[number];
@@ -72,6 +73,10 @@ export default class BuySignalEvaluatorService {
         const socialByTicker = new Map(
             socialConsensus?.items.map(item => [item.ticker, item]) ?? []
         );
+        const scoreAdjustments = await BuyScoreAdjustmentService.getAdjustments(
+            config,
+            buyInstruments.map(instrument => instrument.ticker)
+        );
         const previews: BuySignalPreview[] = [];
 
         for (const instrument of buyInstruments) {
@@ -105,6 +110,8 @@ export default class BuySignalEvaluatorService {
                 ? await marketData.getDailyClosePrices(instrument.uid, buyConfig.buyTrendDays)
                 : undefined;
             const social = socialByTicker.get(instrument.ticker.toUpperCase());
+            const analyst = scoreAdjustments.analyst.get(instrument.ticker.toUpperCase());
+            const technical = scoreAdjustments.technical.get(instrument.ticker.toUpperCase());
             const signal = StrategyEngine.evaluateBuy({
                 accountId,
                 figi: instrument.figi,
@@ -120,7 +127,11 @@ export default class BuySignalEvaluatorService {
                 socialScoreAdjustment: social?.scoreAdjustment,
                 socialScore: social?.score,
                 socialMood: social?.mood,
-                socialReason: social?.reason
+                socialReason: social?.reason,
+                analystScoreAdjustment: analyst?.adjustment,
+                analystReason: analyst?.reason,
+                technicalScoreAdjustment: technical?.adjustment,
+                technicalReason: technical?.reason
             }, buyConfig);
             const scoreAnalysis = buyConfig.enabledStrategies.includes('score-buy')
                 ? ScoreBuyStrategy.analyze({
@@ -138,7 +149,11 @@ export default class BuySignalEvaluatorService {
                     socialScoreAdjustment: social?.scoreAdjustment,
                     socialScore: social?.score,
                     socialMood: social?.mood,
-                    socialReason: social?.reason
+                    socialReason: social?.reason,
+                    analystScoreAdjustment: analyst?.adjustment,
+                    analystReason: analyst?.reason,
+                    technicalScoreAdjustment: technical?.adjustment,
+                    technicalReason: technical?.reason
                 }, buyConfig)
                 : undefined;
             const risk = RiskManagerService.evaluateBuySignal({

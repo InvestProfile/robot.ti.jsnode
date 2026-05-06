@@ -86,7 +86,14 @@ export default class ScoreBuyStrategy {
         const socialScoreAdjustment = Number.isFinite(input.socialScoreAdjustment)
             ? Math.round(input.socialScoreAdjustment ?? 0)
             : 0;
-        const score = Math.round(clamp(baseScore + socialScoreAdjustment, 0, 100));
+        const analystScoreAdjustment = Number.isFinite(input.analystScoreAdjustment)
+            ? Math.round(input.analystScoreAdjustment ?? 0)
+            : 0;
+        const technicalScoreAdjustment = Number.isFinite(input.technicalScoreAdjustment)
+            ? Math.round(input.technicalScoreAdjustment ?? 0)
+            : 0;
+        const totalAdjustment = socialScoreAdjustment + analystScoreAdjustment + technicalScoreAdjustment;
+        const score = Math.round(clamp(baseScore + totalAdjustment, 0, 100));
         const estimatedLotRub = input.lastPrice * Math.max(1, input.lot);
         const factors = {
             baseScore,
@@ -97,18 +104,27 @@ export default class ScoreBuyStrategy {
             volumeScore,
             socialScoreAdjustment,
             socialScore: input.socialScore ?? 0,
+            analystScoreAdjustment,
+            technicalScoreAdjustment,
+            totalAdjustment,
             trendPercent,
             momentumPercent,
             belowHighPercent,
             volatilityPercent,
             averageVolume
         };
+        const externalReasons = [
+            input.socialReason,
+            input.analystReason,
+            input.technicalReason
+        ].filter(Boolean).join(', ');
+        const reason = `score ${score}/${config.buyMinScore}: base ${baseScore}, adj ${totalAdjustment}, social ${socialScoreAdjustment}, analyst ${analystScoreAdjustment}, tech ${technicalScoreAdjustment}, trend ${trendPercent.toFixed(2)}%, momentum ${momentumPercent.toFixed(2)}%, below high ${belowHighPercent.toFixed(2)}%, volatility ${volatilityPercent.toFixed(2)}%${externalReasons ? `, ${externalReasons}` : ''}`;
 
         if (score < config.buyMinScore) {
             return {
                 score,
                 passed: false,
-                reason: `score ${score}/${config.buyMinScore}: base ${baseScore}, social ${socialScoreAdjustment}, trend ${trendPercent.toFixed(2)}%, momentum ${momentumPercent.toFixed(2)}%, below high ${belowHighPercent.toFixed(2)}%, volatility ${volatilityPercent.toFixed(2)}%${input.socialReason ? `, ${input.socialReason}` : ''}`,
+                reason,
                 estimatedOrderRub: estimatedLotRub,
                 factors
             };
@@ -137,7 +153,7 @@ export default class ScoreBuyStrategy {
         return {
             score,
             passed: true,
-            reason: `score ${score}/${config.buyMinScore}: base ${baseScore}, social ${socialScoreAdjustment}, trend ${trendPercent.toFixed(2)}%, momentum ${momentumPercent.toFixed(2)}%, below high ${belowHighPercent.toFixed(2)}%, volatility ${volatilityPercent.toFixed(2)}%${input.socialReason ? `, ${input.socialReason}` : ''}`,
+            reason,
             estimatedOrderRub: estimatedLotRub,
             factors
         };
