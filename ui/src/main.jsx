@@ -36,7 +36,8 @@ const endpoints = {
   buyLab: '/api/buy-lab?hours=24&limit=30',
   buyRecommendations: '/api/buy-recommendations?limit=30',
   analystForecasts: '/api/analyst-forecasts',
-  techAnalysis: '/api/tech-analysis'
+  techAnalysis: '/api/tech-analysis',
+  robotPositions: '/api/robot-positions'
 };
 
 const endpointGroups = {
@@ -46,7 +47,7 @@ const endpointGroups = {
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   evidence: ['strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
-  sell: ['sellBrain', 'positions'],
+  sell: ['sellBrain', 'positions', 'robotPositions'],
   logs: ['decisions']
 };
 
@@ -418,6 +419,9 @@ function Sell({ data, loadingKeys }) {
   const liveActions = data.status?.config?.liveAllowedActions || [];
   const sellArmed = liveActions.includes('sell');
   const items = data.sellBrain?.items || [];
+  const robotLedger = data.robotPositions || {};
+  const robotPositions = robotLedger.items || [];
+  const robotEvents = robotLedger.events || [];
   const liveCandidates = items.filter((row) => row.accountMode === 'trade' && row.action === 'sell');
   const executable = liveCandidates.filter((row) => row.status === 'allowed' && Number(row.orderLots || 0) > 0);
   const policyBlocked = liveCandidates.filter((row) => row.status !== 'allowed');
@@ -455,6 +459,30 @@ function Sell({ data, loadingKeys }) {
         />
       </Card>
 
+      <Card title="Позиции робота" icon={Bot} help="Ledger строится только из реальных заявок робота. Если тут пусто, значит роботу еще нечего защищенно продавать. Несколько докупок одной бумаги сворачиваются в среднюю цену робота.">
+        <div className="stats compact">
+          <Stat label="Open" value={robotLedger.summary?.positions ?? 0} />
+          <Stat label="Lots" value={money(robotLedger.summary?.lots)} />
+          <Stat label="Value" value={`${money(robotLedger.summary?.marketValue)} RUB`} />
+          <Stat label="P/L" value={`${money(robotLedger.summary?.unrealizedPnl)} RUB`} tone={Number(robotLedger.summary?.unrealizedPnl) >= 0 ? 'good' : 'bad'} />
+        </div>
+        <Table
+          columns={[
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
+            { key: 'lots', label: 'Lots', className: 'right', render: (row) => money(row.lots) },
+            { key: 'averagePrice', label: 'Avg', className: 'right', render: (row) => money(row.averagePrice) },
+            { key: 'currentPrice', label: 'Now', className: 'right', render: (row) => money(row.currentPrice) },
+            { key: 'unrealizedPnl', label: 'P/L', className: 'right', render: (row) => <span className={Number(row.unrealizedPnl) >= 0 ? 'good' : 'bad'}>{money(row.unrealizedPnl)}</span> },
+            { key: 'unrealizedPnlPercent', label: 'P/L %', className: 'right', render: (row) => percent(row.unrealizedPnlPercent) },
+            { key: 'buys', label: 'B/S', className: 'right', render: (row) => `${row.buys || 0}/${row.sells || 0}` },
+            { key: 'lastTradeAt', label: 'Last', render: (row) => time(row.lastTradeAt) }
+          ]}
+          rows={robotPositions}
+          empty="No robot-owned positions yet"
+          loading={loadingKeys.robotPositions}
+        />
+      </Card>
+
       <Card title="Защита продаж" icon={ShieldCheck} help="Почему робот не должен случайно продать ручные позиции. Robot - сколько лотов доказано куплено роботом, Sell - сколько лотов можно выставить сейчас.">
         <Table
           columns={[
@@ -468,6 +496,22 @@ function Sell({ data, loadingKeys }) {
           rows={liveCandidates}
           empty="No sell policy checks yet"
           loading={loadingKeys.sellBrain}
+        />
+      </Card>
+
+      <Card title="Сделки робота" icon={Database} help="Последние buy/sell события из внутреннего журнала заявок. Они объясняют, из чего сложился robot-owned остаток.">
+        <Table
+          columns={[
+            { key: 'at', label: 'Time', render: (row) => time(row.at) },
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || '-'}</strong><div className="muted">{row.name}</div></> },
+            { key: 'direction', label: 'Side', render: (row) => <Pill tone={row.direction === 'buy' ? 'good' : 'bad'}>{row.direction}</Pill> },
+            { key: 'lots', label: 'Lots', className: 'right', render: (row) => money(row.lots) },
+            { key: 'price', label: 'Price', className: 'right', render: (row) => money(row.price) },
+            { key: 'status', label: 'Status', render: (row) => <Reason>{row.status || '-'}</Reason> }
+          ]}
+          rows={robotEvents}
+          empty="No robot trades yet"
+          loading={loadingKeys.robotPositions}
         />
       </Card>
 

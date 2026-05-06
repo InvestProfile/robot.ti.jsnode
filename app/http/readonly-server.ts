@@ -35,6 +35,7 @@ import RuntimeConfigService from '../services/runtime-config.service';
 import TechnicalAnalysisService from '../services/technical-analysis.service';
 import BuyCandidateLabService from '../services/buy-candidate-lab.service';
 import BuyRecommendationService from '../services/buy-recommendation.service';
+import RobotPositionLedgerService from '../services/robot-position-ledger.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -751,6 +752,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/sell-brain') {
         json(res, 200, await SellBrainService.evaluate(config));
+        return;
+    }
+
+    if (url.pathname === '/api/robot-positions') {
+        json(res, 200, await RobotPositionLedgerService.getLedger(config));
         return;
     }
 
