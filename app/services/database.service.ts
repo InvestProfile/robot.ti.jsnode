@@ -8,6 +8,7 @@ import { BuySignalJournalModel } from '../models/buy-signal-journal.model';
 import { PaperPositionModel } from '../models/paper-position.model';
 import { SocialProfileModel } from '../models/social-profile.model';
 import { SocialSignalModel } from '../models/social-signal.model';
+import { RuntimeAccountModeModel } from '../models/runtime-account-mode.model';
 
 export default class DatabaseService {
     static async init() {
@@ -21,8 +22,9 @@ export default class DatabaseService {
         await PaperPositionModel.sync({ alter: true });
         await SocialProfileModel.sync({ alter: true });
         await SocialSignalModel.sync({ alter: true });
+        await RuntimeAccountModeModel.sync({ alter: true });
 
         console.log('Database connection: OK');
-        console.log('Database models: trades, trade_decisions, portfolio_snapshots, position_states, signal_states, buy_signal_journal, paper_positions, social_profiles, social_signals synced');
+        console.log('Database models: trades, trade_decisions, portfolio_snapshots, position_states, signal_states, buy_signal_journal, paper_positions, social_profiles, social_signals, runtime_account_modes synced');
     }
 }

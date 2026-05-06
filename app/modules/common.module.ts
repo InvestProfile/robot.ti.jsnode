@@ -11,6 +11,7 @@ import OrderReconciliationService from '../services/order-reconciliation.service
 import PortfolioSnapshotService from '../services/portfolio-snapshot.service';
 import BuySignalJournalService from '../services/buy-signal-journal.service';
 import PaperTradingService from '../services/paper-trading.service';
+import RuntimeConfigService from '../services/runtime-config.service';
 import StrategyEngine from '../strategies/strategy-engine';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
 import { normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
@@ -592,22 +593,31 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
     console.log('Paper trading: ' + config.paperTradingEnabled);
     console.log('Paper trading interval: ' + config.paperTradingIntervalMs + ' ms');
 
-    void executeRobotTick(config);
-    const interval = setInterval(() => void executeRobotTick(config), config.intervalMs);
+    const withEffectiveConfig = async (task: (effectiveConfig: RobotConfig) => Promise<void>) => {
+        try {
+            const effectiveConfig = await RuntimeConfigService.getEffectiveConfig(config);
+            await task(effectiveConfig);
+        } catch (error) {
+            console.error('Failed to load runtime config:', error);
+        }
+    };
+
+    void withEffectiveConfig(executeRobotTick);
+    const interval = setInterval(() => void withEffectiveConfig(executeRobotTick), config.intervalMs);
     const buySignalJournalInterval = config.buySignalJournalIntervalMs > 0
-        ? setInterval(() => void executeBuySignalJournalTick(config), config.buySignalJournalIntervalMs)
+        ? setInterval(() => void withEffectiveConfig(executeBuySignalJournalTick), config.buySignalJournalIntervalMs)
         : undefined;
 
     if (config.buySignalJournalIntervalMs > 0) {
-        void executeBuySignalJournalTick(config);
+        void withEffectiveConfig(executeBuySignalJournalTick);
     }
 
     const paperTradingInterval = config.paperTradingEnabled && config.paperTradingIntervalMs > 0
-        ? setInterval(() => void executePaperTradingTick(config), config.paperTradingIntervalMs)
+        ? setInterval(() => void withEffectiveConfig(executePaperTradingTick), config.paperTradingIntervalMs)
         : undefined;
 
     if (config.paperTradingEnabled && config.paperTradingIntervalMs > 0) {
-        void executePaperTradingTick(config);
+        void withEffectiveConfig(executePaperTradingTick);
     }
 
     return {

@@ -30,6 +30,7 @@ import SocialCollectorService from '../services/social-collector.service';
 import SocialConsensusService from '../services/social-consensus.service';
 import SocialSignalEvidenceService from '../services/social-signal-evidence.service';
 import AnalystForecastService from '../services/analyst-forecast.service';
+import RuntimeConfigService from '../services/runtime-config.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -183,6 +184,44 @@ const handleSocialCookieUpdate = async (req: IncomingMessage, res: ServerRespons
     });
 };
 
+const handleAccountModeUpdate = async (req: IncomingMessage, res: ServerResponse) => {
+    if (!String(req.headers['content-type'] ?? '').includes('application/json')) {
+        json(res, 415, { ok: false, error: 'content-type must be application/json' });
+        return;
+    }
+
+    if (req.headers['x-robot-admin-action'] !== 'account-mode') {
+        json(res, 403, { ok: false, error: 'missing x-robot-admin-action header' });
+        return;
+    }
+
+    try {
+        const payload = await readJsonBody(req);
+        const accountId = String(payload.accountId ?? '').trim();
+        const mode = String(payload.mode ?? '').trim();
+
+        if (!accountId) {
+            json(res, 400, { ok: false, error: 'accountId is required' });
+            return;
+        }
+
+        if (mode !== 'trade' && mode !== 'observe') {
+            json(res, 400, { ok: false, error: 'mode must be trade or observe' });
+            return;
+        }
+
+        json(res, 200, {
+            ok: true,
+            ...await RuntimeConfigService.setAccountMode(accountId, mode, 'web-dashboard')
+        });
+    } catch (error) {
+        json(res, 400, {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+};
+
 const getAuthCredentials = () => {
     const env = getEnv();
     return {
@@ -279,14 +318,21 @@ const getAllAccounts = (config: RobotConfig) => [
 ];
 
 const getAccountsPayload = async (config: RobotConfig) => {
+    const modeByAccount = new Map(
+        (await RuntimeConfigService.getAccountModes()).map(account => [account.accountId, account])
+    );
     const accounts = [];
 
     for (const account of getAllAccounts(config)) {
         const portfolio = await OperationsService.getPortfolio(account.accountId);
+        const mode = modeByAccount.get(account.accountId);
 
         accounts.push({
             ...account,
             alias: config.accountAliases[account.accountId],
+            baseMode: mode?.baseMode,
+            overrideMode: mode?.overrideMode,
+            protected: mode?.protected ?? config.protectedAccountIds.includes(account.accountId),
             cashRub: quotationToNumber(portfolio?.totalAmountCurrencies),
             totalRub: quotationToNumber(portfolio?.totalAmountPortfolio),
             positionsCount: portfolio?.positions?.length ?? 0
@@ -416,11 +462,6 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
         return;
     }
 
-    if (req.method !== 'GET') {
-        json(res, 405, { error: 'Read-only API supports GET requests only.' });
-        return;
-    }
-
     if (url.pathname === '/api/health') {
         json(res, 200, { ok: true, startedAt, uptimeSeconds: Math.round(process.uptime()) });
         return;
@@ -428,7 +469,17 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (!requireAuth(req, res)) return;
 
-    const config = getRobotConfig();
+    if (req.method === 'POST' && url.pathname === '/api/admin/account-mode') {
+        await handleAccountModeUpdate(req, res);
+        return;
+    }
+
+    if (req.method !== 'GET') {
+        json(res, 405, { error: 'Read-only API supports GET requests only except explicit admin endpoints.' });
+        return;
+    }
+
+    const config = await RuntimeConfigService.getEffectiveConfig(getRobotConfig());
 
     if (url.pathname === '/') {
         if (await serveStatic(res, url.pathname)) return;
@@ -442,13 +493,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
             startedAt,
             uptimeSeconds: Math.round(process.uptime()),
             runtime: getTradingRuntimeState(),
-            config: safeConfig(config)
+            config: safeConfig(config),
+            accountModes: await RuntimeConfigService.getAccountModes()
         });
         return;
     }
 
     if (url.pathname === '/api/config') {
-        json(res, 200, { config: safeConfig(config) });
+        json(res, 200, { config: safeConfig(config), accountModes: await RuntimeConfigService.getAccountModes() });
         return;
     }
 

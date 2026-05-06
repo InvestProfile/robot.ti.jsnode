@@ -131,6 +131,22 @@ main {
   padding: 8px 12px;
 }
 
+.mini-button {
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid #2f7059;
+  border-radius: 7px;
+  color: #65d6a4;
+  background: #12241e;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.mini-button:hover {
+  border-color: #54a985;
+  background: #163126;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

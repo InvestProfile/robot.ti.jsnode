@@ -379,17 +379,37 @@ function Evidence({ data }) {
   );
 }
 
-function Accounts({ data }) {
+function Accounts({ data, onModeChange }) {
   return (
     <div className="grid">
-      <Card title="Счета" icon={Database} help="Торговый счет - единственный, где робот может размещать заявки. Остальные счета только наблюдаются и помогают проверять логику продаж.">
+      <Card title="Счета" icon={Database} help="Кнопка меняет режим счета без перезапуска робота. Trade разрешает роботу работать со счетом на следующем тике, observe только наблюдает и пишет мнение. Защищенный счет нельзя перевести в trade.">
         <Table
           columns={[
             { key: 'alias', label: 'Account', render: (row) => <><strong>{row.alias || row.accountId}</strong><div className="muted">{row.accountId}</div></> },
-            { key: 'mode', label: 'Mode', render: (row) => <Pill tone={row.mode === 'trade' ? 'bad' : 'neutral'}>{row.mode}</Pill> },
+            {
+              key: 'mode',
+              label: 'Mode',
+              render: (row) => <>
+                <Pill tone={row.mode === 'trade' ? 'bad' : 'neutral'}>{row.mode}</Pill>
+                {row.overrideMode ? <div className="muted">override: {row.overrideMode}</div> : null}
+              </>
+            },
             { key: 'cashRub', label: 'Cash', className: 'right', render: (row) => money(row.cashRub) },
             { key: 'totalRub', label: 'Total', className: 'right', render: (row) => money(row.totalRub) },
-            { key: 'positionsCount', label: 'Positions', className: 'right' }
+            { key: 'positionsCount', label: 'Positions', className: 'right' },
+            {
+              key: 'actions',
+              label: 'Action',
+              render: (row) => row.protected
+                ? <Pill tone="warn">protected</Pill>
+                : <button
+                    className="mini-button"
+                    onClick={() => onModeChange(row.accountId, row.mode === 'trade' ? 'observe' : 'trade')}
+                    title={row.mode === 'trade' ? 'Перевести счет в режим наблюдения' : 'Разрешить роботу торговать на этом счете'}
+                  >
+                    {row.mode === 'trade' ? 'To observe' : 'To trade'}
+                  </button>
+            }
           ]}
           rows={data.accounts?.accounts || []}
         />
@@ -435,14 +455,35 @@ function Logs({ data }) {
 function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const { data, loading, error, updatedAt, reload } = useDashboardData(activeTab);
+  const [actionError, setActionError] = useState('');
   const active = useMemo(() => tabs.find((tab) => tab.id === activeTab) || tabs[0], [activeTab]);
+  const updateAccountMode = async (accountId, mode) => {
+    setActionError('');
+    const response = await fetch('/api/admin/account-mode', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-robot-admin-action': 'account-mode'
+      },
+      body: JSON.stringify({ accountId, mode })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      const message = payload.error || `HTTP ${response.status}`;
+      setActionError(message);
+      return;
+    }
+
+    await reload();
+  };
 
   const content = {
     overview: <Overview data={data} />,
     signals: <Signals data={data} />,
     social: <Social data={data} />,
     evidence: <Evidence data={data} />,
-    accounts: <Accounts data={data} />,
+    accounts: <Accounts data={data} onModeChange={updateAccountMode} />,
     logs: <Logs data={data} />
   }[active.id];
 
@@ -480,6 +521,7 @@ function App() {
           </button>
         </header>
         {error ? <div className="error-banner"><AlertTriangle size={18} />{error}</div> : null}
+        {actionError ? <div className="error-banner"><AlertTriangle size={18} />{actionError}</div> : null}
         {content}
       </main>
     </div>
