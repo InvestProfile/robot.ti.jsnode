@@ -280,8 +280,62 @@ td {
 }
 
 .reason {
-  min-width: 260px;
-  max-width: 560px;
+  min-width: 220px;
+  max-width: 360px;
+  overflow-wrap: anywhere;
+}
+
+.reason-short {
+  display: block;
+  max-width: 340px;
+  color: #dce5ef;
+  line-height: 1.35;
+}
+
+.reason-cell {
+  max-width: 340px;
+}
+
+.reason-cell summary {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  padding: 2px 8px;
+  border: 1px solid #344454;
+  border-radius: 999px;
+  color: #c8d2df;
+  background: #1a232d;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.reason-cell summary::-webkit-details-marker {
+  display: none;
+}
+
+.reason-cell summary::after {
+  content: "more";
+  margin-left: 8px;
+  color: #70b7ff;
+  font-size: 11px;
+}
+
+.reason-cell[open] summary {
+  border-color: #2d80ed;
+  color: #edf2f7;
+}
+
+.reason-cell[open] summary::after {
+  content: "less";
+}
+
+.reason-cell p {
+  margin: 8px 0 0;
+  max-width: 340px;
+  color: #dce5ef;
+  line-height: 1.35;
 }
 
 .score-breakdown {

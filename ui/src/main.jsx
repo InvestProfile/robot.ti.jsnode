@@ -130,6 +130,36 @@ const ScoreBreakdown = ({ analysis }) => {
   );
 };
 
+const shortReason = (value) => {
+  const text = String(value || '-');
+  if (text.length <= 90) return text;
+
+  const markers = [
+    'score-buy blocked:',
+    'market regime blocked:',
+    'observe-only:',
+    'instrument is already in portfolio',
+    'instrument is not in normal trading status',
+    'daily order limit reached'
+  ];
+  const marker = markers.find((item) => text.startsWith(item));
+  if (marker) return marker.replace(/:$/, '');
+
+  return `${text.slice(0, 86).trim()}...`;
+};
+
+const Reason = ({ children }) => {
+  const text = String(children || '-');
+  if (text.length <= 90) return <span className="reason-short" title={text}>{text}</span>;
+
+  return (
+    <details className="reason-cell" title={text}>
+      <summary>{shortReason(text)}</summary>
+      <p>{text}</p>
+    </details>
+  );
+};
+
 const Card = ({ title, icon: Icon, help, children, className }) => (
   <section className={cls('panel', className)}>
     <div className="panel-head">
@@ -253,7 +283,7 @@ function Overview({ data }) {
             { key: 'currentPrice', label: 'Price', className: 'right', render: (row) => money(row.currentPrice) },
             { key: 'estimatedOrderRub', label: 'Amount', className: 'right', render: (row) => money(row.estimatedOrderRub) },
             { key: 'brokerQuote', label: 'Broker', className: 'right', render: (row) => row.brokerQuote ? money(row.brokerQuote.totalOrderAmount) : '-' },
-            { key: 'reason', label: 'Reason', className: 'reason' }
+            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
           rows={data.preview?.previews || []}
         />
@@ -296,7 +326,7 @@ function Signals({ data }) {
             { key: 'score', label: 'Score', render: (row) => <ScoreBreakdown analysis={row.analysis} /> },
             { key: 'lastPrice', label: 'Price', className: 'right', render: (row) => money(row.lastPrice) },
             { key: 'passed', label: 'Result', render: (row) => <Pill tone={row.passed ? 'good' : 'warn'}>{row.passed ? 'PASS' : 'WAIT'}</Pill> },
-            { key: 'reason', label: 'Reason', className: 'reason' }
+            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
           rows={data.buyScan?.items || []}
         />
@@ -309,7 +339,7 @@ function Signals({ data }) {
             { key: 'scoreGap', label: 'Gap', className: 'right', render: (row) => row.scoreGap === undefined ? '-' : row.scoreGap <= 0 ? <Pill tone="good">PASS</Pill> : row.scoreGap <= 5 ? <Pill tone="warn">{row.scoreGap}</Pill> : row.scoreGap },
             { key: 'bestScore', label: 'Best', className: 'right' },
             { key: 'count', label: 'Seen', className: 'right' },
-            { key: 'topReason', label: 'Top blocker', className: 'reason' }
+            { key: 'topReason', label: 'Top blocker', className: 'reason', render: (row) => <Reason>{row.topReason}</Reason> }
           ]}
           rows={data.buyLab?.items || []}
         />
@@ -350,7 +380,7 @@ function Signals({ data }) {
             { key: 'source', label: 'Signal' },
             { key: 'status', label: 'Status', render: (row) => <Pill tone={row.status === 'allowed' ? 'bad' : row.status === 'dry-run' ? 'warn' : 'neutral'}>{row.status}</Pill> },
             { key: 'profitPercent', label: 'P/L', className: 'right', render: (row) => percent(row.profitPercent) },
-            { key: 'reason', label: 'Reason', className: 'reason' }
+            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
           rows={data.sellBrain?.items || []}
         />
@@ -371,7 +401,7 @@ function Social({ data }) {
             { key: 'scoreAdjustment', label: 'Adj', className: 'right' },
             { key: 'actors', label: 'Actors', className: 'right' },
             { key: 'signals', label: 'Signals', className: 'right' },
-            { key: 'reason', label: 'Reason', className: 'reason' }
+            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
           rows={data.socialConsensus?.items || []}
         />
@@ -398,7 +428,7 @@ function Social({ data }) {
             { key: 'ticker', label: 'Ticker' },
             { key: 'action', label: 'Action' },
             { key: 'price', label: 'Price', className: 'right', render: (row) => money(row.price) },
-            { key: 'reason', label: 'Reason', className: 'reason' }
+            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
           rows={data.socialSignals?.signals || []}
         />
@@ -420,7 +450,7 @@ function Evidence({ data }) {
             { key: 'winRatePercent', label: 'WR', className: 'right', render: (row) => percent(row.winRatePercent) },
             { key: 'averageProfitPercent', label: 'Avg', className: 'right', render: (row) => percent(row.averageProfitPercent) },
             { key: 'status', label: 'Status', render: (row) => row.status ? <Pill tone={row.status === 'enough-data' ? 'good' : 'warn'}>{row.status}</Pill> : '-' },
-            { key: 'note', label: 'Note', className: 'reason' }
+            { key: 'note', label: 'Note', className: 'reason', render: (row) => <Reason>{row.note}</Reason> }
           ]}
           rows={data.strategy?.strategies || []}
         />
@@ -522,7 +552,7 @@ function Logs({ data }) {
             { key: 'signalSource', label: 'Signal' },
             { key: 'status', label: 'Status', render: (row) => <Pill tone={row.status === 'order-posted' ? 'good' : row.status === 'skip' ? 'neutral' : 'warn'}>{row.status}</Pill> },
             { key: 'profitPercent', label: 'P/L', className: 'right', render: (row) => percent(row.profitPercent) },
-            { key: 'reason', label: 'Reason', className: 'reason' }
+            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
           rows={data.decisions?.decisions || []}
         />
