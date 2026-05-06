@@ -273,6 +273,44 @@ td {
   max-width: 560px;
 }
 
+.score-breakdown {
+  display: flex;
+  min-width: 250px;
+  max-width: 310px;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+
+.score-breakdown strong {
+  min-width: 34px;
+  font-size: 16px;
+}
+
+.score-breakdown span {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 2px 7px;
+  border: 1px solid #344454;
+  border-radius: 6px;
+  background: #111820;
+  color: #c8d2df;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.score-breakdown span.good {
+  border-color: #2f7059;
+  background: #12241e;
+}
+
+.score-breakdown span.bad {
+  border-color: #6f3434;
+  background: #291719;
+}
+
 .muted,
 .empty {
   color: #93a1b2;

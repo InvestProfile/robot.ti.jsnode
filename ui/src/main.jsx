@@ -94,6 +94,41 @@ const Pill = ({ tone = 'neutral', children }) => (
   <span className={cls('pill', tone)}>{children}</span>
 );
 
+const signedNumber = (value) => {
+  if (value === undefined || value === null || Number.isNaN(Number(value))) return '-';
+  const number = Math.round(Number(value));
+  return number > 0 ? `+${number}` : String(number);
+};
+
+const adjustmentTone = (value) => {
+  if (Number(value) > 0) return 'good';
+  if (Number(value) < 0) return 'bad';
+  return 'neutral';
+};
+
+const ScoreBreakdown = ({ analysis }) => {
+  const factors = analysis?.factors || {};
+  const items = [
+    { key: 'base', label: 'base', value: factors.baseScore, title: 'Базовый score: тренд, momentum, откат от хая, волатильность и объем.' },
+    { key: 'social', label: 'pulse', value: factors.socialScoreAdjustment, title: 'Поправка от выбранных успешных авторов Пульса.' },
+    { key: 'analyst', label: 'analyst', value: factors.analystScoreAdjustment, title: 'Поправка от консенсус-прогноза аналитиков T-Invest.' },
+    { key: 'tech', label: 'tech', value: factors.technicalScoreAdjustment, title: 'Поправка от официальных индикаторов T-Invest: RSI, MACD и средние.' }
+  ];
+
+  if (!analysis) return '-';
+
+  return (
+    <div className="score-breakdown" title={analysis.reason}>
+      <strong>{analysis.score ?? '-'}</strong>
+      {items.map((item) => (
+        <span key={item.key} className={adjustmentTone(item.value)} title={item.title}>
+          {item.label} {signedNumber(item.value)}
+        </span>
+      ))}
+    </div>
+  );
+};
+
 const Card = ({ title, icon: Icon, help, children, className }) => (
   <section className={cls('panel', className)}>
     <div className="panel-head">
@@ -213,6 +248,7 @@ function Overview({ data }) {
           columns={[
             { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
             { key: 'status', label: 'Status', render: (row) => <Pill tone={row.status === 'allowed' ? 'good' : 'warn'}>{row.status}</Pill> },
+            { key: 'score', label: 'Score', render: (row) => <ScoreBreakdown analysis={row.scoreAnalysis} /> },
             { key: 'currentPrice', label: 'Price', className: 'right', render: (row) => money(row.currentPrice) },
             { key: 'estimatedOrderRub', label: 'Amount', className: 'right', render: (row) => money(row.estimatedOrderRub) },
             { key: 'brokerQuote', label: 'Broker', className: 'right', render: (row) => row.brokerQuote ? money(row.brokerQuote.totalOrderAmount) : '-' },
@@ -252,11 +288,11 @@ function Overview({ data }) {
 function Signals({ data }) {
   return (
     <div className="grid">
-      <Card title="Кандидаты на покупку" icon={Signal} help="Оценка бумаг из текущего списка наблюдения. Score 70/100 и выше обычно считается проходным, но дальше все равно идут лимиты и риск-фильтры.">
+      <Card title="Кандидаты на покупку" icon={Signal} help="Оценка бумаг из текущего списка наблюдения. Score 70/100 и выше обычно считается проходным. Base - сама цена/объем, pulse - Пульс, analyst - прогнозы, tech - индикаторы.">
         <Table
           columns={[
             { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
-            { key: 'score', label: 'Score', className: 'right' },
+            { key: 'score', label: 'Score', render: (row) => <ScoreBreakdown analysis={row.analysis} /> },
             { key: 'lastPrice', label: 'Price', className: 'right', render: (row) => money(row.lastPrice) },
             { key: 'passed', label: 'Result', render: (row) => <Pill tone={row.passed ? 'good' : 'warn'}>{row.passed ? 'PASS' : 'WAIT'}</Pill> },
             { key: 'reason', label: 'Reason', className: 'reason' }
@@ -264,7 +300,7 @@ function Signals({ data }) {
           rows={data.buyScan?.items || []}
         />
       </Card>
-      <Card title="Консенсус аналитиков" icon={BarChart3} help="Официальный консенсус-прогноз T-Invest API: рекомендации инвестдомов, целевая цена и потенциальный апсайд. Пока это только справочный слой и не влияет на реальные сделки.">
+      <Card title="Консенсус аналитиков" icon={BarChart3} help="Официальный консенсус-прогноз T-Invest API: рекомендации инвестдомов, целевая цена и потенциальный апсайд. Сейчас дает небольшую ограниченную поправку к score-buy.">
         <Table
           columns={[
             { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
@@ -278,7 +314,7 @@ function Signals({ data }) {
           rows={data.analystForecasts?.items || []}
         />
       </Card>
-      <Card title="Теханализ API" icon={LineChart} help="Официальные индикаторы T-Invest API: RSI, SMA/EMA, MACD и Bollinger Bands. Пока это диагностика, дальше дадим этому маленький вес в score-buy.">
+      <Card title="Теханализ API" icon={LineChart} help="Официальные индикаторы T-Invest API: RSI, SMA/EMA, MACD и Bollinger Bands. Сейчас дает небольшую ограниченную поправку к score-buy.">
         <Table
           columns={[
             { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
