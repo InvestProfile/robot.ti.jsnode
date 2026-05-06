@@ -36,6 +36,9 @@ const PROTECTED_TRADE_REASON = 'protected-trade-confirmed';
 const LIVE_ALLOWED_ACTIONS_KEY = 'liveAllowedActions';
 const MARKET_HEALTH_KEY = 'marketRegimeMinHealthPercent';
 const MARKET_AVG_TREND_KEY = 'marketRegimeMinAvgTrendPercent';
+const MAX_ORDER_RUB_KEY = 'maxOrderRub';
+const MAX_DAILY_ORDERS_KEY = 'maxDailyOrders';
+const MAX_DAILY_RUB_KEY = 'maxDailyRub';
 const ALLOWED_LIVE_ACTIONS = new Set<LiveAction>(['buy', 'sell']);
 
 const isProtectedTradeEnabled = (reason: string | undefined | null) =>
@@ -87,6 +90,7 @@ export default class RuntimeConfigService {
         const modes = await this.getAccountModes(baseConfig);
         const liveAllowedActions = await this.getLiveAllowedActions(baseConfig.liveAllowedActions);
         const marketRegime = await this.getMarketRegimeSettings(baseConfig);
+        const riskSettings = await this.getRiskSettings(baseConfig);
         const accountIds = modes
             .filter(account => account.effectiveMode === 'trade' && (!account.protected || account.protectedTradeEnabled))
             .map(account => account.accountId);
@@ -99,7 +103,8 @@ export default class RuntimeConfigService {
             accountIds,
             observeAccountIds,
             liveAllowedActions,
-            ...marketRegime
+            ...marketRegime,
+            ...riskSettings
         };
     }
 
@@ -172,6 +177,71 @@ export default class RuntimeConfigService {
         return {
             marketRegimeMinHealthPercent: minHealthPercent,
             marketRegimeMinAvgTrendPercent: minAvgTrendPercent
+        };
+    }
+
+    static async getRiskSettings(baseConfig: RobotConfig = getRobotConfig()) {
+        const rows = await RuntimeSettingModel.findAll({
+            where: {
+                key: {
+                    [Op.in]: [MAX_ORDER_RUB_KEY, MAX_DAILY_ORDERS_KEY, MAX_DAILY_RUB_KEY]
+                }
+            } as any
+        });
+        const byKey = new Map(rows.map(row => [row.key, Number(row.value)]));
+        const maxOrderRub = byKey.get(MAX_ORDER_RUB_KEY);
+        const maxDailyOrders = byKey.get(MAX_DAILY_ORDERS_KEY);
+        const maxDailyRub = byKey.get(MAX_DAILY_RUB_KEY);
+
+        return {
+            maxOrderRub: Number.isFinite(maxOrderRub)
+                ? Math.max(0, maxOrderRub as number)
+                : baseConfig.maxOrderRub,
+            maxDailyOrders: Number.isFinite(maxDailyOrders)
+                ? Math.max(0, Math.trunc(maxDailyOrders as number))
+                : baseConfig.maxDailyOrders,
+            maxDailyRub: Number.isFinite(maxDailyRub)
+                ? Math.max(0, maxDailyRub as number)
+                : baseConfig.maxDailyRub
+        };
+    }
+
+    static async setRiskSettings(input: {
+        maxOrderRub?: number;
+        maxDailyOrders?: number;
+        maxDailyRub?: number;
+    }, updatedBy = 'web') {
+        const baseConfig = getRobotConfig();
+        const maxOrderRub = Number.isFinite(input.maxOrderRub)
+            ? Math.max(0, Number(input.maxOrderRub))
+            : baseConfig.maxOrderRub;
+        const maxDailyOrders = Number.isFinite(input.maxDailyOrders)
+            ? Math.max(0, Math.trunc(Number(input.maxDailyOrders)))
+            : baseConfig.maxDailyOrders;
+        const maxDailyRub = Number.isFinite(input.maxDailyRub)
+            ? Math.max(0, Number(input.maxDailyRub))
+            : baseConfig.maxDailyRub;
+
+        await RuntimeSettingModel.upsert({
+            key: MAX_ORDER_RUB_KEY,
+            value: String(maxOrderRub),
+            updatedBy
+        });
+        await RuntimeSettingModel.upsert({
+            key: MAX_DAILY_ORDERS_KEY,
+            value: String(maxDailyOrders),
+            updatedBy
+        });
+        await RuntimeSettingModel.upsert({
+            key: MAX_DAILY_RUB_KEY,
+            value: String(maxDailyRub),
+            updatedBy
+        });
+
+        return {
+            maxOrderRub,
+            maxDailyOrders,
+            maxDailyRub
         };
     }
 

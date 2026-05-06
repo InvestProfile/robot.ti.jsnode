@@ -323,6 +323,58 @@ const handleMarketRegimeUpdate = async (req: IncomingMessage, res: ServerRespons
     }
 };
 
+const handleRiskSettingsUpdate = async (req: IncomingMessage, res: ServerResponse) => {
+    if (!String(req.headers['content-type'] ?? '').includes('application/json')) {
+        json(res, 415, { ok: false, error: 'content-type must be application/json' });
+        return;
+    }
+
+    if (req.headers['x-robot-admin-action'] !== 'risk-settings') {
+        json(res, 403, { ok: false, error: 'missing x-robot-admin-action header' });
+        return;
+    }
+
+    try {
+        const payload = await readJsonBody(req);
+        const maxOrderRub = Number(payload.maxOrderRub);
+        const maxDailyOrders = Number(payload.maxDailyOrders);
+        const maxDailyRub = Number(payload.maxDailyRub);
+
+        if (!Number.isFinite(maxOrderRub) || maxOrderRub < 0 || maxOrderRub > 100_000) {
+            json(res, 400, { ok: false, error: 'maxOrderRub must be 0..100000' });
+            return;
+        }
+
+        if (!Number.isFinite(maxDailyOrders) || maxDailyOrders < 0 || maxDailyOrders > 100) {
+            json(res, 400, { ok: false, error: 'maxDailyOrders must be 0..100' });
+            return;
+        }
+
+        if (!Number.isFinite(maxDailyRub) || maxDailyRub < 0 || maxDailyRub > 1_000_000) {
+            json(res, 400, { ok: false, error: 'maxDailyRub must be 0..1000000' });
+            return;
+        }
+
+        const settings = await RuntimeConfigService.setRiskSettings({
+            maxOrderRub,
+            maxDailyOrders,
+            maxDailyRub
+        }, 'web-dashboard');
+        const config = await RuntimeConfigService.getEffectiveConfig(getRobotConfig());
+
+        json(res, 200, {
+            ok: true,
+            settings,
+            limits: await getLimitsPayload(config)
+        });
+    } catch (error) {
+        json(res, 400, {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+};
+
 const getAuthCredentials = () => {
     const env = getEnv();
     return {
@@ -621,6 +673,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (req.method === 'POST' && url.pathname === '/api/admin/market-regime') {
         await handleMarketRegimeUpdate(req, res);
+        return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/admin/risk-settings') {
+        await handleRiskSettingsUpdate(req, res);
         return;
     }
 

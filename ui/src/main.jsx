@@ -786,7 +786,63 @@ function Evidence({ data, loadingKeys }) {
   );
 }
 
-function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle }) {
+function RiskControls({ data, onRiskSettingsChange }) {
+  const config = data.status?.config || {};
+  const limits = data.limits?.limits || [];
+  const tradeLimit = limits.find((limit) => limit.mode === 'trade') || limits[0];
+  const maxOrderRub = Number(config.maxOrderRub || 0);
+  const maxDailyOrders = Number(config.maxDailyOrders || 0);
+  const maxDailyRub = Number(config.maxDailyRub || 0);
+
+  return (
+    <Card title="Лимиты риска" icon={ShieldCheck} help="Меняет реальные лимиты робота без перезапуска. Max order - потолок одной заявки, daily orders - сколько заявок за день, daily RUB - общий дневной бюджет.">
+      <div className="stats compact">
+        <Stat label="Max order" value={`${money(maxOrderRub)} RUB`} />
+        <Stat label="Daily orders" value={maxDailyOrders} />
+        <Stat label="Daily RUB" value={`${money(maxDailyRub)} RUB`} />
+        <Stat label="Left today" value={tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : '-'} />
+      </div>
+      <div className="control-row">
+        {[500, 1000, 1500, 2500].map((value) => (
+          <button
+            key={value}
+            className={cls('mini-button', value === maxOrderRub && 'active')}
+            onClick={() => onRiskSettingsChange({ maxOrderRub: value, maxDailyOrders, maxDailyRub })}
+            title="Поменять максимальный размер одной заявки."
+          >
+            order {value}
+          </button>
+        ))}
+      </div>
+      <div className="control-row">
+        {[1, 3, 5, 10].map((value) => (
+          <button
+            key={value}
+            className={cls('mini-button', value === maxDailyOrders && 'active')}
+            onClick={() => onRiskSettingsChange({ maxOrderRub, maxDailyOrders: value, maxDailyRub })}
+            title="Поменять максимум заявок за день."
+          >
+            {value} orders
+          </button>
+        ))}
+      </div>
+      <div className="control-row">
+        {[500, 1500, 3000, 5000].map((value) => (
+          <button
+            key={value}
+            className={cls('mini-button', value === maxDailyRub && 'active')}
+            onClick={() => onRiskSettingsChange({ maxOrderRub, maxDailyOrders, maxDailyRub: value })}
+            title="Поменять общий дневной бюджет."
+          >
+            day {value}
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle, onRiskSettingsChange }) {
   const liveActions = data.status?.config?.liveAllowedActions || [];
   const sellArmed = liveActions.includes('sell');
 
@@ -807,6 +863,7 @@ function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle }) {
           </button>
         </div>
       </Card>
+      <RiskControls data={data} onRiskSettingsChange={onRiskSettingsChange} />
       <Card title="Счета" icon={Database} help="Кнопка меняет режим счета без перезапуска робота. Protected-счет можно перевести в trade только после отдельного подтверждения номером счета.">
         <Table
           columns={[
@@ -984,13 +1041,32 @@ function App() {
 
     await reload();
   };
+  const updateRiskSettings = async (settings) => {
+    setActionError('');
+    const response = await fetch('/api/admin/risk-settings', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-robot-admin-action': 'risk-settings'
+      },
+      body: JSON.stringify(settings)
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      setActionError(payload.error || `HTTP ${response.status}`);
+      return;
+    }
+
+    await reload();
+  };
 
   const content = {
     overview: <Overview data={data} loadingKeys={loadingKeys} onMarketRegimeChange={updateMarketRegime} />,
     buy: <Buy data={data} loadingKeys={loadingKeys} />,
     social: <Social data={data} loadingKeys={loadingKeys} />,
     evidence: <Evidence data={data} loadingKeys={loadingKeys} />,
-    accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} onLiveSellToggle={updateLiveSell} />,
+    accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} onLiveSellToggle={updateLiveSell} onRiskSettingsChange={updateRiskSettings} />,
     sell: <Sell data={data} loadingKeys={loadingKeys} />,
     logs: <Logs data={data} loadingKeys={loadingKeys} />
   }[active.id];
