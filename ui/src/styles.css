@@ -147,6 +147,12 @@ main {
   background: #163126;
 }
 
+.mini-button.active {
+  border-color: #63a7ff;
+  color: #d8ebff;
+  background: #172d46;
+}
+
 .mini-button.danger {
   border-color: #6f5a22;
   color: #ffd76a;
@@ -218,6 +224,13 @@ main {
   padding: 0 14px 14px;
 }
 
+.control-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 14px 10px;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -266,17 +279,18 @@ main {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 560px;
+  min-width: 720px;
+  table-layout: fixed;
 }
 
 th,
 td {
-  padding: 10px 8px;
+  padding: 9px 8px;
   border-bottom: 1px solid #26313c;
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
   font-size: 13px;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
 }
 
 th {
@@ -289,14 +303,20 @@ td {
   color: #edf2f7;
 }
 
+td:first-child,
+th:first-child {
+  width: 150px;
+}
+
 .right {
   text-align: right;
   white-space: nowrap;
 }
 
 .reason {
-  min-width: 170px;
-  max-width: 280px;
+  width: 280px;
+  min-width: 220px;
+  max-width: 320px;
   overflow-wrap: anywhere;
 }
 
@@ -359,10 +379,10 @@ td {
 }
 
 .score-breakdown {
-  display: flex;
+  display: grid;
   min-width: 190px;
-  max-width: 260px;
-  flex-wrap: wrap;
+  max-width: 230px;
+  grid-template-columns: 38px repeat(2, minmax(66px, 1fr));
   gap: 5px;
   align-items: center;
 }
@@ -374,14 +394,15 @@ td {
 
 .score-breakdown span {
   display: inline-flex;
-  min-height: 22px;
+  min-height: 20px;
   align-items: center;
-  padding: 2px 7px;
+  justify-content: center;
+  padding: 2px 6px;
   border: 1px solid #344454;
   border-radius: 6px;
   background: #111820;
   color: #c8d2df;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   white-space: nowrap;
 }

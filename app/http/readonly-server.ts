@@ -276,6 +276,51 @@ const handleLiveActionsUpdate = async (req: IncomingMessage, res: ServerResponse
     }
 };
 
+const handleMarketRegimeUpdate = async (req: IncomingMessage, res: ServerResponse) => {
+    if (!String(req.headers['content-type'] ?? '').includes('application/json')) {
+        json(res, 415, { ok: false, error: 'content-type must be application/json' });
+        return;
+    }
+
+    if (req.headers['x-robot-admin-action'] !== 'market-regime') {
+        json(res, 403, { ok: false, error: 'missing x-robot-admin-action header' });
+        return;
+    }
+
+    try {
+        const payload = await readJsonBody(req);
+        const minHealthPercent = Number(payload.minHealthPercent);
+        const minAvgTrendPercent = Number(payload.minAvgTrendPercent);
+
+        if (!Number.isFinite(minHealthPercent) || minHealthPercent < 0 || minHealthPercent > 100) {
+            json(res, 400, { ok: false, error: 'minHealthPercent must be 0..100' });
+            return;
+        }
+
+        if (!Number.isFinite(minAvgTrendPercent) || minAvgTrendPercent < -20 || minAvgTrendPercent > 20) {
+            json(res, 400, { ok: false, error: 'minAvgTrendPercent must be -20..20' });
+            return;
+        }
+
+        const settings = await RuntimeConfigService.setMarketRegimeSettings({
+            minHealthPercent,
+            minAvgTrendPercent
+        }, 'web-dashboard');
+        const config = await RuntimeConfigService.getEffectiveConfig(getRobotConfig());
+
+        json(res, 200, {
+            ok: true,
+            settings,
+            market: await MarketRegimeService.evaluate(config)
+        });
+    } catch (error) {
+        json(res, 400, {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+};
+
 const getAuthCredentials = () => {
     const env = getEnv();
     return {
@@ -569,6 +614,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (req.method === 'POST' && url.pathname === '/api/admin/live-actions') {
         await handleLiveActionsUpdate(req, res);
+        return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/admin/market-regime') {
+        await handleMarketRegimeUpdate(req, res);
         return;
     }
 

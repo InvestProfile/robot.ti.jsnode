@@ -267,12 +267,65 @@ const getReadiness = (data) => {
   if (status?.runtime?.circuitBreakerOpen) blockers.push('circuit breaker');
   if (market && !market.passed) blockers.push('market blocked');
   if (limits?.limits?.some((limit) => limit.ordersLeft <= 0)) blockers.push('daily order limit');
-  if (socialCollector && !socialCollector.ok) blockers.push('social collector waiting');
+  if (socialCollector?.health?.pendingAuth > 0) blockers.push('social collector auth');
 
   return blockers;
 };
 
-function Overview({ data, loadingKeys }) {
+const socialCollectorText = (social) => {
+  if (!social) return 'loading';
+  if (social.health?.pendingAuth > 0) return 'needs auth';
+  if (social.health?.staleProfiles > 0) return `idle, ${social.health.staleProfiles} stale`;
+  return 'fresh';
+};
+
+function MarketControls({ data, onMarketRegimeChange }) {
+  const config = data.status?.config || {};
+  const market = data.market || {};
+  const health = config.marketRegimeMinHealthPercent ?? 40;
+  const trend = config.marketRegimeMinAvgTrendPercent ?? -1;
+
+  return (
+    <Card title="Настройка рынка" icon={ShieldCheck} help="Меняет фильтр рынка без перезапуска. Health - сколько бумаг из корзины должно быть здоровыми. Trend - насколько бумага может быть ниже своей 20-дневной средней и все еще считаться здоровой.">
+      <div className="readiness">
+        <Pill tone={market.passed ? 'good' : 'bad'}>{market.passed ? 'PASSED' : 'BLOCKED'}</Pill>
+        <span>{market.reason}</span>
+      </div>
+      <div className="stats compact">
+        <Stat label="Health" value={`${health}%`} />
+        <Stat label="Trend floor" value={`${trend}%`} />
+        <Stat label="Passed" value={`${market.passedCount ?? '-'} / ${market.measuredCount ?? '-'}`} />
+        <Stat label="Avg trend" value={percent(market.avgTrendPercent)} />
+      </div>
+      <div className="control-row">
+        {[40, 20, 0].map((value) => (
+          <button
+            key={value}
+            className={cls('mini-button', value === health && 'active')}
+            onClick={() => onMarketRegimeChange(value, trend)}
+            title={value === 40 ? 'Консервативно: минимум 2 из 5 бумаг должны пройти.' : value === 20 ? 'Мягко: достаточно 1 из 5, как сейчас.' : 'Лабораторный режим: рынок почти не блокирует покупки.'}
+          >
+            health {value}%
+          </button>
+        ))}
+      </div>
+      <div className="control-row">
+        {[-1, -2, -5].map((value) => (
+          <button
+            key={value}
+            className={cls('mini-button', value === trend && 'active')}
+            onClick={() => onMarketRegimeChange(health, value)}
+            title="Минимальный тренд к 20-дневной средней для отдельной бумаги."
+          >
+            trend {value}%
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function Overview({ data, loadingKeys, onMarketRegimeChange }) {
   const blockers = getReadiness(data);
   const status = data.status;
   const social = data.socialCollector;
@@ -314,9 +367,11 @@ function Overview({ data, loadingKeys }) {
           <Stat label="Paper open" value={paper?.open ?? '-'} />
           <Stat label="Paper P/L" value={`${money(paper?.totalProfitRub)} RUB`} tone={(paper?.totalProfitRub || 0) >= 0 ? 'good' : 'bad'} />
           <Stat label="Social profiles" value={`${social?.health?.activeProfiles || 0} / ${social?.config?.configuredProfiles || 0}`} />
-          <Stat label="Social signals" value={social?.signals?.signals ?? '-'} />
+          <Stat label="Social collector" value={socialCollectorText(social)} tone={social?.health?.pendingAuth > 0 ? 'bad' : social?.health?.staleProfiles > 0 ? 'warn' : 'good'} />
         </div>
       </Card>
+
+      <MarketControls data={data} onMarketRegimeChange={onMarketRegimeChange} />
 
       <Card title="Режим рынка" icon={Activity} help="Фильтр общего настроения рынка. Если базовые бумаги выглядят плохо, робот может не покупать даже хорошего кандидата.">
         <div className="readiness">
@@ -801,9 +856,31 @@ function App() {
 
     await reload();
   };
+  const updateMarketRegime = async (minHealthPercent, minAvgTrendPercent) => {
+    setActionError('');
+    const response = await fetch('/api/admin/market-regime', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-robot-admin-action': 'market-regime'
+      },
+      body: JSON.stringify({
+        minHealthPercent,
+        minAvgTrendPercent
+      })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      setActionError(payload.error || `HTTP ${response.status}`);
+      return;
+    }
+
+    await reload();
+  };
 
   const content = {
-    overview: <Overview data={data} loadingKeys={loadingKeys} />,
+    overview: <Overview data={data} loadingKeys={loadingKeys} onMarketRegimeChange={updateMarketRegime} />,
     signals: <Signals data={data} loadingKeys={loadingKeys} />,
     social: <Social data={data} loadingKeys={loadingKeys} />,
     evidence: <Evidence data={data} loadingKeys={loadingKeys} />,

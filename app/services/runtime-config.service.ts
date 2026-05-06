@@ -34,6 +34,8 @@ const normalizeMode = (mode: string | undefined): AccountMode | undefined => {
 
 const PROTECTED_TRADE_REASON = 'protected-trade-confirmed';
 const LIVE_ALLOWED_ACTIONS_KEY = 'liveAllowedActions';
+const MARKET_HEALTH_KEY = 'marketRegimeMinHealthPercent';
+const MARKET_AVG_TREND_KEY = 'marketRegimeMinAvgTrendPercent';
 const ALLOWED_LIVE_ACTIONS = new Set<LiveAction>(['buy', 'sell']);
 
 const isProtectedTradeEnabled = (reason: string | undefined | null) =>
@@ -84,6 +86,7 @@ export default class RuntimeConfigService {
     static async getEffectiveConfig(baseConfig: RobotConfig = getRobotConfig()): Promise<RobotConfig> {
         const modes = await this.getAccountModes(baseConfig);
         const liveAllowedActions = await this.getLiveAllowedActions(baseConfig.liveAllowedActions);
+        const marketRegime = await this.getMarketRegimeSettings(baseConfig);
         const accountIds = modes
             .filter(account => account.effectiveMode === 'trade' && (!account.protected || account.protectedTradeEnabled))
             .map(account => account.accountId);
@@ -95,7 +98,8 @@ export default class RuntimeConfigService {
             ...baseConfig,
             accountIds,
             observeAccountIds,
-            liveAllowedActions
+            liveAllowedActions,
+            ...marketRegime
         };
     }
 
@@ -117,6 +121,57 @@ export default class RuntimeConfigService {
 
         return {
             liveAllowedActions
+        };
+    }
+
+    static async getMarketRegimeSettings(baseConfig: RobotConfig = getRobotConfig()) {
+        const rows = await RuntimeSettingModel.findAll({
+            where: {
+                key: {
+                    [Op.in]: [MARKET_HEALTH_KEY, MARKET_AVG_TREND_KEY]
+                }
+            } as any
+        });
+        const byKey = new Map(rows.map(row => [row.key, Number(row.value)]));
+        const health = byKey.get(MARKET_HEALTH_KEY);
+        const avgTrend = byKey.get(MARKET_AVG_TREND_KEY);
+
+        return {
+            marketRegimeMinHealthPercent: Number.isFinite(health)
+                ? Math.max(0, Math.min(100, health as number))
+                : baseConfig.marketRegimeMinHealthPercent,
+            marketRegimeMinAvgTrendPercent: Number.isFinite(avgTrend)
+                ? avgTrend as number
+                : baseConfig.marketRegimeMinAvgTrendPercent
+        };
+    }
+
+    static async setMarketRegimeSettings(input: {
+        minHealthPercent?: number;
+        minAvgTrendPercent?: number;
+    }, updatedBy = 'web') {
+        const baseConfig = getRobotConfig();
+        const minHealthPercent = Number.isFinite(input.minHealthPercent)
+            ? Math.max(0, Math.min(100, Number(input.minHealthPercent)))
+            : baseConfig.marketRegimeMinHealthPercent;
+        const minAvgTrendPercent = Number.isFinite(input.minAvgTrendPercent)
+            ? Number(input.minAvgTrendPercent)
+            : baseConfig.marketRegimeMinAvgTrendPercent;
+
+        await RuntimeSettingModel.upsert({
+            key: MARKET_HEALTH_KEY,
+            value: String(minHealthPercent),
+            updatedBy
+        });
+        await RuntimeSettingModel.upsert({
+            key: MARKET_AVG_TREND_KEY,
+            value: String(minAvgTrendPercent),
+            updatedBy
+        });
+
+        return {
+            marketRegimeMinHealthPercent: minHealthPercent,
+            marketRegimeMinAvgTrendPercent: minAvgTrendPercent
         };
     }
 
