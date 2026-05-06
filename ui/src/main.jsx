@@ -33,6 +33,7 @@ const endpoints = {
   socialEvidence: '/api/social-evidence?limit=80',
   sellBrain: '/api/sell-brain',
   buyScan: '/api/buy-scan',
+  buyLab: '/api/buy-lab?hours=24&limit=30',
   analystForecasts: '/api/analyst-forecasts',
   techAnalysis: '/api/tech-analysis'
 };
@@ -40,7 +41,7 @@ const endpoints = {
 const endpointGroups = {
   core: ['status', 'limits', 'performance', 'paper', 'socialCollector'],
   overview: ['preview', 'market'],
-  signals: ['buyScan', 'sellBrain', 'analystForecasts', 'techAnalysis'],
+  signals: ['buyScan', 'buyLab', 'sellBrain', 'analystForecasts', 'techAnalysis'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   evidence: ['strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
@@ -298,6 +299,19 @@ function Signals({ data }) {
             { key: 'reason', label: 'Reason', className: 'reason' }
           ]}
           rows={data.buyScan?.items || []}
+        />
+      </Card>
+      <Card title="Лаборатория 24ч" icon={BarChart3} help="Агрегация решений за последние 24 часа. Показывает, какие бумаги чаще всего подходили к порогу покупки, сколько баллов не хватило и что было главным стопором.">
+        <Table
+          columns={[
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
+            { key: 'latestScore', label: 'Score', render: (row) => <div className="score-breakdown"><strong>{row.latestScore ?? '-'}</strong><span>base {signedNumber(row.baseScore)}</span><span className={adjustmentTone(row.socialScoreAdjustment)}>pulse {signedNumber(row.socialScoreAdjustment)}</span><span className={adjustmentTone(row.analystScoreAdjustment)}>analyst {signedNumber(row.analystScoreAdjustment)}</span><span className={adjustmentTone(row.technicalScoreAdjustment)}>tech {signedNumber(row.technicalScoreAdjustment)}</span></div> },
+            { key: 'scoreGap', label: 'Gap', className: 'right', render: (row) => row.scoreGap === undefined ? '-' : row.scoreGap <= 0 ? <Pill tone="good">PASS</Pill> : row.scoreGap <= 5 ? <Pill tone="warn">{row.scoreGap}</Pill> : row.scoreGap },
+            { key: 'bestScore', label: 'Best', className: 'right' },
+            { key: 'count', label: 'Seen', className: 'right' },
+            { key: 'topReason', label: 'Top blocker', className: 'reason' }
+          ]}
+          rows={data.buyLab?.items || []}
         />
       </Card>
       <Card title="Консенсус аналитиков" icon={BarChart3} help="Официальный консенсус-прогноз T-Invest API: рекомендации инвестдомов, целевая цена и потенциальный апсайд. Сейчас дает небольшую ограниченную поправку к score-buy.">

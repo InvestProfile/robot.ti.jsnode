@@ -33,6 +33,7 @@ import SocialSignalEvidenceService from '../services/social-signal-evidence.serv
 import AnalystForecastService from '../services/analyst-forecast.service';
 import RuntimeConfigService from '../services/runtime-config.service';
 import TechnicalAnalysisService from '../services/technical-analysis.service';
+import BuyCandidateLabService from '../services/buy-candidate-lab.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -656,6 +657,16 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
         const requestedLimit = Number(url.searchParams.get('limit') ?? 100);
         json(res, 200, await BuySignalJournalService.list(
             Number.isFinite(requestedLimit) ? requestedLimit : 100
+        ));
+        return;
+    }
+
+    if (url.pathname === '/api/buy-lab') {
+        const hours = Number(url.searchParams.get('hours') ?? 24);
+        const limit = Number(url.searchParams.get('limit') ?? 30);
+        json(res, 200, await BuyCandidateLabService.getSummary(
+            Number.isFinite(hours) ? hours : 24,
+            Number.isFinite(limit) ? limit : 30
         ));
         return;
     }
