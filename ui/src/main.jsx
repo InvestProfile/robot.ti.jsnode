@@ -526,9 +526,27 @@ function Evidence({ data, loadingKeys }) {
   );
 }
 
-function Accounts({ data, loadingKeys, onModeChange }) {
+function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle }) {
+  const liveActions = data.status?.config?.liveAllowedActions || [];
+  const sellArmed = liveActions.includes('sell');
+
   return (
     <div className="grid">
+      <Card title="Live действия" icon={ShieldCheck} help="Боевые действия робота. Buy уже включен. Sell можно включить отдельно, но он все равно продаст только robot-owned лоты, которые сам ранее купил и записал в журнал.">
+        <div className="readiness">
+          <Pill tone={sellArmed ? 'bad' : 'good'}>{sellArmed ? 'SELL ARMED' : 'SELL OFF'}</Pill>
+          <span>{liveActions.join(', ') || '-'}</span>
+        </div>
+        <div className="card-actions">
+          <button
+            className={cls('mini-button', sellArmed ? '' : 'danger')}
+            onClick={() => onLiveSellToggle(!sellArmed)}
+            title={sellArmed ? 'Выключить реальные продажи' : 'Включить реальные продажи только для robot-owned лотов'}
+          >
+            {sellArmed ? 'Disarm sell' : 'Arm sell'}
+          </button>
+        </div>
+      </Card>
       <Card title="Счета" icon={Database} help="Кнопка меняет режим счета без перезапуска робота. Protected-счет можно перевести в trade только после отдельного подтверждения номером счета.">
         <Table
           columns={[
@@ -648,13 +666,49 @@ function App() {
 
     await reload();
   };
+  const updateLiveSell = async (enabled) => {
+    setActionError('');
+    let confirmation;
+    const currentActions = data.status?.config?.liveAllowedActions || ['buy'];
+    const actions = enabled
+      ? [...new Set([...currentActions, 'buy', 'sell'])]
+      : currentActions.filter((action) => action !== 'sell');
+
+    if (enabled) {
+      confirmation = window.prompt('Чтобы включить реальные продажи, введи SELL');
+      if (confirmation !== 'SELL') {
+        setActionError('Live sell was not armed');
+        return;
+      }
+    }
+
+    const response = await fetch('/api/admin/live-actions', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-robot-admin-action': 'live-actions'
+      },
+      body: JSON.stringify({
+        actions,
+        confirmation
+      })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      setActionError(payload.error || `HTTP ${response.status}`);
+      return;
+    }
+
+    await reload();
+  };
 
   const content = {
     overview: <Overview data={data} loadingKeys={loadingKeys} />,
     signals: <Signals data={data} loadingKeys={loadingKeys} />,
     social: <Social data={data} loadingKeys={loadingKeys} />,
     evidence: <Evidence data={data} loadingKeys={loadingKeys} />,
-    accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} />,
+    accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} onLiveSellToggle={updateLiveSell} />,
     logs: <Logs data={data} loadingKeys={loadingKeys} />
   }[active.id];
 

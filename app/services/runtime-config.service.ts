@@ -1,5 +1,6 @@
-import { getRobotConfig, RobotConfig } from '../config/robot.config';
+import { getRobotConfig, LiveAction, RobotConfig } from '../config/robot.config';
 import RuntimeAccountModeModel, { RuntimeAccountMode } from '../models/runtime-account-mode.model';
+import RuntimeSettingModel from '../models/runtime-setting.model';
 import { Op } from 'sequelize';
 
 type AccountMode = RuntimeAccountMode;
@@ -32,9 +33,19 @@ const normalizeMode = (mode: string | undefined): AccountMode | undefined => {
 };
 
 const PROTECTED_TRADE_REASON = 'protected-trade-confirmed';
+const LIVE_ALLOWED_ACTIONS_KEY = 'liveAllowedActions';
+const ALLOWED_LIVE_ACTIONS = new Set<LiveAction>(['buy', 'sell']);
 
 const isProtectedTradeEnabled = (reason: string | undefined | null) =>
     String(reason ?? '').startsWith(PROTECTED_TRADE_REASON);
+
+const normalizeLiveActions = (actions: string[] | undefined, fallback: LiveAction[]): LiveAction[] => {
+    const normalized = (actions ?? [])
+        .map(action => action.trim())
+        .filter((action): action is LiveAction => ALLOWED_LIVE_ACTIONS.has(action as LiveAction));
+
+    return normalized.length > 0 ? [...new Set(normalized)] : fallback;
+};
 
 export default class RuntimeConfigService {
     static async getAccountModes(baseConfig: RobotConfig = getRobotConfig()): Promise<AccountModeView[]> {
@@ -72,6 +83,7 @@ export default class RuntimeConfigService {
 
     static async getEffectiveConfig(baseConfig: RobotConfig = getRobotConfig()): Promise<RobotConfig> {
         const modes = await this.getAccountModes(baseConfig);
+        const liveAllowedActions = await this.getLiveAllowedActions(baseConfig.liveAllowedActions);
         const accountIds = modes
             .filter(account => account.effectiveMode === 'trade' && (!account.protected || account.protectedTradeEnabled))
             .map(account => account.accountId);
@@ -82,7 +94,29 @@ export default class RuntimeConfigService {
         return {
             ...baseConfig,
             accountIds,
-            observeAccountIds
+            observeAccountIds,
+            liveAllowedActions
+        };
+    }
+
+    static async getLiveAllowedActions(fallback: LiveAction[] = getRobotConfig().liveAllowedActions): Promise<LiveAction[]> {
+        const row = await RuntimeSettingModel.findOne({ where: { key: LIVE_ALLOWED_ACTIONS_KEY } });
+        if (!row?.value) return fallback;
+        return normalizeLiveActions(row.value.split(','), fallback);
+    }
+
+    static async setLiveAllowedActions(actions: string[], updatedBy = 'web') {
+        const baseConfig = getRobotConfig();
+        const liveAllowedActions = normalizeLiveActions(actions, baseConfig.liveAllowedActions);
+
+        await RuntimeSettingModel.upsert({
+            key: LIVE_ALLOWED_ACTIONS_KEY,
+            value: liveAllowedActions.join(','),
+            updatedBy
+        });
+
+        return {
+            liveAllowedActions
         };
     }
 

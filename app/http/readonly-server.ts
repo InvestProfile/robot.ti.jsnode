@@ -239,6 +239,42 @@ const handleAccountModeUpdate = async (req: IncomingMessage, res: ServerResponse
     }
 };
 
+const handleLiveActionsUpdate = async (req: IncomingMessage, res: ServerResponse) => {
+    if (!String(req.headers['content-type'] ?? '').includes('application/json')) {
+        json(res, 415, { ok: false, error: 'content-type must be application/json' });
+        return;
+    }
+
+    if (req.headers['x-robot-admin-action'] !== 'live-actions') {
+        json(res, 403, { ok: false, error: 'missing x-robot-admin-action header' });
+        return;
+    }
+
+    try {
+        const payload = await readJsonBody(req);
+        const actions = Array.isArray(payload.actions)
+            ? payload.actions.map((action: unknown) => String(action))
+            : [];
+        const wantsSell = actions.includes('sell');
+        const confirmation = String(payload.confirmation ?? '').trim();
+
+        if (wantsSell && confirmation !== 'SELL') {
+            json(res, 400, { ok: false, error: 'type SELL to arm live sells' });
+            return;
+        }
+
+        json(res, 200, {
+            ok: true,
+            ...await RuntimeConfigService.setLiveAllowedActions(actions, 'web-dashboard')
+        });
+    } catch (error) {
+        json(res, 400, {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+};
+
 const getAuthCredentials = () => {
     const env = getEnv();
     return {
@@ -527,6 +563,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (req.method === 'POST' && url.pathname === '/api/admin/account-mode') {
         await handleAccountModeUpdate(req, res);
+        return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/admin/live-actions') {
+        await handleLiveActionsUpdate(req, res);
         return;
     }
 
