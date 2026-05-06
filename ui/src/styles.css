@@ -147,6 +147,17 @@ main {
   background: #163126;
 }
 
+.mini-button.danger {
+  border-color: #6f5a22;
+  color: #ffd76a;
+  background: #25200f;
+}
+
+.mini-button.danger:hover {
+  border-color: #997932;
+  background: #302811;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

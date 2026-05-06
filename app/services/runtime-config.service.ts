@@ -11,6 +11,7 @@ export interface AccountModeView {
     overrideMode?: AccountMode;
     effectiveMode: AccountMode;
     protected: boolean;
+    protectedTradeEnabled: boolean;
     updatedAt?: Date;
     updatedBy?: string;
 }
@@ -30,6 +31,11 @@ const normalizeMode = (mode: string | undefined): AccountMode | undefined => {
     return undefined;
 };
 
+const PROTECTED_TRADE_REASON = 'protected-trade-confirmed';
+
+const isProtectedTradeEnabled = (reason: string | undefined | null) =>
+    String(reason ?? '').startsWith(PROTECTED_TRADE_REASON);
+
 export default class RuntimeConfigService {
     static async getAccountModes(baseConfig: RobotConfig = getRobotConfig()): Promise<AccountModeView[]> {
         const knownAccountIds = getKnownAccountIds(baseConfig);
@@ -43,7 +49,10 @@ export default class RuntimeConfigService {
             const override = overrideByAccount.get(accountId);
             const overrideMode = normalizeMode(override?.mode);
             const protectedAccount = protectedAccountIds.has(accountId);
-            const effectiveMode = protectedAccount && overrideMode === 'trade'
+            const protectedTradeEnabled = protectedAccount
+                && overrideMode === 'trade'
+                && isProtectedTradeEnabled(override?.reason);
+            const effectiveMode = protectedAccount && overrideMode === 'trade' && !protectedTradeEnabled
                 ? 'observe'
                 : overrideMode ?? getBaseMode(baseConfig, accountId);
 
@@ -54,6 +63,7 @@ export default class RuntimeConfigService {
                 overrideMode,
                 effectiveMode,
                 protected: protectedAccount,
+                protectedTradeEnabled,
                 updatedAt: override?.updatedAt,
                 updatedBy: override?.updatedBy
             };
@@ -63,10 +73,10 @@ export default class RuntimeConfigService {
     static async getEffectiveConfig(baseConfig: RobotConfig = getRobotConfig()): Promise<RobotConfig> {
         const modes = await this.getAccountModes(baseConfig);
         const accountIds = modes
-            .filter(account => account.effectiveMode === 'trade' && !account.protected)
+            .filter(account => account.effectiveMode === 'trade' && (!account.protected || account.protectedTradeEnabled))
             .map(account => account.accountId);
         const observeAccountIds = modes
-            .filter(account => account.effectiveMode === 'observe' || account.protected)
+            .filter(account => account.effectiveMode === 'observe' || (account.protected && !account.protectedTradeEnabled))
             .map(account => account.accountId);
 
         return {
@@ -80,7 +90,8 @@ export default class RuntimeConfigService {
         accountId: string,
         mode: AccountMode,
         updatedBy = 'web',
-        reason?: string
+        reason?: string,
+        allowProtectedTrade = false
     ) {
         const baseConfig = getRobotConfig();
         const knownAccountIds = getKnownAccountIds(baseConfig);
@@ -93,9 +104,13 @@ export default class RuntimeConfigService {
             throw new Error('unsupported account mode');
         }
 
-        if (mode === 'trade' && baseConfig.protectedAccountIds.includes(accountId)) {
-            throw new Error('protected account cannot be switched to trade mode');
+        if (mode === 'trade' && baseConfig.protectedAccountIds.includes(accountId) && !allowProtectedTrade) {
+            throw new Error('protected account needs explicit protected-trade confirmation');
         }
+
+        const effectiveReason = mode === 'trade' && baseConfig.protectedAccountIds.includes(accountId)
+            ? `${PROTECTED_TRADE_REASON}:${reason || updatedBy}`
+            : reason;
 
         if (mode === getBaseMode(baseConfig, accountId)) {
             await RuntimeAccountModeModel.destroy({ where: { accountId } });
@@ -104,7 +119,7 @@ export default class RuntimeConfigService {
                 accountId,
                 mode,
                 updatedBy,
-                reason
+                reason: effectiveReason
             });
         }
 

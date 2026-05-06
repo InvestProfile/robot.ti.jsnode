@@ -202,6 +202,8 @@ const handleAccountModeUpdate = async (req: IncomingMessage, res: ServerResponse
         const payload = await readJsonBody(req);
         const accountId = String(payload.accountId ?? '').trim();
         const mode = String(payload.mode ?? '').trim();
+        const allowProtectedTrade = payload.allowProtectedTrade === true;
+        const confirmation = String(payload.confirmation ?? '').trim();
 
         if (!accountId) {
             json(res, 400, { ok: false, error: 'accountId is required' });
@@ -213,9 +215,20 @@ const handleAccountModeUpdate = async (req: IncomingMessage, res: ServerResponse
             return;
         }
 
+        if (mode === 'trade' && allowProtectedTrade && confirmation !== accountId) {
+            json(res, 400, { ok: false, error: 'protected trade confirmation must match accountId' });
+            return;
+        }
+
         json(res, 200, {
             ok: true,
-            ...await RuntimeConfigService.setAccountMode(accountId, mode, 'web-dashboard')
+            ...await RuntimeConfigService.setAccountMode(
+                accountId,
+                mode,
+                'web-dashboard',
+                allowProtectedTrade ? 'web-dashboard protected override' : undefined,
+                allowProtectedTrade
+            )
         });
     } catch (error) {
         json(res, 400, {
@@ -340,6 +353,7 @@ const getAccountsPayload = async (config: RobotConfig) => {
             baseMode: mode?.baseMode,
             overrideMode: mode?.overrideMode,
             protected: mode?.protected ?? config.protectedAccountIds.includes(account.accountId),
+            protectedTradeEnabled: mode?.protectedTradeEnabled ?? false,
             cashRub: quotationToNumber(portfolio?.totalAmountCurrencies),
             totalRub: quotationToNumber(portfolio?.totalAmountPortfolio),
             positionsCount: portfolio?.positions?.length ?? 0

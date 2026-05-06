@@ -455,7 +455,7 @@ function Evidence({ data }) {
 function Accounts({ data, onModeChange }) {
   return (
     <div className="grid">
-      <Card title="Счета" icon={Database} help="Кнопка меняет режим счета без перезапуска робота. Trade разрешает роботу работать со счетом на следующем тике, observe только наблюдает и пишет мнение. Защищенный счет нельзя перевести в trade.">
+      <Card title="Счета" icon={Database} help="Кнопка меняет режим счета без перезапуска робота. Protected-счет можно перевести в trade только после отдельного подтверждения номером счета.">
         <Table
           columns={[
             { key: 'alias', label: 'Account', render: (row) => <><strong>{row.alias || row.accountId}</strong><div className="muted">{row.accountId}</div></> },
@@ -473,8 +473,14 @@ function Accounts({ data, onModeChange }) {
             {
               key: 'actions',
               label: 'Action',
-              render: (row) => row.protected
-                ? <Pill tone="warn">protected</Pill>
+              render: (row) => row.protected && row.mode !== 'trade'
+                ? <button
+                    className="mini-button danger"
+                    onClick={() => onModeChange(row.accountId, 'trade', { protected: true })}
+                    title="Разрешить роботу торговать на защищенном счете после подтверждения"
+                  >
+                    Arm trade
+                  </button>
                 : <button
                     className="mini-button"
                     onClick={() => onModeChange(row.accountId, row.mode === 'trade' ? 'observe' : 'trade')}
@@ -530,15 +536,30 @@ function App() {
   const { data, loading, error, updatedAt, reload } = useDashboardData(activeTab);
   const [actionError, setActionError] = useState('');
   const active = useMemo(() => tabs.find((tab) => tab.id === activeTab) || tabs[0], [activeTab]);
-  const updateAccountMode = async (accountId, mode) => {
+  const updateAccountMode = async (accountId, mode, options = {}) => {
     setActionError('');
+    let confirmation;
+
+    if (options.protected && mode === 'trade') {
+      confirmation = window.prompt(`Это protected-счет. Чтобы включить trade, введи номер счета: ${accountId}`);
+      if (confirmation !== accountId) {
+        setActionError('Protected trade was not confirmed');
+        return;
+      }
+    }
+
     const response = await fetch('/api/admin/account-mode', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         'x-robot-admin-action': 'account-mode'
       },
-      body: JSON.stringify({ accountId, mode })
+      body: JSON.stringify({
+        accountId,
+        mode,
+        allowProtectedTrade: Boolean(options.protected),
+        confirmation
+      })
     });
 
     if (!response.ok) {
