@@ -26,6 +26,7 @@ const endpoints = {
   positions: '/api/positions',
   paper: '/api/paper-positions?limit=60',
   market: '/api/market-regime',
+  marketLab: '/api/market-lab?limit=8',
   strategy: '/api/strategy-evidence',
   socialSignals: '/api/social-signals?limit=80',
   socialCollector: '/api/social-collector',
@@ -42,7 +43,7 @@ const endpoints = {
 
 const endpointGroups = {
   core: ['status', 'limits', 'performance', 'paper', 'socialCollector'],
-  overview: ['preview', 'market'],
+  overview: ['preview', 'market', 'marketLab'],
   signals: ['buyRecommendations', 'buyScan', 'buyLab', 'sellBrain', 'analystForecasts', 'techAnalysis'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   evidence: ['strategy', 'socialEvidence'],
@@ -325,6 +326,40 @@ function MarketControls({ data, onMarketRegimeChange }) {
   );
 }
 
+function MarketLab({ data, loading }) {
+  const scenarios = data.marketLab?.scenarios || [];
+
+  return (
+    <Card title="Лаборатория рынка" icon={BarChart3} help="Сравнение: какие покупки прошли бы при разных порогах health. Это не меняет настройки, только показывает последствия.">
+      <Table
+        columns={[
+          { key: 'label', label: 'Mode', render: (row) => <><strong>{row.label}</strong><div className="muted">health {row.minHealthPercent}%</div></> },
+          { key: 'marketPassed', label: 'Market', render: (row) => <Pill tone={row.marketPassed ? 'good' : 'bad'}>{row.marketPassed ? 'PASS' : 'BLOCK'}</Pill> },
+          { key: 'passCount', label: 'Buy', className: 'right', render: (row) => row.passCount },
+          { key: 'waitCount', label: 'Wait', className: 'right', render: (row) => row.waitCount },
+          {
+            key: 'items',
+            label: 'Candidates',
+            className: 'reason',
+            render: (row) => (
+              <div className="candidate-stack">
+                {(row.items || []).slice(0, 5).map((item) => (
+                  <span key={item.ticker} title={item.reason}>
+                    <strong>{item.ticker}</strong> {item.score ?? '-'} {item.passed ? 'PASS' : 'WAIT'}
+                  </span>
+                ))}
+              </div>
+            )
+          },
+          { key: 'marketReason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.marketReason}</Reason> }
+        ]}
+        rows={scenarios}
+        loading={loading}
+      />
+    </Card>
+  );
+}
+
 function Overview({ data, loadingKeys, onMarketRegimeChange }) {
   const blockers = getReadiness(data);
   const status = data.status;
@@ -372,6 +407,8 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
       </Card>
 
       <MarketControls data={data} onMarketRegimeChange={onMarketRegimeChange} />
+
+      <MarketLab data={data} loading={loadingKeys.marketLab} />
 
       <Card title="Режим рынка" icon={Activity} help="Фильтр общего настроения рынка. Если базовые бумаги выглядят плохо, робот может не покупать даже хорошего кандидата.">
         <div className="readiness">

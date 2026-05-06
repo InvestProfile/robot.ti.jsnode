@@ -36,6 +36,7 @@ import TechnicalAnalysisService from '../services/technical-analysis.service';
 import BuyCandidateLabService from '../services/buy-candidate-lab.service';
 import BuyRecommendationService from '../services/buy-recommendation.service';
 import RobotPositionLedgerService from '../services/robot-position-ledger.service';
+import MarketRegimeLabService from '../services/market-regime-lab.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -720,6 +721,15 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/market-regime') {
         json(res, 200, await MarketRegimeService.evaluate(config));
+        return;
+    }
+
+    if (url.pathname === '/api/market-lab') {
+        const limit = Number(url.searchParams.get('limit') ?? 8);
+        json(res, 200, await MarketRegimeLabService.compare(
+            config,
+            Number.isFinite(limit) ? limit : 8
+        ));
         return;
     }
 

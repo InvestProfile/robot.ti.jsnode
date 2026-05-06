@@ -378,6 +378,28 @@ th:first-child {
   line-height: 1.35;
 }
 
+.candidate-stack {
+  display: flex;
+  max-width: 320px;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.candidate-stack span {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid #344454;
+  border-radius: 999px;
+  background: #111820;
+  color: #c8d2df;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .score-breakdown {
   display: grid;
   min-width: 190px;
