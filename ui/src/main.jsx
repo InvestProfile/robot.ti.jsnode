@@ -43,10 +43,10 @@ const endpoints = {
 
 const endpointGroups = {
   core: ['status', 'limits', 'performance', 'paper', 'socialCollector'],
-  overview: ['preview', 'market', 'marketLab'],
-  signals: ['buyRecommendations', 'buyScan', 'buyLab', 'sellBrain', 'analystForecasts', 'techAnalysis'],
+  overview: ['market'],
+  buy: ['preview', 'buyRecommendations', 'buyScan'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
-  evidence: ['strategy', 'socialEvidence'],
+  evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
   sell: ['sellBrain', 'positions', 'robotPositions'],
   logs: ['decisions']
@@ -54,11 +54,11 @@ const endpointGroups = {
 
 const tabs = [
   { id: 'overview', label: 'Обзор', icon: Activity },
-  { id: 'signals', label: 'Сигналы', icon: Signal },
-  { id: 'social', label: 'Пульс', icon: Users },
-  { id: 'evidence', label: 'Проверка', icon: BarChart3 },
-  { id: 'accounts', label: 'Счета', icon: Database },
+  { id: 'buy', label: 'Покупки', icon: Signal },
   { id: 'sell', label: 'Продажи', icon: AlertTriangle },
+  { id: 'social', label: 'Пульс', icon: Users },
+  { id: 'evidence', label: 'Лаборатория', icon: BarChart3 },
+  { id: 'accounts', label: 'Счета', icon: Database },
   { id: 'logs', label: 'Журнал', icon: Eye }
 ];
 
@@ -365,6 +365,7 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
   const status = data.status;
   const social = data.socialCollector;
   const paper = data.paper?.summary;
+  const market = data.market || {};
 
   return (
     <div className="grid overview-grid">
@@ -381,7 +382,37 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
         </div>
       </Card>
 
-      <Card title="Можно / нельзя" icon={ShieldCheck} help="Предпросмотр покупки по торговому счету. Здесь видно, что робот хотел бы купить, по какой цене и почему сделка разрешена или заблокирована.">
+      <Card title="Рынок" icon={Activity} help="Короткий светофор рынка. Подробная таблица и сценарии вынесены в Лабораторию, чтобы Обзор не превращался в простыню.">
+        <div className="readiness">
+          <Pill tone={market.passed ? 'good' : 'bad'}>{market.passed ? 'PASSED' : 'BLOCKED'}</Pill>
+          <span>{market.reason}</span>
+        </div>
+        <div className="stats compact">
+          <Stat label="Health" value={`${status?.config?.marketRegimeMinHealthPercent ?? '-'}%`} />
+          <Stat label="Trend floor" value={`${status?.config?.marketRegimeMinAvgTrendPercent ?? '-'}%`} />
+          <Stat label="Passed" value={`${market.passedCount ?? '-'} / ${market.measuredCount ?? '-'}`} />
+          <Stat label="Avg trend" value={percent(market.avgTrendPercent)} />
+        </div>
+      </Card>
+
+      <Card title="Портфель" icon={LineChart} help="Бумажная торговля и социальный сборщик. Это не реальные заявки, а контроль качества идей и сигналов.">
+        <div className="stats">
+          <Stat label="Paper open" value={paper?.open ?? '-'} />
+          <Stat label="Paper P/L" value={`${money(paper?.totalProfitRub)} RUB`} tone={(paper?.totalProfitRub || 0) >= 0 ? 'good' : 'bad'} />
+          <Stat label="Social profiles" value={`${social?.health?.activeProfiles || 0} / ${social?.config?.configuredProfiles || 0}`} />
+          <Stat label="Social collector" value={socialCollectorText(social)} tone={social?.health?.pendingAuth > 0 ? 'bad' : social?.health?.staleProfiles > 0 ? 'warn' : 'good'} />
+        </div>
+      </Card>
+
+      <MarketControls data={data} onMarketRegimeChange={onMarketRegimeChange} />
+    </div>
+  );
+}
+
+function Buy({ data, loadingKeys }) {
+  return (
+    <div className="grid">
+      <Card title="Можно / нельзя" icon={ShieldCheck} help="Боевой предпросмотр покупки по торговому счету. Это самый практический блок: что робот хотел бы купить, по какой цене и почему разрешено или заблокировано.">
         <Table
           columns={[
             { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
@@ -396,42 +427,6 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
           loading={loadingKeys.preview}
         />
       </Card>
-
-      <Card title="Портфель" icon={LineChart} help="Бумажная торговля и социальный сборщик. Это не реальные заявки, а контроль качества идей и сигналов.">
-        <div className="stats">
-          <Stat label="Paper open" value={paper?.open ?? '-'} />
-          <Stat label="Paper P/L" value={`${money(paper?.totalProfitRub)} RUB`} tone={(paper?.totalProfitRub || 0) >= 0 ? 'good' : 'bad'} />
-          <Stat label="Social profiles" value={`${social?.health?.activeProfiles || 0} / ${social?.config?.configuredProfiles || 0}`} />
-          <Stat label="Social collector" value={socialCollectorText(social)} tone={social?.health?.pendingAuth > 0 ? 'bad' : social?.health?.staleProfiles > 0 ? 'warn' : 'good'} />
-        </div>
-      </Card>
-
-      <MarketControls data={data} onMarketRegimeChange={onMarketRegimeChange} />
-
-      <MarketLab data={data} loading={loadingKeys.marketLab} />
-
-      <Card title="Режим рынка" icon={Activity} help="Фильтр общего настроения рынка. Если базовые бумаги выглядят плохо, робот может не покупать даже хорошего кандидата.">
-        <div className="readiness">
-          <Pill tone={data.market?.passed ? 'good' : 'bad'}>{data.market?.passed ? 'PASSED' : 'BLOCKED'}</Pill>
-          <span>{data.market?.reason}</span>
-        </div>
-        <Table
-          columns={[
-            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
-            { key: 'trendPercent', label: 'Trend', className: 'right', render: (row) => percent(row.trendPercent) },
-            { key: 'passed', label: 'Passed', render: (row) => <Pill tone={row.passed ? 'good' : 'warn'}>{String(row.passed)}</Pill> }
-          ]}
-          rows={data.market?.items || []}
-          loading={loadingKeys.market}
-        />
-      </Card>
-    </div>
-  );
-}
-
-function Signals({ data, loadingKeys }) {
-  return (
-    <div className="grid">
       <Card title="Авторекомендации" icon={ShieldCheck} help="Сжатый список того, что робот предлагает делать с кандидатами: buy-candidate можно покупать при пройденных фильтрах, wait-market ждет рынок, watch близко к порогу, scan-only просто наблюдать.">
         <Table
           columns={[
@@ -457,50 +452,6 @@ function Signals({ data, loadingKeys }) {
           ]}
           rows={data.buyScan?.items || []}
           loading={loadingKeys.buyScan}
-        />
-      </Card>
-      <Card title="Лаборатория 24ч" icon={BarChart3} help="Агрегация решений за последние 24 часа. Показывает, какие бумаги чаще всего подходили к порогу покупки, сколько баллов не хватило и что было главным стопором.">
-        <Table
-          columns={[
-            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
-            { key: 'latestScore', label: 'Score', render: (row) => <div className="score-breakdown"><strong>{row.latestScore ?? '-'}</strong><span>base {signedNumber(row.baseScore)}</span><span className={adjustmentTone(row.socialScoreAdjustment)}>pulse {signedNumber(row.socialScoreAdjustment)}</span><span className={adjustmentTone(row.analystScoreAdjustment)}>analyst {signedNumber(row.analystScoreAdjustment)}</span><span className={adjustmentTone(row.technicalScoreAdjustment)}>tech {signedNumber(row.technicalScoreAdjustment)}</span></div> },
-            { key: 'scoreGap', label: 'Gap', className: 'right', render: (row) => row.scoreGap === undefined ? '-' : row.scoreGap <= 0 ? <Pill tone="good">PASS</Pill> : row.scoreGap <= 5 ? <Pill tone="warn">{row.scoreGap}</Pill> : row.scoreGap },
-            { key: 'bestScore', label: 'Best', className: 'right' },
-            { key: 'count', label: 'Seen', className: 'right' },
-            { key: 'topReason', label: 'Top blocker', className: 'reason', render: (row) => <Reason>{row.topReason}</Reason> }
-          ]}
-          rows={data.buyLab?.items || []}
-          loading={loadingKeys.buyLab}
-        />
-      </Card>
-      <Card title="Консенсус аналитиков" icon={BarChart3} help="Официальный консенсус-прогноз T-Invest API: рекомендации инвестдомов, целевая цена и потенциальный апсайд. Сейчас дает небольшую ограниченную поправку к score-buy.">
-        <Table
-          columns={[
-            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
-            { key: 'recommendation', label: 'Rec', render: (row) => <Pill tone={recTone(row.recommendation)}>{row.recommendation}</Pill> },
-            { key: 'currentPrice', label: 'Price', className: 'right', render: (row) => money(row.currentPrice) },
-            { key: 'targetPrice', label: 'Target', className: 'right', render: (row) => money(row.targetPrice) },
-            { key: 'priceChangePercent', label: 'Upside', className: 'right', render: (row) => percent(row.priceChangePercent) },
-            { key: 'targetCount', label: 'Analysts', className: 'right' },
-            { key: 'split', label: 'B/H/S', className: 'right', render: (row) => `${row.buyCount ?? 0}/${row.holdCount ?? 0}/${row.sellCount ?? 0}` }
-          ]}
-          rows={data.analystForecasts?.items || []}
-          loading={loadingKeys.analystForecasts}
-        />
-      </Card>
-      <Card title="Теханализ API" icon={LineChart} help="Официальные индикаторы T-Invest API: RSI, SMA/EMA, MACD и Bollinger Bands. Сейчас дает небольшую ограниченную поправку к score-buy.">
-        <Table
-          columns={[
-            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
-            { key: 'rsi14', label: 'RSI14', className: 'right', render: (row) => money(row.rsi14) },
-            { key: 'rsiState', label: 'RSI', render: (row) => <Pill tone={signalTone(row.rsiState)}>{row.rsiState}</Pill> },
-            { key: 'sma20', label: 'SMA20', className: 'right', render: (row) => money(row.sma20) },
-            { key: 'ema20', label: 'EMA20', className: 'right', render: (row) => money(row.ema20) },
-            { key: 'macdState', label: 'MACD', render: (row) => <Pill tone={signalTone(row.macdState)}>{row.macdState}</Pill> },
-            { key: 'bb', label: 'BB', className: 'right', render: (row) => `${money(row.bbLower)} / ${money(row.bbUpper)}` }
-          ]}
-          rows={data.techAnalysis?.items || []}
-          loading={loadingKeys.techAnalysis}
         />
       </Card>
     </div>
@@ -674,6 +625,72 @@ function Evidence({ data, loadingKeys }) {
   const socialSummary = data.socialEvidence?.summary || {};
   return (
     <div className="grid">
+      <MarketLab data={data} loading={loadingKeys.marketLab} />
+
+      <Card title="Режим рынка" icon={Activity} help="Подробности рыночного фильтра: какие базовые бумаги считаются здоровыми и почему общий фильтр пропускает или блокирует покупки.">
+        <div className="readiness">
+          <Pill tone={data.market?.passed ? 'good' : 'bad'}>{data.market?.passed ? 'PASSED' : 'BLOCKED'}</Pill>
+          <span>{data.market?.reason}</span>
+        </div>
+        <Table
+          columns={[
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
+            { key: 'trendPercent', label: 'Trend', className: 'right', render: (row) => percent(row.trendPercent) },
+            { key: 'passed', label: 'Passed', render: (row) => <Pill tone={row.passed ? 'good' : 'warn'}>{String(row.passed)}</Pill> },
+            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+          ]}
+          rows={data.market?.items || []}
+          loading={loadingKeys.market}
+        />
+      </Card>
+
+      <Card title="Покупки 24ч" icon={BarChart3} help="Агрегация решений за последние 24 часа. Показывает, какие бумаги чаще всего подходили к порогу покупки, сколько баллов не хватило и что было главным стопором.">
+        <Table
+          columns={[
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
+            { key: 'latestScore', label: 'Score', render: (row) => <div className="score-breakdown"><strong>{row.latestScore ?? '-'}</strong><span>base {signedNumber(row.baseScore)}</span><span className={adjustmentTone(row.socialScoreAdjustment)}>pulse {signedNumber(row.socialScoreAdjustment)}</span><span className={adjustmentTone(row.analystScoreAdjustment)}>analyst {signedNumber(row.analystScoreAdjustment)}</span><span className={adjustmentTone(row.technicalScoreAdjustment)}>tech {signedNumber(row.technicalScoreAdjustment)}</span></div> },
+            { key: 'scoreGap', label: 'Gap', className: 'right', render: (row) => row.scoreGap === undefined ? '-' : row.scoreGap <= 0 ? <Pill tone="good">PASS</Pill> : row.scoreGap <= 5 ? <Pill tone="warn">{row.scoreGap}</Pill> : row.scoreGap },
+            { key: 'bestScore', label: 'Best', className: 'right' },
+            { key: 'count', label: 'Seen', className: 'right' },
+            { key: 'topReason', label: 'Top blocker', className: 'reason', render: (row) => <Reason>{row.topReason}</Reason> }
+          ]}
+          rows={data.buyLab?.items || []}
+          loading={loadingKeys.buyLab}
+        />
+      </Card>
+
+      <Card title="Консенсус аналитиков" icon={BarChart3} help="Официальный консенсус-прогноз T-Invest API: рекомендации инвестдомов, целевая цена и потенциальный апсайд. Сейчас дает небольшую ограниченную поправку к score-buy.">
+        <Table
+          columns={[
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
+            { key: 'recommendation', label: 'Rec', render: (row) => <Pill tone={recTone(row.recommendation)}>{row.recommendation}</Pill> },
+            { key: 'currentPrice', label: 'Price', className: 'right', render: (row) => money(row.currentPrice) },
+            { key: 'targetPrice', label: 'Target', className: 'right', render: (row) => money(row.targetPrice) },
+            { key: 'priceChangePercent', label: 'Upside', className: 'right', render: (row) => percent(row.priceChangePercent) },
+            { key: 'targetCount', label: 'Analysts', className: 'right' },
+            { key: 'split', label: 'B/H/S', className: 'right', render: (row) => `${row.buyCount ?? 0}/${row.holdCount ?? 0}/${row.sellCount ?? 0}` }
+          ]}
+          rows={data.analystForecasts?.items || []}
+          loading={loadingKeys.analystForecasts}
+        />
+      </Card>
+
+      <Card title="Теханализ API" icon={LineChart} help="Официальные индикаторы T-Invest API: RSI, SMA/EMA, MACD и Bollinger Bands. Сейчас дает небольшую ограниченную поправку к score-buy.">
+        <Table
+          columns={[
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
+            { key: 'rsi14', label: 'RSI14', className: 'right', render: (row) => money(row.rsi14) },
+            { key: 'rsiState', label: 'RSI', render: (row) => <Pill tone={signalTone(row.rsiState)}>{row.rsiState}</Pill> },
+            { key: 'sma20', label: 'SMA20', className: 'right', render: (row) => money(row.sma20) },
+            { key: 'ema20', label: 'EMA20', className: 'right', render: (row) => money(row.ema20) },
+            { key: 'macdState', label: 'MACD', render: (row) => <Pill tone={signalTone(row.macdState)}>{row.macdState}</Pill> },
+            { key: 'bb', label: 'BB', className: 'right', render: (row) => `${money(row.bbLower)} / ${money(row.bbUpper)}` }
+          ]}
+          rows={data.techAnalysis?.items || []}
+          loading={loadingKeys.techAnalysis}
+        />
+      </Card>
+
       <Card title="Доказательства стратегий" icon={BarChart3} help="Накопленная статистика: как часто стратегия давала сигнал, сколько было бумажных позиций и какой результат. Это нужно, чтобы не верить стратегии на слово.">
         <Table
           columns={[
@@ -918,7 +935,7 @@ function App() {
 
   const content = {
     overview: <Overview data={data} loadingKeys={loadingKeys} onMarketRegimeChange={updateMarketRegime} />,
-    signals: <Signals data={data} loadingKeys={loadingKeys} />,
+    buy: <Buy data={data} loadingKeys={loadingKeys} />,
     social: <Social data={data} loadingKeys={loadingKeys} />,
     evidence: <Evidence data={data} loadingKeys={loadingKeys} />,
     accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} onLiveSellToggle={updateLiveSell} />,
