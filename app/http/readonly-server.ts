@@ -37,6 +37,7 @@ import BuyCandidateLabService from '../services/buy-candidate-lab.service';
 import BuyRecommendationService from '../services/buy-recommendation.service';
 import RobotPositionLedgerService from '../services/robot-position-ledger.service';
 import MarketRegimeLabService from '../services/market-regime-lab.service';
+import DailyBuyListService from '../services/daily-buy-list.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -680,6 +681,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/preview') {
         json(res, 200, await getPreviewPayload(config));
+        return;
+    }
+
+    if (url.pathname === '/api/daily-buy-list') {
+        json(res, 200, await DailyBuyListService.build(config));
         return;
     }
 

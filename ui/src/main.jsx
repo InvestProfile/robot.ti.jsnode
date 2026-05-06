@@ -22,6 +22,7 @@ const endpoints = {
   limits: '/api/limits',
   performance: '/api/performance',
   preview: '/api/preview',
+  dailyBuyList: '/api/daily-buy-list',
   decisions: '/api/decisions?limit=60',
   positions: '/api/positions',
   paper: '/api/paper-positions?limit=60',
@@ -44,7 +45,7 @@ const endpoints = {
 const endpointGroups = {
   core: ['status', 'limits', 'performance', 'paper', 'socialCollector'],
   overview: ['market'],
-  buy: ['preview', 'buyRecommendations', 'buyScan'],
+  buy: ['dailyBuyList', 'preview', 'buyRecommendations', 'buyScan'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
@@ -410,8 +411,32 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
 }
 
 function Buy({ data, loadingKeys }) {
+  const dailyBuyList = data.dailyBuyList || {};
+
   return (
     <div className="grid">
+      <Card title="Кандидаты дня" icon={Bot} help="Автоматический buy-list из широкого рынка. Робот выбирает до 5 бумаг с лучшим score среди доступных рублевых акций, вместо старого ручного списка из случайных позиций.">
+        <div className="stats compact">
+          <Stat label="Source" value={dailyBuyList.source || '-'} />
+          <Stat label="Tickers" value={(dailyBuyList.tickers || []).join(', ') || '-'} />
+          <Stat label="Scanned" value={dailyBuyList.universe?.scanned ?? '-'} />
+          <Stat label="Expires" value={dailyBuyList.expiresAt ? time(dailyBuyList.expiresAt) : '-'} />
+        </div>
+        <Table
+          columns={[
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
+            { key: 'score', label: 'Score', className: 'right', render: (row) => row.score ?? '-' },
+            { key: 'gap', label: 'Gap', className: 'right', render: (row) => row.gap === undefined ? '-' : row.gap <= 0 ? <Pill tone="good">PASS</Pill> : row.gap },
+            { key: 'lastPrice', label: 'Price', className: 'right', render: (row) => money(row.lastPrice) },
+            { key: 'estimatedOrderRub', label: 'Lot RUB', className: 'right', render: (row) => money(row.estimatedOrderRub) },
+            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+          ]}
+          rows={dailyBuyList.items || []}
+          empty="No daily candidates yet"
+          loading={loadingKeys.dailyBuyList}
+        />
+      </Card>
+
       <Card title="Можно / нельзя" icon={ShieldCheck} help="Боевой предпросмотр покупки по торговому счету. Это самый практический блок: что робот хотел бы купить, по какой цене и почему разрешено или заблокировано.">
         <Table
           columns={[

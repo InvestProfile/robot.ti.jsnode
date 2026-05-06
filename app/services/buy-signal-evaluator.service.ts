@@ -11,6 +11,7 @@ import { quotationToNumber } from '../utils/money';
 import MarketRegimeService from './market-regime.service';
 import SocialConsensusService from './social-consensus.service';
 import BuyScoreAdjustmentService from './buy-score-adjustment.service';
+import DailyBuyListService from './daily-buy-list.service';
 
 type SharesResponse = Awaited<ReturnType<typeof InstrumentsService.getShares>>;
 type ShareInstrument = NonNullable<NonNullable<SharesResponse>['instruments']>[number];
@@ -42,7 +43,8 @@ export default class BuySignalEvaluatorService {
         config: RobotConfig,
         instruments?: ShareInstrument[]
     ) {
-        if (config.buyTickers.length === 0) return [];
+        const effectiveBuyTickers = await DailyBuyListService.getEffectiveBuyTickers(config);
+        if (effectiveBuyTickers.length === 0) return [];
 
         const accountAlias = config.accountAliases[accountId];
         const shares = instruments ? undefined : await InstrumentsService.getShares();
@@ -56,7 +58,7 @@ export default class BuySignalEvaluatorService {
                 ?.map(position => position.instrumentUid)
                 .filter(Boolean) ?? []
         );
-        const buyInstruments = config.buyTickers
+        const buyInstruments = effectiveBuyTickers
             .map(ticker => allInstruments.find(instrument => instrument.ticker?.toUpperCase() === ticker))
             .filter((instrument): instrument is ShareInstrument => Boolean(instrument?.uid && instrument?.figi));
         const lastPrices = await marketData.getLastPrices(buyInstruments.map(instrument => instrument.uid));
@@ -103,6 +105,10 @@ export default class BuySignalEvaluatorService {
             const alreadyInPortfolio = portfolioInstrumentIds.has(instrument.uid);
             const tradingStatus = tradingStatuses.get(instrument.uid);
             const buyConfig = getBuyScoreConfigForTicker(config, instrument.ticker);
+            const effectiveBuyConfig = {
+                ...buyConfig,
+                buyTickers: effectiveBuyTickers
+            };
             const dailyCandles = buyConfig.enabledStrategies.includes('score-buy')
                 ? await marketData.getDailyCandles(instrument.uid, buyConfig.buyTrendDays)
                 : undefined;
@@ -132,7 +138,7 @@ export default class BuySignalEvaluatorService {
                 analystReason: analyst?.reason,
                 technicalScoreAdjustment: technical?.adjustment,
                 technicalReason: technical?.reason
-            }, buyConfig);
+            }, effectiveBuyConfig);
             const scoreAnalysis = buyConfig.enabledStrategies.includes('score-buy')
                 ? ScoreBuyStrategy.analyze({
                     accountId,
@@ -154,7 +160,7 @@ export default class BuySignalEvaluatorService {
                     analystReason: analyst?.reason,
                     technicalScoreAdjustment: technical?.adjustment,
                     technicalReason: technical?.reason
-                }, buyConfig)
+                }, effectiveBuyConfig)
                 : undefined;
             const risk = RiskManagerService.evaluateBuySignal({
                 availableCashRub: remainingCashRub,
