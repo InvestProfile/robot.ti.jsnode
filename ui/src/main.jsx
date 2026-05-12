@@ -46,7 +46,7 @@ const endpoints = {
 
 const endpointGroups = {
   core: ['status', 'limits', 'performance', 'paper', 'socialCollector'],
-  overview: ['market'],
+  overview: ['market', 'orderSafety'],
   buy: ['dailyBuyList', 'preview', 'buyRecommendations', 'buyScan'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
@@ -303,6 +303,11 @@ const getReadiness = (data) => {
   return blockers;
 };
 
+const getTradeLimit = (data) => {
+  const limits = data.limits?.limits || [];
+  return limits.find((limit) => limit.mode === 'trade') || limits[0];
+};
+
 const socialCollectorText = (social) => {
   if (!social) return 'loading';
   if (social.health?.pendingAuth > 0) return 'needs auth';
@@ -310,23 +315,60 @@ const socialCollectorText = (social) => {
   return 'fresh';
 };
 
+const stageTone = (blocked, warning = false) => {
+  if (blocked) return 'bad';
+  if (warning) return 'warn';
+  return 'good';
+};
+
+const Pipeline = ({ steps }) => (
+  <div className="pipeline">
+    {steps.map((step, index) => (
+      <div className="pipeline-step" key={step.label}>
+        <div className="pipeline-node">
+          <Pill tone={step.tone}>{step.status}</Pill>
+          {index < steps.length - 1 ? <span className="pipeline-arrow">↓</span> : null}
+        </div>
+        <div className="pipeline-copy">
+          <strong>{step.label}</strong>
+          <span>{step.detail}</span>
+        </div>
+      </div>
+    ))}
+  </div>
+);
+
+const Checklist = ({ items }) => (
+  <div className="checklist">
+    {items.map((item) => (
+      <div className="check-row" key={item.label}>
+        <CheckCircle2 size={16} className={item.tone || 'neutral'} />
+        <div>
+          <strong>{item.label}</strong>
+          <span>{item.detail}</span>
+        </div>
+        <Pill tone={item.tone}>{item.status}</Pill>
+      </div>
+    ))}
+  </div>
+);
+
 function MarketControls({ data, onMarketRegimeChange }) {
   const config = data.status?.config || {};
-  const market = data.market || {};
   const health = config.marketRegimeMinHealthPercent ?? 40;
   const trend = config.marketRegimeMinAvgTrendPercent ?? -1;
 
   return (
-    <Card title="Настройка рынка" icon={ShieldCheck} help="Меняет фильтр рынка без перезапуска. Health - сколько бумаг из корзины должно быть здоровыми. Trend - насколько бумага может быть ниже своей 20-дневной средней и все еще считаться здоровой.">
-      <div className="readiness">
-        <Pill tone={market.passed ? 'good' : 'bad'}>{market.passed ? 'PASSED' : 'BLOCKED'}</Pill>
-        <span>{market.reason}</span>
-      </div>
-      <div className="stats compact">
-        <Stat label="Health" value={`${health}%`} />
-        <Stat label="Trend floor" value={`${trend}%`} />
-        <Stat label="Passed" value={`${market.passedCount ?? '-'} / ${market.measuredCount ?? '-'}`} />
-        <Stat label="Avg trend" value={percent(market.avgTrendPercent)} />
+    <Card title="Пороги Market Gate" icon={ShieldCheck} help="Это настройки допуска рынка, а не текущий результат. Required score - сколько базовых бумаг должно пройти фильтр. Required trend - насколько бумага может быть ниже своей 20-дневной средней.">
+      <div className="settings-summary">
+        <div>
+          <span>Required score</span>
+          <strong>{health}%</strong>
+        </div>
+        <div>
+          <span>Required trend</span>
+          <strong>{trend}%</strong>
+        </div>
       </div>
       <div className="control-row">
         {[40, 20, 0].map((value) => (
@@ -396,36 +438,128 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
   const social = data.socialCollector;
   const paper = data.paper?.summary;
   const market = data.market || {};
+  const tradeLimit = getTradeLimit(data);
+  const orderSafety = data.orderSafety?.summary || {};
+  const liveActions = status?.config?.liveAllowedActions || [];
+  const statusKnown = Boolean(status);
+  const marketKnown = Boolean(data.market);
+  const orderSafetyKnown = Boolean(data.orderSafety);
+  const dryRun = statusKnown ? Boolean(status?.config?.dryRun) : false;
+  const marketBlocked = Boolean(marketKnown && !market.passed);
+  const dailyKnown = Boolean(tradeLimit);
+  const dailyBlocked = Boolean(dailyKnown && (Number(tradeLimit.ordersLeft) <= 0 || Number(tradeLimit.rubLeft) <= 0));
+  const unknownOrders = Number(orderSafety.unknown || 0);
+  const openOrders = Number(orderSafety.open || 0);
+  const socialNeedsAuth = Number(social?.health?.pendingAuth || 0) > 0;
+  const socialStale = Number(social?.health?.staleProfiles || 0) > 0;
+  const pipelineSteps = [
+    {
+      label: 'Сигналы',
+      status: social ? socialNeedsAuth ? 'AUTH' : 'READY' : 'WAIT',
+      tone: social ? stageTone(socialNeedsAuth, socialStale) : 'warn',
+      detail: `${social?.health?.activeProfiles || 0}/${social?.config?.configuredProfiles || 0} Pulse profiles, ${social?.health?.staleProfiles || 0} stale`
+    },
+    {
+      label: 'Рыночный фильтр',
+      status: marketKnown ? market.passed ? 'PASS' : 'BLOCK' : 'WAIT',
+      tone: marketKnown ? stageTone(marketBlocked) : 'warn',
+      detail: `current ${market.measuredCount ? Math.round((Number(market.passedCount || 0) / Number(market.measuredCount || 1)) * 100) : EMPTY}%, required ${status?.config?.marketRegimeMinHealthPercent ?? EMPTY}%`
+    },
+    {
+      label: 'Риск и лимиты',
+      status: dailyKnown ? dailyBlocked ? 'BLOCK' : 'PASS' : 'WAIT',
+      tone: dailyKnown ? stageTone(dailyBlocked) : 'warn',
+      detail: tradeLimit ? `${tradeLimit.ordersLeft} orders left, ${money(tradeLimit.rubLeft)} RUB left` : 'limits loading'
+    },
+    {
+      label: 'Исполнение',
+      status: orderSafetyKnown ? unknownOrders ? 'UNKNOWN' : openOrders ? 'OPEN' : dryRun ? 'DRY' : 'LIVE' : 'WAIT',
+      tone: orderSafetyKnown ? stageTone(unknownOrders, openOrders || dryRun) : 'warn',
+      detail: `${openOrders} open orders, ${unknownOrders} unknown, actions: ${liveActions.join(', ') || EMPTY}`
+    },
+    {
+      label: 'Результат',
+      status: Number(paper?.totalProfitRub || 0) >= 0 ? 'PLUS' : 'MINUS',
+      tone: Number(paper?.totalProfitRub || 0) >= 0 ? 'good' : 'bad',
+      detail: `paper ${paper?.open ?? EMPTY} open, P/L ${money(paper?.totalProfitRub)} RUB`
+    }
+  ];
+  const safetyItems = [
+    {
+      label: 'HTTP/API доступ',
+      status: status ? 'OK' : 'WAIT',
+      tone: status ? 'good' : 'warn',
+      detail: status ? 'Dashboard получил runtime status через защищенный API.' : 'Ждем ответ /api/status.'
+    },
+    {
+      label: 'Режим робота',
+      status: statusKnown ? dryRun ? 'DRY RUN' : 'LIVE' : 'WAIT',
+      tone: statusKnown ? dryRun ? 'warn' : 'good' : 'warn',
+      detail: statusKnown ? dryRun ? 'Реальные заявки выключены.' : `Live actions: ${liveActions.join(', ') || EMPTY}.` : 'Ждем runtime config.'
+    },
+    {
+      label: 'Market Gate',
+      status: marketKnown ? market.passed ? 'PASSED' : 'BLOCKED' : 'WAIT',
+      tone: marketKnown ? stageTone(marketBlocked) : 'warn',
+      detail: market.reason || 'Рынок еще не рассчитан.'
+    },
+    {
+      label: 'Дневные лимиты',
+      status: dailyKnown ? dailyBlocked ? 'BLOCKED' : 'OK' : 'WAIT',
+      tone: dailyKnown ? stageTone(dailyBlocked) : 'warn',
+      detail: tradeLimit ? `${tradeLimit.ordersLeft} заявок, ${money(tradeLimit.rubLeft)} RUB осталось.` : 'Лимиты загружаются.'
+    },
+    {
+      label: 'Unknown orders',
+      status: orderSafetyKnown ? unknownOrders ? String(unknownOrders) : '0' : 'WAIT',
+      tone: orderSafetyKnown ? stageTone(unknownOrders) : 'warn',
+      detail: orderSafetyKnown ? unknownOrders ? 'Есть заявки с неизвестным статусом, повторять их нельзя.' : 'Неизвестных заявок нет.' : 'Ждем order safety API.'
+    },
+    {
+      label: 'Social collector',
+      status: socialCollectorText(social),
+      tone: stageTone(socialNeedsAuth, socialStale),
+      detail: socialNeedsAuth ? 'Нужны свежие cookie из расширения.' : 'Социальный сборщик не блокирует исполнение.'
+    }
+  ];
 
   return (
     <div className="grid overview-grid">
-      <Card title="Состояние" icon={Bot} help="Главный светофор. READY значит, что робот не видит технических блокировок. BLOCKED показывает, что сейчас мешает сделке: лимит, пауза, рынок или аварийная защита.">
+      <Card title="Движок Runtime" icon={Bot} help="Техническое состояние цикла робота: режим, тик, интервал и аварийные ошибки. Это не рыночный сигнал и не результат стратегии.">
         <div className="readiness">
-          {blockers.length ? <Pill tone="bad">BLOCKED</Pill> : <Pill tone="good">READY</Pill>}
-          <span>{blockers.length ? blockers.join(', ') : 'No active blockers'}</span>
+          {!statusKnown ? <Pill tone="warn">LOADING</Pill> : blockers.length ? <Pill tone="bad">EXECUTION BLOCKED</Pill> : <Pill tone="good">READY</Pill>}
+          <span>{!statusKnown ? 'waiting for runtime status' : blockers.length ? blockers.join(', ') : 'runtime ready, no active blockers'}</span>
         </div>
         <div className="stats">
-          <Stat label="Mode" value={status?.config?.dryRun ? 'DRY RUN' : 'LIVE'} tone={status?.config?.dryRun ? 'warn' : 'bad'} />
-          <Stat label="Tick" value={status?.runtime?.isTickRunning ? 'running' : 'idle'} tone={status?.runtime?.isTickRunning ? 'blue' : 'good'} />
+          <Stat label="Mode" value={statusKnown ? status?.config?.dryRun ? 'DRY RUN' : 'LIVE' : EMPTY} tone={statusKnown ? status?.config?.dryRun ? 'warn' : 'good' : ''} />
+          <Stat label="Tick" value={statusKnown ? status?.runtime?.isTickRunning ? 'running' : 'idle' : EMPTY} tone={statusKnown ? status?.runtime?.isTickRunning ? 'blue' : 'good' : ''} />
           <Stat label="Interval" value={`${status?.config?.intervalMs ? status.config.intervalMs / 1000 : '-'} sec`} />
           <Stat label="Errors" value={`${status?.runtime?.consecutiveTickErrors || 0} / ${status?.config?.maxConsecutiveTickErrors || '-'}`} />
         </div>
       </Card>
 
-      <Card title="Рынок" icon={Activity} help="Короткий светофор рынка. Подробная таблица и сценарии вынесены в Лабораторию, чтобы Обзор не превращался в простыню.">
+      <Card title="Цепочка решения" icon={Activity} className="control-card" help="Причинно-следственная цепочка: сигнал появился, рынок пропустил или заблокировал, риск-лимиты разрешили или нет, потом исполнение и результат.">
+        <Pipeline steps={pipelineSteps} />
+      </Card>
+
+      <Card title="Market Gate" icon={Activity} help="Текущий расчет рынка. Current score - фактическая доля здоровых базовых бумаг. Required score - порог, который можно менять отдельно в блоке настроек.">
         <div className="readiness">
-          <Pill tone={market.passed ? 'good' : 'bad'}>{market.passed ? 'PASSED' : 'BLOCKED'}</Pill>
+          <Pill tone={marketKnown ? market.passed ? 'good' : 'bad' : 'warn'}>{marketKnown ? market.passed ? 'PASSED' : 'BLOCKED' : 'WAIT'}</Pill>
           <span>{market.reason}</span>
         </div>
         <div className="stats compact">
-          <Stat label="Health" value={`${status?.config?.marketRegimeMinHealthPercent ?? '-'}%`} />
-          <Stat label="Trend floor" value={`${status?.config?.marketRegimeMinAvgTrendPercent ?? '-'}%`} />
-          <Stat label="Passed" value={`${market.passedCount ?? '-'} / ${market.measuredCount ?? '-'}`} />
+          <Stat label="Current score" value={market.measuredCount ? `${Math.round((Number(market.passedCount || 0) / Number(market.measuredCount || 1)) * 100)}%` : EMPTY} />
+          <Stat label="Required score" value={`${status?.config?.marketRegimeMinHealthPercent ?? '-'}%`} />
+          <Stat label="Assets passed" value={`${market.passedCount ?? '-'} / ${market.measuredCount ?? '-'}`} />
           <Stat label="Avg trend" value={percent(market.avgTrendPercent)} />
         </div>
       </Card>
 
-      <Card title="Портфель" icon={LineChart} help="Бумажная торговля и социальный сборщик. Это не реальные заявки, а контроль качества идей и сигналов.">
+      <Card title="Live Safety" icon={ShieldCheck} help="Короткий чеклист перед доверием денег роботу: доступ, режим, рынок, дневные лимиты, неизвестные заявки и cookie-сборщик.">
+        <Checklist items={safetyItems} />
+      </Card>
+
+      <Card title="Портфель / P&L" icon={LineChart} help="Результаты и наблюдаемая часть системы. Paper P/L - лаборатория идей, Social - отдельный сборщик сигналов, не исполняющий заявки сам.">
         <div className="stats">
           <Stat label="Paper open" value={paper?.open ?? '-'} />
           <Stat label="Paper P/L" value={`${money(paper?.totalProfitRub)} RUB`} tone={(paper?.totalProfitRub || 0) >= 0 ? 'good' : 'bad'} />
