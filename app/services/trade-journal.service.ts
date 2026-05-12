@@ -1,6 +1,7 @@
 import { getRobotConfig } from '../config/robot.config';
 import { SignalStateModel } from '../models/signal-state.model';
 import { TradeDecisionModel } from '../models/trade-decision.model';
+import InstrumentsService from './instruments.service';
 
 export type TradeDecisionStatus = 'skip' | 'dry-run' | 'order-posted' | 'order-failed';
 
@@ -23,6 +24,62 @@ interface TradeDecisionLog {
 }
 
 export default class TradeJournalService {
+    private static normalizeSignalSource(decision: TradeDecisionLog) {
+        const explicit = decision.signalSource?.trim();
+        if (explicit) return explicit;
+
+        const reason = decision.reason.toLowerCase();
+        if (reason.includes('portfolio has no positions')) return 'portfolio-check';
+        if (reason.includes('average') || reason.includes('current price') || reason.includes('order price')) return 'position-data';
+        if (reason.includes('normal trading status')) return 'trading-status';
+        if (reason.includes('no strategy signal')) return 'strategy-engine';
+        if (reason.includes('sell policy')) return 'sell-policy';
+        if (reason.includes('postorder') || reason.includes('open buy order')) return 'orders';
+        if (reason.includes('score-buy') || decision.estimatedOrderRub !== undefined) return 'score-buy';
+        if (decision.status === 'order-posted' || decision.status === 'order-failed') return 'orders';
+        return 'risk-check';
+    }
+
+    private static async getInstrumentMetadata(decision: TradeDecisionLog) {
+        try {
+            if (decision.instrumentUid) {
+                const response = await InstrumentsService.getInstrumentByUid(decision.instrumentUid);
+                if (response?.instrument) return response.instrument;
+            }
+
+            if (decision.figi) {
+                const response = await InstrumentsService.getInstrumentByFigi(decision.figi);
+                if (response?.instrument) return response.instrument;
+            }
+        } catch (error) {
+            console.warn('Failed to enrich trade decision instrument metadata:', error);
+        }
+
+        return undefined;
+    }
+
+    private static async normalizeDecision(decision: TradeDecisionLog): Promise<TradeDecisionLog> {
+        const normalized: TradeDecisionLog = {
+            ...decision,
+            signalSource: this.normalizeSignalSource(decision)
+        };
+
+        if (normalized.ticker && normalized.name && normalized.figi && normalized.instrumentUid) {
+            return normalized;
+        }
+
+        const metadata = await this.getInstrumentMetadata(normalized);
+        if (!metadata) return normalized;
+
+        return {
+            ...normalized,
+            figi: normalized.figi ?? metadata.figi,
+            instrumentUid: normalized.instrumentUid ?? metadata.uid,
+            ticker: normalized.ticker ?? metadata.ticker,
+            name: normalized.name ?? metadata.name
+        };
+    }
+
     private static getSignalKey(decision: TradeDecisionLog) {
         return [
             decision.accountId,
@@ -111,33 +168,71 @@ export default class TradeJournalService {
     }
 
     static async logDecision(decision: TradeDecisionLog) {
-        const shouldWrite = await this.shouldWriteDecision(decision);
+        const normalizedDecision = await this.normalizeDecision(decision);
+        const shouldWrite = await this.shouldWriteDecision(normalizedDecision);
 
         if (!shouldWrite) return;
 
         const payload = {
             at: new Date().toISOString(),
-            ...decision
+            ...normalizedDecision
         };
 
         console.log('TRADE_DECISION ' + JSON.stringify(payload));
 
         await TradeDecisionModel.create({
-            accountId: decision.accountId,
-            accountAlias: decision.accountAlias,
-            accountMode: decision.accountMode ?? 'trade',
-            figi: decision.figi,
-            instrumentUid: decision.instrumentUid,
-            ticker: decision.ticker,
-            name: decision.name,
-            status: decision.status,
-            signalSource: decision.signalSource,
-            reason: decision.reason,
-            averagePrice: decision.averagePrice,
-            currentPrice: decision.currentPrice,
-            profitPercent: decision.profitPercent,
-            quantityLots: decision.quantityLots,
-            estimatedOrderRub: decision.estimatedOrderRub
+            accountId: normalizedDecision.accountId,
+            accountAlias: normalizedDecision.accountAlias,
+            accountMode: normalizedDecision.accountMode ?? 'trade',
+            figi: normalizedDecision.figi,
+            instrumentUid: normalizedDecision.instrumentUid,
+            ticker: normalizedDecision.ticker,
+            name: normalizedDecision.name,
+            status: normalizedDecision.status,
+            signalSource: normalizedDecision.signalSource,
+            reason: normalizedDecision.reason,
+            averagePrice: normalizedDecision.averagePrice,
+            currentPrice: normalizedDecision.currentPrice,
+            profitPercent: normalizedDecision.profitPercent,
+            quantityLots: normalizedDecision.quantityLots,
+            estimatedOrderRub: normalizedDecision.estimatedOrderRub
         });
+    }
+
+    static async backfillMissingMetadata(limit = 500) {
+        const rows = await TradeDecisionModel.findAll({
+            order: [['createdAt', 'DESC']],
+            limit
+        });
+        let checked = 0;
+        let updated = 0;
+
+        for (const row of rows) {
+            const plain = row.get({ plain: true }) as TradeDecisionLog & { id: number };
+            if (plain.ticker && plain.name && plain.signalSource) continue;
+
+            checked += 1;
+            const normalized = await this.normalizeDecision(plain);
+            const patch = {
+                figi: normalized.figi,
+                instrumentUid: normalized.instrumentUid,
+                ticker: normalized.ticker,
+                name: normalized.name,
+                signalSource: normalized.signalSource
+            };
+
+            if (
+                patch.figi !== plain.figi
+                || patch.instrumentUid !== plain.instrumentUid
+                || patch.ticker !== plain.ticker
+                || patch.name !== plain.name
+                || patch.signalSource !== plain.signalSource
+            ) {
+                await row.update(patch);
+                updated += 1;
+            }
+        }
+
+        return { checked, updated, limit };
     }
 }
