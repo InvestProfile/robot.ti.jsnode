@@ -4,6 +4,7 @@ import { TradesModel } from '../models/trades.model';
 import OperationsService from './operations.service';
 import InstrumentsService from './instruments.service';
 import { quotationToNumber } from '../utils/money';
+import TradesService from './trades.service';
 
 const BUY_DIRECTION = '1';
 const SELL_DIRECTION = '2';
@@ -28,8 +29,8 @@ const lotsFromTrade = (data: Record<string, unknown>) => {
 };
 
 const priceFromTrade = (data: Record<string, unknown>) => {
-    const executedUnits = data.executedPriceUnits ?? data.totalAmountUnits;
-    const executedNano = data.executedPriceNano ?? data.totalAmountNano;
+    const executedUnits = data.executedPriceUnits;
+    const executedNano = data.executedPriceNano;
     const fallbackUnits = data.price_units;
     const fallbackNano = data.price_nano;
 
@@ -42,6 +43,14 @@ const priceFromTrade = (data: Record<string, unknown>) => {
 
 const getInstrumentKey = (data: Record<string, unknown>) =>
     String(data.instrumentUid || data.instrumentId || data.uid || data.figi || data.ticker || '');
+
+const getInstrumentLot = (instrument: { lot?: number } | undefined, data: Record<string, unknown>) => {
+    const instrumentLot = toNumber(instrument?.lot);
+    if (instrumentLot > 0) return instrumentLot;
+
+    const storedLot = toNumber(data.lot);
+    return storedLot > 0 ? storedLot : 1;
+};
 
 export default class RobotPositionLedgerService {
     static async getLedger(config: RobotConfig) {
@@ -87,6 +96,7 @@ export default class RobotPositionLedgerService {
 
             const key = `${accountId}:${instrumentKey}`;
             const instrument = instruments.find(item => item.uid === data.instrumentUid || item.uid === data.instrumentId || item.figi === data.figi || item.ticker === data.ticker);
+            const lotSize = getInstrumentLot(instrument, data);
             const position = positions.get(key) ?? {
                 accountId,
                 accountAlias: config.accountAliases[accountId],
@@ -99,19 +109,21 @@ export default class RobotPositionLedgerService {
                 buys: 0,
                 sells: 0,
                 realizedPnl: 0,
+                lotSize,
                 lastTradeAt: undefined
             };
+            const tradeAmount = TradesService.amountFromTrade(data) ?? price * lots * lotSize;
 
             if (direction === BUY_DIRECTION) {
                 position.lots += lots;
-                position.cost += lots * price;
+                position.cost += tradeAmount;
                 position.buys += 1;
             } else if (direction === SELL_DIRECTION) {
                 const sellLots = Math.min(lots, position.lots);
-                const average = position.lots > 0 ? position.cost / position.lots : 0;
-                position.realizedPnl += sellLots * (price - average);
+                const averageLotCost = position.lots > 0 ? position.cost / position.lots : 0;
+                position.realizedPnl += sellLots * (price * lotSize - averageLotCost);
                 position.lots -= sellLots;
-                position.cost -= sellLots * average;
+                position.cost -= sellLots * averageLotCost;
                 position.sells += 1;
             }
 
@@ -126,6 +138,7 @@ export default class RobotPositionLedgerService {
                 direction: direction === BUY_DIRECTION ? 'buy' : 'sell',
                 lots,
                 price,
+                amount: tradeAmount,
                 status,
                 orderId: data.orderId,
                 at: data.tradeDateTime || data.createdAt
@@ -137,8 +150,9 @@ export default class RobotPositionLedgerService {
             .map(position => {
                 const currentPrice = currentByAccountAndInstrument.get(`${position.accountId}:${position.instrumentUid}`)
                     ?? currentByAccountAndInstrument.get(`${position.accountId}:${position.figi}`);
-                const averagePrice = position.lots > 0 ? position.cost / position.lots : undefined;
-                const unrealizedPnl = averagePrice && currentPrice ? position.lots * (currentPrice - averagePrice) : undefined;
+                const averagePrice = position.lots > 0 ? position.cost / position.lots / position.lotSize : undefined;
+                const marketValue = currentPrice ? currentPrice * position.lots * position.lotSize : undefined;
+                const unrealizedPnl = position.cost && marketValue ? marketValue - position.cost : undefined;
                 const unrealizedPnlPercent = averagePrice && currentPrice ? (currentPrice / averagePrice - 1) * 100 : undefined;
 
                 return {
@@ -147,7 +161,7 @@ export default class RobotPositionLedgerService {
                     currentPrice,
                     unrealizedPnl,
                     unrealizedPnlPercent,
-                    marketValue: currentPrice ? currentPrice * position.lots : undefined
+                    marketValue
                 };
             })
             .sort((a, b) => (b.marketValue ?? 0) - (a.marketValue ?? 0));

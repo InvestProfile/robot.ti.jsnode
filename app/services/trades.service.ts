@@ -19,6 +19,28 @@ export interface TradeOrderMetadata {
 }
 
 export default class TradesService {
+    private static moneyFromParts(units: unknown, nano: unknown) {
+        const parsedUnits = Number(units ?? 0);
+        const parsedNano = Number(nano ?? 0);
+        const amount = parsedUnits + parsedNano * 1e-9;
+
+        return Number.isFinite(amount) && amount > 0 ? amount : undefined;
+    }
+
+    static amountFromTrade(data: Record<string, unknown>) {
+        const totalAmount = this.moneyFromParts(data.totalAmountUnits, data.totalAmountNano);
+        if (totalAmount !== undefined) return totalAmount;
+
+        const executedPrice = this.moneyFromParts(data.executedPriceUnits, data.executedPriceNano)
+            ?? this.moneyFromParts(data.price_units, data.price_nano);
+        const lots = Number(data.lotsExecuted ?? data.lotsRequested ?? data.quantity ?? 1);
+        const lotSize = Number(data.lot ?? 1);
+
+        if (executedPrice === undefined || !Number.isFinite(lots) || !Number.isFinite(lotSize)) return undefined;
+
+        return executedPrice * Math.max(1, lots) * Math.max(1, lotSize);
+    }
+
     static async createTrades() {
         try {
             await TradesModel.sync();
@@ -130,12 +152,9 @@ export default class TradesService {
 
         return trades.reduce((sum, trade) => {
             const data = trade.get({ plain: true }) as Record<string, unknown>;
-            const units = Number(data.price_units ?? 0);
-            const nano = Number(data.price_nano ?? 0);
-            const lot = Number(data.lot ?? data.quantity ?? 1);
-            const price = units + nano * 1e-9;
+            const amount = this.amountFromTrade(data);
 
-            return Number.isFinite(price) && Number.isFinite(lot) ? sum + price * Math.max(1, lot) : sum;
+            return amount !== undefined ? sum + amount : sum;
         }, 0);
     }
 
