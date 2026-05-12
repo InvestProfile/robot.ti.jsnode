@@ -19,6 +19,7 @@ body {
 
 button,
 input,
+select,
 table {
   font: inherit;
 }
@@ -182,6 +183,10 @@ main {
   background: #141b23;
 }
 
+.panel.wide {
+  grid-column: 1 / -1;
+}
+
 .panel-head {
   display: flex;
   justify-content: space-between;
@@ -334,9 +339,13 @@ td {
   color: #edf2f7;
 }
 
-td:first-child,
-th:first-child {
-  width: 150px;
+.text-cell {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .right {
@@ -345,28 +354,28 @@ th:first-child {
 }
 
 .reason {
-  width: 280px;
-  min-width: 220px;
-  max-width: 320px;
+  min-width: 260px;
   overflow-wrap: anywhere;
 }
 
 .reason-short {
   display: block;
-  max-width: 260px;
+  max-width: 100%;
   color: #dce5ef;
   line-height: 1.35;
 }
 
 .reason-cell {
-  max-width: 260px;
+  display: block;
+  max-width: 100%;
 }
 
 .reason-cell summary {
-  display: inline-flex;
+  display: flex;
   max-width: 100%;
   min-height: 24px;
   align-items: center;
+  justify-content: space-between;
   padding: 2px 8px;
   border: 1px solid #344454;
   border-radius: 999px;
@@ -404,9 +413,74 @@ th:first-child {
 
 .reason-cell p {
   margin: 8px 0 0;
-  max-width: 260px;
+  max-width: 100%;
   color: #dce5ef;
   line-height: 1.35;
+}
+
+.filters {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(130px, 1fr));
+  gap: 10px;
+  padding: 10px 14px 4px;
+}
+
+.filters label {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.filters span {
+  color: #93a1b2;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.filters input,
+.filters select {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #283746;
+  border-radius: 7px;
+  color: #edf2f7;
+  background: #111820;
+  padding: 6px 9px;
+  outline: none;
+}
+
+.filters input:focus,
+.filters select:focus {
+  border-color: #2d80ed;
+}
+
+.decision-table {
+  min-width: 1060px;
+}
+
+.trade-review-table {
+  min-width: 930px;
+}
+
+.decision-table td,
+.decision-table th,
+.trade-review-table td,
+.trade-review-table th {
+  vertical-align: top;
+}
+
+.decision-table .pill,
+.trade-review-table .pill {
+  min-height: 22px;
+}
+
+.decision-critical {
+  background: #1a2026;
+  box-shadow: inset 3px 0 0 #ffd76a;
+}
+
+.decision-critical td {
+  border-bottom-color: #3d3320;
 }
 
 .candidate-stack {
@@ -560,6 +634,10 @@ th:first-child {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .insight-strip {
     grid-template-columns: 1fr;
   }
@@ -581,6 +659,10 @@ th:first-child {
 
   .stats,
   .stats.compact {
+    grid-template-columns: 1fr;
+  }
+
+  .filters {
     grid-template-columns: 1fr;
   }
 }

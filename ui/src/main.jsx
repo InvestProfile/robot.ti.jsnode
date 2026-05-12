@@ -39,7 +39,8 @@ const endpoints = {
   buyRecommendations: '/api/buy-recommendations?limit=30',
   analystForecasts: '/api/analyst-forecasts',
   techAnalysis: '/api/tech-analysis',
-  robotPositions: '/api/robot-positions'
+  robotPositions: '/api/robot-positions',
+  trades: '/api/trades?limit=80'
 };
 
 const endpointGroups = {
@@ -50,7 +51,7 @@ const endpointGroups = {
   evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
   sell: ['sellBrain', 'positions', 'robotPositions'],
-  logs: ['decisions']
+  logs: ['decisions', 'trades', 'robotPositions']
 };
 
 const tabs = [
@@ -63,21 +64,34 @@ const tabs = [
   { id: 'logs', label: 'Журнал', icon: Eye }
 ];
 
+const EMPTY = '—';
+
+const isMissing = (value) => value === undefined || value === null || value === '';
+
+const display = (value) => isMissing(value) ? EMPTY : value;
+
 const money = (value) => {
-  if (value === undefined || value === null || Number.isNaN(Number(value))) return '-';
+  if (value === undefined || value === null || Number.isNaN(Number(value))) return EMPTY;
   return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(Number(value));
 };
 
 const percent = (value) => {
-  if (value === undefined || value === null || Number.isNaN(Number(value))) return '-';
+  if (value === undefined || value === null || Number.isNaN(Number(value))) return EMPTY;
   const sign = Number(value) > 0 ? '+' : '';
   return `${sign}${Number(value).toFixed(2)}%`;
 };
 
+const moneyParts = (units, nano) => {
+  const unitValue = Number(units ?? 0);
+  const nanoValue = Number(nano ?? 0);
+  if (!Number.isFinite(unitValue) || !Number.isFinite(nanoValue)) return null;
+  return unitValue + nanoValue / 1_000_000_000;
+};
+
 const time = (value) => {
-  if (!value) return '-';
+  if (!value) return EMPTY;
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
+  if (Number.isNaN(date.getTime())) return EMPTY;
   return date.toLocaleString('ru-RU');
 };
 
@@ -102,7 +116,7 @@ const Pill = ({ tone = 'neutral', children }) => (
 );
 
 const signedNumber = (value) => {
-  if (value === undefined || value === null || Number.isNaN(Number(value))) return '-';
+  if (value === undefined || value === null || Number.isNaN(Number(value))) return EMPTY;
   const number = Math.round(Number(value));
   return number > 0 ? `+${number}` : String(number);
 };
@@ -122,7 +136,7 @@ const ScoreBreakdown = ({ analysis }) => {
     { key: 'tech', label: 'tech', value: factors.technicalScoreAdjustment, title: 'Поправка от официальных индикаторов T-Invest: RSI, MACD и средние.' }
   ];
 
-  if (!analysis) return '-';
+  if (!analysis) return EMPTY;
 
   return (
     <div className="score-breakdown" title={analysis.reason}>
@@ -137,7 +151,7 @@ const ScoreBreakdown = ({ analysis }) => {
 };
 
 const shortReason = (value) => {
-  const text = String(value || '-');
+  const text = String(value || EMPTY);
   if (text.length <= 90) return text;
 
   const markers = [
@@ -155,7 +169,7 @@ const shortReason = (value) => {
 };
 
 const Reason = ({ children }) => {
-  const text = String(children || '-');
+  const text = String(children || EMPTY);
   if (text.length <= 90) return <span className="reason-short" title={text}>{text}</span>;
 
   return (
@@ -183,20 +197,34 @@ const Stat = ({ label, value, tone, title }) => (
   </div>
 );
 
-const Table = ({ columns, rows, empty = 'No data', loading = false }) => (
+const cellValue = (value) => isMissing(value) ? EMPTY : value;
+
+const TextCell = ({ children, className }) => {
+  const value = cellValue(children);
+  return <span className={cls('text-cell', className)} title={String(value)}>{value}</span>;
+};
+
+const Table = ({ columns, rows, empty = 'Нет данных', loading = false, className, rowClassName }) => (
   <div className="table-wrap">
-    {loading && rows?.length ? <div className="table-loading">Updating...</div> : null}
-    <table>
+    {loading && rows?.length ? <div className="table-loading">Обновляю...</div> : null}
+    <table className={className}>
+      <colgroup>
+        {columns.map((column) => <col key={column.key} style={column.width ? { width: column.width } : undefined} />)}
+      </colgroup>
       <thead>
         <tr>{columns.map((column) => <th key={column.key} className={column.className}>{column.label}</th>)}</tr>
       </thead>
       <tbody>
         {rows?.length ? rows.map((row, index) => (
-          <tr key={row.id || `${row.ticker || row.accountId || 'row'}-${index}`}>
-            {columns.map((column) => <td key={column.key} className={column.className}>{column.render ? column.render(row) : row[column.key]}</td>)}
+          <tr key={row.id || `${row.ticker || row.accountId || 'row'}-${index}`} className={rowClassName ? rowClassName(row) : undefined}>
+            {columns.map((column) => (
+              <td key={column.key} className={column.className}>
+                {column.render ? column.render(row) : cellValue(row[column.key])}
+              </td>
+            ))}
           </tr>
         )) : (
-          <tr><td colSpan={columns.length} className="empty">{loading ? 'Loading...' : empty}</td></tr>
+          <tr><td colSpan={columns.length} className="empty">{loading ? 'Загрузка...' : empty}</td></tr>
         )}
       </tbody>
     </table>
@@ -921,24 +949,162 @@ function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle, onRiskSet
   );
 }
 
+const decisionStatusTone = (status) => {
+  if (status === 'order-posted') return 'good';
+  if (status === 'order-failed') return 'bad';
+  if (status === 'skip') return 'neutral';
+  return 'warn';
+};
+
+const isCriticalDecision = (row) => (
+  row.status === 'skip' && ['stop-loss', 'profit-take', 'trailing-stop'].includes(row.signalSource)
+);
+
+const toDecisionView = (row) => ({
+  ...row,
+  // Missing ticker/signal/account values are already absent in /api/decisions.
+  // TODO: trace whether they are lost at decision creation or DB mapping; UI must not infer them.
+  accountAlias: display(row.accountAlias),
+  ticker: display(row.ticker),
+  signalSource: display(row.signalSource)
+});
+
+const sortDecisions = (rows, sort) => {
+  const copy = [...rows];
+  if (sort === 'oldest') return copy.reverse();
+  if (sort === 'pnl-desc') return copy.sort((a, b) => Number(b.profitPercent ?? -Infinity) - Number(a.profitPercent ?? -Infinity));
+  if (sort === 'pnl-asc') return copy.sort((a, b) => Number(a.profitPercent ?? Infinity) - Number(b.profitPercent ?? Infinity));
+  return copy;
+};
+
+function LogFilters({ rows, filters, onChange }) {
+  const statuses = [...new Set(rows.map((row) => row.status).filter(Boolean))].sort();
+  const signals = [...new Set(rows.map((row) => row.signalSource).filter(Boolean))].sort();
+
+  return (
+    <div className="filters">
+      <label>
+        <span>Статус</span>
+        <select value={filters.status} onChange={(event) => onChange({ ...filters, status: event.target.value })}>
+          <option value="all">Все</option>
+          {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
+        </select>
+      </label>
+      <label>
+        <span>Сигнал</span>
+        <select value={filters.signal} onChange={(event) => onChange({ ...filters, signal: event.target.value })}>
+          <option value="all">Все</option>
+          {signals.map((signal) => <option key={signal} value={signal}>{signal}</option>)}
+        </select>
+      </label>
+      <label>
+        <span>Тикер</span>
+        <input value={filters.ticker} onChange={(event) => onChange({ ...filters, ticker: event.target.value.toUpperCase() })} placeholder="SBER" />
+      </label>
+      <label>
+        <span>P/L</span>
+        <select value={filters.pnl} onChange={(event) => onChange({ ...filters, pnl: event.target.value })}>
+          <option value="all">Любой</option>
+          <option value="profit">Плюс</option>
+          <option value="loss">Минус</option>
+          <option value="empty">Нет</option>
+        </select>
+      </label>
+      <label>
+        <span>Сортировка</span>
+        <select value={filters.sort} onChange={(event) => onChange({ ...filters, sort: event.target.value })}>
+          <option value="newest">Новые</option>
+          <option value="oldest">Старые</option>
+          <option value="pnl-desc">P/L выше</option>
+          <option value="pnl-asc">P/L ниже</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function TradeReview({ data, loading }) {
+  const trades = data.trades?.trades || [];
+  const events = data.robotPositions?.events || [];
+  const decisions = data.decisions?.decisions || [];
+  const lastOrderDecisionByTicker = new Map(
+    decisions
+      .filter((decision) => decision.ticker && decision.status === 'order-posted')
+      .map((decision) => [decision.ticker, decision])
+  );
+
+  const rows = trades.slice(0, 20).map((trade) => {
+    const event = events.find((item) => item.orderId && item.orderId === trade.orderId);
+    const decision = lastOrderDecisionByTicker.get(trade.ticker);
+    return {
+      ...trade,
+      ledgerStatus: event ? 'в ledger' : 'только broker',
+      decisionReason: decision?.reason,
+      signalSource: decision?.signalSource,
+      tradePrice: moneyParts(trade.executedPriceUnits ?? trade.price_units, trade.executedPriceNano ?? trade.price_nano),
+      tradeAmount: moneyParts(trade.totalAmountUnits, trade.totalAmountNano),
+      createdAt: trade.tradeDateTime || trade.createdAt
+    };
+  });
+
+  return (
+    <Card title="Разбор сделок" icon={Database} help="Последние реальные сделки из брокера плюс связь с внутренним ledger. Если сделка есть у брокера, но не попала в ledger, это отдельный повод смотреть reconciliation.">
+      <Table
+        className="trade-review-table"
+        columns={[
+          { key: 'createdAt', label: 'Время', width: '150px', render: (row) => time(row.createdAt) },
+          { key: 'ticker', label: 'Тикер', width: '90px', render: (row) => <TextCell>{row.ticker}</TextCell> },
+          { key: 'side', label: 'Сторона', width: '90px', render: (row) => <Pill tone={row.direction === 'buy' ? 'good' : 'bad'}>{display(row.direction)}</Pill> },
+          { key: 'quantityLots', label: 'Лоты', width: '70px', className: 'right', render: (row) => money(row.lotsExecuted ?? row.lotsRequested ?? row.lot) },
+          { key: 'price', label: 'Цена', width: '90px', className: 'right', render: (row) => money(row.tradePrice) },
+          { key: 'amount', label: 'Сумма', width: '95px', className: 'right', render: (row) => money(row.tradeAmount) },
+          { key: 'ledgerStatus', label: 'Ledger', width: '115px', render: (row) => <Pill tone={row.ledgerStatus === 'в ledger' ? 'good' : 'warn'}>{row.ledgerStatus}</Pill> },
+          { key: 'decisionReason', label: 'Решение', className: 'reason', render: (row) => <Reason>{row.decisionReason || row.status || EMPTY}</Reason> }
+        ]}
+        rows={rows}
+        empty="Сделок пока нет"
+        loading={loading}
+      />
+    </Card>
+  );
+}
+
 function Logs({ data, loadingKeys }) {
+  const [filters, setFilters] = useState({ status: 'all', signal: 'all', ticker: '', pnl: 'all', sort: 'newest' });
+  const decisions = (data.decisions?.decisions || []).map(toDecisionView);
+  const filteredDecisions = sortDecisions(decisions.filter((row) => {
+    const pnl = Number(row.profitPercent);
+    if (filters.status !== 'all' && row.status !== filters.status) return false;
+    if (filters.signal !== 'all' && row.signalSource !== filters.signal) return false;
+    if (filters.ticker && !String(row.ticker).includes(filters.ticker)) return false;
+    if (filters.pnl === 'profit' && !(Number.isFinite(pnl) && pnl > 0)) return false;
+    if (filters.pnl === 'loss' && !(Number.isFinite(pnl) && pnl < 0)) return false;
+    if (filters.pnl === 'empty' && Number.isFinite(pnl)) return false;
+    return true;
+  }), filters.sort);
+
   return (
     <div className="grid">
-      <Card title="Последние решения" icon={Eye} help="Журнал решений робота: что он рассматривал, какой сигнал увидел, что разрешили/запретили фильтры и почему.">
+      <Card title="Последние решения" icon={Eye} className="wide" help="Журнал решений робота: что он рассматривал, какой сигнал увидел, что разрешили/запретили фильтры и почему. Пустые значения показываются как —, фронт их не угадывает.">
+        <LogFilters rows={decisions} filters={filters} onChange={setFilters} />
         <Table
+          className="decision-table"
+          rowClassName={(row) => cls(isCriticalDecision(row) && 'decision-critical')}
           columns={[
-            { key: 'createdAt', label: 'Time', render: (row) => time(row.createdAt) },
-            { key: 'accountAlias', label: 'Account' },
-            { key: 'ticker', label: 'Ticker' },
-            { key: 'signalSource', label: 'Signal' },
-            { key: 'status', label: 'Status', render: (row) => <Pill tone={row.status === 'order-posted' ? 'good' : row.status === 'skip' ? 'neutral' : 'warn'}>{row.status}</Pill> },
-            { key: 'profitPercent', label: 'P/L', className: 'right', render: (row) => percent(row.profitPercent) },
-            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+            { key: 'createdAt', label: 'Время', width: '155px', render: (row) => time(row.createdAt) },
+            { key: 'accountAlias', label: 'Счет', width: '170px', render: (row) => <TextCell>{row.accountAlias}</TextCell> },
+            { key: 'ticker', label: 'Тикер', width: '92px', render: (row) => <TextCell>{row.ticker}</TextCell> },
+            { key: 'signalSource', label: 'Сигнал', width: '130px', render: (row) => <TextCell>{row.signalSource}</TextCell> },
+            { key: 'status', label: 'Статус', width: '112px', render: (row) => <Pill tone={decisionStatusTone(row.status)}>{display(row.status)}</Pill> },
+            { key: 'profitPercent', label: 'P/L', width: '84px', className: 'right', render: (row) => percent(row.profitPercent) },
+            { key: 'reason', label: 'Причина', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
-          rows={data.decisions?.decisions || []}
+          rows={filteredDecisions}
+          empty="Нет решений под выбранные фильтры"
           loading={loadingKeys.decisions}
         />
       </Card>
+      <TradeReview data={data} loading={loadingKeys.trades || loadingKeys.robotPositions} />
     </div>
   );
 }
@@ -1078,7 +1244,7 @@ function App() {
           <div className="brand-mark"><Bot size={22} /></div>
           <div>
             <strong>T-Invest Robot</strong>
-            <span>control room</span>
+            <span>панель управления</span>
           </div>
         </div>
         <nav>
@@ -1097,11 +1263,11 @@ function App() {
         <header className="topbar">
           <div>
             <h1>{active.label}</h1>
-            <p>{loading ? `Loading ${Object.values(loadingKeys).filter(Boolean).length} API...` : error || `Updated ${updatedAt ? updatedAt.toLocaleTimeString('ru-RU') : '-'}`}</p>
+            <p>{loading ? `Загрузка API: ${Object.values(loadingKeys).filter(Boolean).length}` : error || `Обновлено ${updatedAt ? updatedAt.toLocaleTimeString('ru-RU') : EMPTY}`}</p>
           </div>
-          <button className="icon-button" onClick={() => void reload()} title="Refresh">
+          <button className="icon-button" onClick={() => void reload()} title="Обновить">
             <RefreshCw size={18} />
-            Refresh
+            Обновить
           </button>
         </header>
         {error ? <div className="error-banner"><AlertTriangle size={18} />{error}</div> : null}
