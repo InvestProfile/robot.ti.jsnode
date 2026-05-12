@@ -67,6 +67,13 @@ const tabs = [
 
 const EMPTY = '—';
 
+const tabExists = (id) => tabs.some((tab) => tab.id === id);
+
+const getInitialTab = () => {
+  const hashTab = window.location.hash.replace('#', '');
+  return tabExists(hashTab) ? hashTab : 'overview';
+};
+
 const isMissing = (value) => value === undefined || value === null || value === '';
 
 const display = (value) => isMissing(value) ? EMPTY : value;
@@ -1404,10 +1411,21 @@ function Logs({ data, loadingKeys }) {
 }
 
 function App() {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState(getInitialTab);
   const { data, loading, loadingKeys, error, updatedAt, reload } = useDashboardData(activeTab);
   const [actionError, setActionError] = useState('');
   const active = useMemo(() => tabs.find((tab) => tab.id === activeTab) || tabs[0], [activeTab]);
+  const selectTab = (id) => {
+    setActiveTab(id);
+    if (window.location.hash !== `#${id}`) window.history.replaceState(null, '', `#${id}`);
+  };
+
+  useEffect(() => {
+    const onHashChange = () => setActiveTab(getInitialTab());
+    window.addEventListener('hashchange', onHashChange);
+    return () => window.removeEventListener('hashchange', onHashChange);
+  }, []);
+
   const updateAccountMode = async (accountId, mode, options = {}) => {
     setActionError('');
     let confirmation;
@@ -1545,7 +1563,7 @@ function App() {
           {tabs.map((tab) => {
             const Icon = tab.icon;
             return (
-              <button key={tab.id} className={cls('nav-btn', activeTab === tab.id && 'active')} onClick={() => setActiveTab(tab.id)}>
+              <button key={tab.id} className={cls('nav-btn', activeTab === tab.id && 'active')} onClick={() => selectTab(tab.id)}>
                 <Icon size={18} />
                 {tab.label}
               </button>
