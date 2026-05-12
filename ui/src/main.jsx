@@ -618,7 +618,7 @@ function Buy({ data, loadingKeys }) {
         />
       </Card>
 
-      <Card title="Боевой предпросмотр" icon={ShieldCheck} help="Самый практический блок покупок: что робот хотел бы купить прямо сейчас, какой score у бумаги, сколько стоит лот и почему заявка разрешена или заблокирована.">
+      <Card title="Боевой предпросмотр" icon={ShieldCheck} className="wide" help="Самый практический блок покупок: что робот хотел бы купить прямо сейчас, какой score у бумаги, сколько стоит лот и почему заявка разрешена или заблокирована.">
         <Table
           columns={[
             { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
@@ -633,7 +633,7 @@ function Buy({ data, loadingKeys }) {
         />
       </Card>
 
-      <Card title="Кандидаты дня" icon={Bot} help="Автоматический buy-list из широкого рынка. Робот выбирает до 5 бумаг с лучшим score среди доступных рублевых акций, вместо старого ручного списка из случайных позиций.">
+      <Card title="Кандидаты дня" icon={Bot} className="wide" help="Автоматический buy-list из широкого рынка. Робот выбирает до 5 бумаг с лучшим score среди доступных рублевых акций, вместо старого ручного списка из случайных позиций.">
         <div className="stats compact">
           <Stat label="Source" value={dailyBuyList.source || '-'} />
           <Stat label="Tickers" value={(dailyBuyList.tickers || []).join(', ') || '-'} />
