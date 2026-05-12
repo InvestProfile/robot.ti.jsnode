@@ -16,21 +16,28 @@ interface Price {
     nano: number;
 }
 
-const normalizeDirection = (direction: number) => {
-    if (direction === OrderDirection.ORDER_DIRECTION_BUY || direction === 1) {
+export const ORDER_SIDE = {
+    BUY: 'buy',
+    SELL: 'sell'
+} as const;
+
+export type OrderSide = typeof ORDER_SIDE[keyof typeof ORDER_SIDE];
+
+const normalizeDirection = (side: OrderSide) => {
+    if (side === ORDER_SIDE.BUY) {
         return OrderDirection.ORDER_DIRECTION_BUY;
     }
 
-    if (direction === OrderDirection.ORDER_DIRECTION_SELL || direction === 2) {
+    if (side === ORDER_SIDE.SELL) {
         return OrderDirection.ORDER_DIRECTION_SELL;
     }
 
-    throw new Error(`Unsupported order direction: ${direction}`);
+    throw new Error(`Unsupported order side: ${side}`);
 };
 
 const validateOrderInput = (input: {
     accountId: string;
-    direction: number;
+    side: OrderSide;
     quantity: number | undefined;
     price: Price;
     figi: string;
@@ -41,7 +48,7 @@ const validateOrderInput = (input: {
     if (!input.figi) throw new Error('figi is required for order placement');
     if (!input.instrumentId) throw new Error('instrumentId is required for order placement');
 
-    normalizeDirection(input.direction);
+    normalizeDirection(input.side);
 
     const quantity = Number(input.quantity);
     if (!Number.isInteger(quantity) || quantity <= 0) {
@@ -61,20 +68,20 @@ export default class OrdersService {
 
     static async postOrder(
         accountId: string,
-        direction: number,
+        side: OrderSide,
         quantity: number | undefined,
         price: Price,
         figi: string,
         instrumentId: string,
         clientOrderId = OrdersService.createClientOrderId()
     ) {
-        validateOrderInput({ accountId, direction, quantity, price, figi, instrumentId });
+        validateOrderInput({ accountId, side, quantity, price, figi, instrumentId });
 
         const token = envVariables.INVEST_TOKEN;
         if (!token) throw new Error('INVEST_TOKEN is not defined.');
 
         const {orders} = getSdk(token);
-        const orderDirection = normalizeDirection(direction);
+        const orderDirection = normalizeDirection(side);
 
         const response = await TInvestApiCacheService.withRetry(() => orders.postOrder({
             accountId,
@@ -125,7 +132,7 @@ export default class OrdersService {
 
     static async getOrderPrice(
         accountId: string,
-        direction: number,
+        side: OrderSide,
         quantity: number,
         price: Price,
         instrumentId: string
@@ -133,13 +140,13 @@ export default class OrdersService {
         if (envVariables.INVEST_TOKEN) {
             const {orders} = getSdk(envVariables.INVEST_TOKEN);
             return await TInvestApiCacheService.cached(
-                `orders:price:${accountId}:${direction}:${quantity}:${instrumentId}:${price.units}:${price.nano}`,
+                `orders:price:${accountId}:${side}:${quantity}:${instrumentId}:${price.units}:${price.nano}`,
                 10_000,
                 () => orders.getOrderPrice({
                     accountId,
                     instrumentId,
                     price,
-                    direction: direction === 2 ? OrderDirection.ORDER_DIRECTION_SELL : OrderDirection.ORDER_DIRECTION_BUY,
+                    direction: normalizeDirection(side),
                     quantity
                 })
             );

@@ -40,7 +40,8 @@ const endpoints = {
   analystForecasts: '/api/analyst-forecasts',
   techAnalysis: '/api/tech-analysis',
   robotPositions: '/api/robot-positions',
-  trades: '/api/trades?limit=80'
+  trades: '/api/trades?limit=80',
+  orderSafety: '/api/order-safety?limit=80'
 };
 
 const endpointGroups = {
@@ -51,7 +52,7 @@ const endpointGroups = {
   evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
   sell: ['sellBrain', 'positions', 'robotPositions'],
-  logs: ['decisions', 'trades', 'robotPositions']
+  logs: ['decisions', 'trades', 'robotPositions', 'orderSafety']
 };
 
 const tabs = [
@@ -821,17 +822,20 @@ function RiskControls({ data, onRiskSettingsChange }) {
   const maxOrderRub = Number(config.maxOrderRub || 0);
   const maxDailyOrders = Number(config.maxDailyOrders || 0);
   const maxDailyRub = Number(config.maxDailyRub || 0);
+  const orderButtons = [500, 1000, 1500, 2500].filter((value) => value <= Number(config.maxRuntimeOrderRub || value));
+  const orderCountButtons = [1, 3, 5, 10].filter((value) => value <= Number(config.maxRuntimeDailyOrders || value));
+  const dailyRubButtons = [500, 1500, 3000, 5000].filter((value) => value <= Number(config.maxRuntimeDailyRub || value));
 
   return (
     <Card title="Лимиты риска" icon={ShieldCheck} help="Меняет реальные лимиты робота без перезапуска. Max order - потолок одной заявки, daily orders - сколько заявок за день, daily RUB - общий дневной бюджет.">
       <div className="stats compact">
-        <Stat label="Max order" value={`${money(maxOrderRub)} RUB`} />
-        <Stat label="Daily orders" value={maxDailyOrders} />
-        <Stat label="Daily RUB" value={`${money(maxDailyRub)} RUB`} />
+        <Stat label="Max order" value={`${money(maxOrderRub)} RUB`} title={`Hard cap: ${money(config.maxRuntimeOrderRub)} RUB`} />
+        <Stat label="Daily orders" value={maxDailyOrders} title={`Hard cap: ${config.maxRuntimeDailyOrders}`} />
+        <Stat label="Daily RUB" value={`${money(maxDailyRub)} RUB`} title={`Hard cap: ${money(config.maxRuntimeDailyRub)} RUB`} />
         <Stat label="Left today" value={tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : '-'} />
       </div>
       <div className="control-row">
-        {[500, 1000, 1500, 2500].map((value) => (
+        {orderButtons.map((value) => (
           <button
             key={value}
             className={cls('mini-button', value === maxOrderRub && 'active')}
@@ -843,7 +847,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
         ))}
       </div>
       <div className="control-row">
-        {[1, 3, 5, 10].map((value) => (
+        {orderCountButtons.map((value) => (
           <button
             key={value}
             className={cls('mini-button', value === maxDailyOrders && 'active')}
@@ -855,7 +859,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
         ))}
       </div>
       <div className="control-row">
-        {[500, 1500, 3000, 5000].map((value) => (
+        {dailyRubButtons.map((value) => (
           <button
             key={value}
             className={cls('mini-button', value === maxDailyRub && 'active')}
@@ -951,9 +955,17 @@ function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle, onRiskSet
 
 const decisionStatusTone = (status) => {
   if (status === 'order-posted') return 'good';
-  if (status === 'order-failed') return 'bad';
+  if (status === 'order-rejected' || status === 'order-failed' || status === 'order-failed-before-submit' || status === 'order-unknown') return 'bad';
   if (status === 'skip') return 'neutral';
   return 'warn';
+};
+
+const orderStatusTone = (status) => {
+  if (status === 'EXECUTION_REPORT_STATUS_FILL') return 'good';
+  if (status === 'EXECUTION_REPORT_STATUS_REJECTED' || status === 'EXECUTION_REPORT_STATUS_CANCELLED' || status === 'LOCAL_POST_REJECTED' || status === 'LOCAL_VALIDATION_FAILED') return 'bad';
+  if (status === 'LOCAL_SUBMIT_UNKNOWN') return 'bad';
+  if (status === 'LOCAL_PENDING_SUBMIT' || status === 'EXECUTION_REPORT_STATUS_NEW' || status === 'EXECUTION_REPORT_STATUS_PARTIALLYFILL') return 'warn';
+  return 'neutral';
 };
 
 const isCriticalDecision = (row) => (
@@ -1069,6 +1081,38 @@ function TradeReview({ data, loading }) {
   );
 }
 
+function OrderSafety({ data, loading }) {
+  const summary = data.orderSafety?.summary || {};
+  const orders = data.orderSafety?.orders || [];
+
+  return (
+    <Card title="Заявки / Order Safety" icon={ShieldCheck} help="Контроль неизвестных и открытых заявок. UNKNOWN значит: запрос мог уйти брокеру, но ответ потерялся; робот не будет повторять такую заявку, пока reconciliation не выяснит статус.">
+      <div className="stats compact">
+        <Stat label="Open" value={summary.open ?? 0} tone={summary.open ? 'warn' : 'good'} />
+        <Stat label="Pending" value={summary.pending ?? 0} tone={summary.pending ? 'warn' : 'good'} />
+        <Stat label="Unknown" value={summary.unknown ?? 0} tone={summary.unknown ? 'bad' : 'good'} />
+        <Stat label="Partial" value={summary.partial ?? 0} tone={summary.partial ? 'warn' : 'good'} />
+      </div>
+      <Table
+        className="order-safety-table"
+        columns={[
+          { key: 'createdAt', label: 'Время', width: '150px', render: (row) => time(row.tradeDateTime || row.createdAt) },
+          { key: 'ticker', label: 'Тикер', width: '100px', render: (row) => <><strong>{row.ticker || row.figi || EMPTY}</strong><div className="muted">{row.name}</div></> },
+          { key: 'direction', label: 'Side', width: '80px', render: (row) => <Pill tone={String(row.direction) === '1' ? 'good' : 'bad'}>{String(row.direction) === '1' ? 'buy' : String(row.direction) === '2' ? 'sell' : display(row.direction)}</Pill> },
+          { key: 'status', label: 'Status', width: '175px', render: (row) => <Pill tone={orderStatusTone(row.status)}>{display(row.status)}</Pill> },
+          { key: 'lotsRequested', label: 'Req', width: '70px', className: 'right', render: (row) => money(row.lotsRequested) },
+          { key: 'lotsExecuted', label: 'Exec', width: '70px', className: 'right', render: (row) => money(row.lotsExecuted) },
+          { key: 'clientOrderId', label: 'Client id', width: '190px', render: (row) => <TextCell>{row.clientOrderId || row.orderId}</TextCell> },
+          { key: 'orderError', label: 'Ошибка / broker', className: 'reason', render: (row) => <Reason>{row.orderError || row.orderId || EMPTY}</Reason> }
+        ]}
+        rows={orders}
+        empty="Заявок пока нет"
+        loading={loading}
+      />
+    </Card>
+  );
+}
+
 function Logs({ data, loadingKeys }) {
   const [filters, setFilters] = useState({ status: 'all', signal: 'all', ticker: '', pnl: 'all', sort: 'newest' });
   const decisions = (data.decisions?.decisions || []).map(toDecisionView);
@@ -1105,6 +1149,7 @@ function Logs({ data, loadingKeys }) {
         />
       </Card>
       <TradeReview data={data} loading={loadingKeys.trades || loadingKeys.robotPositions} />
+      <OrderSafety data={data} loading={loadingKeys.orderSafety} />
     </div>
   );
 }

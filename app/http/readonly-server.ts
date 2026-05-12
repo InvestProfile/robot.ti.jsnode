@@ -1,7 +1,7 @@
 import http, { IncomingMessage, ServerResponse } from 'http';
 import { URL } from 'url';
 import path from 'path';
-import { readFile, stat, writeFile } from 'fs/promises';
+import { readFile, rename, stat, writeFile } from 'fs/promises';
 import { getEnv } from '../config/env.config';
 import { getRobotConfig, RobotConfig } from '../config/robot.config';
 import { getTradingRuntimeState } from '../modules/common.module';
@@ -14,6 +14,7 @@ import { dashboardPage } from './dashboard-page';
 import { TradesModel } from '../models/trades.model';
 import TradesService from '../services/trades.service';
 import OrdersService from '../services/orders.service';
+import { ORDER_SIDE } from '../services/orders.service';
 import { PortfolioSnapshotModel } from '../models/portfolio-snapshot.model';
 import PerformanceService from '../services/performance.service';
 import BuyScannerService from '../services/buy-scanner.service';
@@ -44,6 +45,17 @@ type AccountMode = 'trade' | 'observe';
 const parseBoolean = (value: string | undefined, defaultValue: boolean) => {
     if (value === undefined) return defaultValue;
     return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
+};
+
+const getHttpAuthConfigError = () => {
+    const env = getEnv();
+    const config = getRobotConfig();
+    const localDev = parseBoolean(env.ROBOT_HTTP_LOCAL_DEV, false);
+
+    if (env.ROBOT_WEB_PASSWORD) return undefined;
+    if (localDev && config.dryRun) return undefined;
+
+    return 'ROBOT_WEB_PASSWORD must be set. To run an unauthenticated local dry-run dashboard, set ROBOT_HTTP_LOCAL_DEV=true and keep ROBOT_DRY_RUN=true.';
 };
 
 const parsePort = (value: string | undefined) => {
@@ -144,51 +156,60 @@ const persistSocialCookies = async (sessionId: string | undefined, authCookie: s
         content = updateEnvLine(content, 'ROBOT_SOCIAL_SESSION_ID', sessionId);
     }
     content = updateEnvLine(content, 'ROBOT_SOCIAL_AUTH_COOKIE', authCookie);
-    await writeFile(envPath, content);
+    const tmpPath = `${envPath}.tmp-${process.pid}-${Date.now()}`;
+    await writeFile(tmpPath, content, { mode: 0o600 });
+    await rename(tmpPath, envPath);
 };
 
 const handleSocialCookieUpdate = async (req: IncomingMessage, res: ServerResponse) => {
-    const env = getEnv();
-    const secret = env.ROBOT_SOCIAL_COOKIE_UPDATE_SECRET;
+    try {
+        const env = getEnv();
+        const secret = env.ROBOT_SOCIAL_COOKIE_UPDATE_SECRET;
 
-    if (!secret) {
-        json(res, 403, { ok: false, error: 'ROBOT_SOCIAL_COOKIE_UPDATE_SECRET is not configured' });
-        return;
-    }
-
-    const payload = await readJsonBody(req);
-    const requestSecret = String(payload.secret ?? req.headers['x-robot-cookie-secret'] ?? '');
-    if (requestSecret !== secret) {
-        json(res, 401, { ok: false, error: 'invalid secret' });
-        return;
-    }
-
-    const cookies = payload.cookies && typeof payload.cookies === 'object' ? payload.cookies : {};
-    const parts = SOCIAL_COOKIE_ALLOWLIST
-        .filter(name => name !== 'psid')
-        .map(name => {
-            const value = cookies[name];
-            return typeof value === 'string' && value.trim() ? `${name}=${value.trim()}` : undefined;
-        })
-        .filter((value): value is string => Boolean(value));
-    const psid = typeof cookies.psid === 'string' && cookies.psid.trim()
-        ? cookies.psid.trim()
-        : undefined;
-
-    if (!psid && parts.length === 0) {
-        json(res, 400, { ok: false, error: 'no allowed cookies found' });
-        return;
-    }
-
-    await persistSocialCookies(psid, parts.join('; '));
-
-    json(res, 200, {
-        ok: true,
-        updated: {
-            sessionId: Boolean(psid),
-            authCookieNames: parts.map(part => part.split('=')[0])
+        if (!secret) {
+            json(res, 403, { ok: false, error: 'ROBOT_SOCIAL_COOKIE_UPDATE_SECRET is not configured' });
+            return;
         }
-    });
+
+        const payload = await readJsonBody(req);
+        const requestSecret = String(payload.secret ?? req.headers['x-robot-cookie-secret'] ?? '');
+        if (requestSecret !== secret) {
+            json(res, 401, { ok: false, error: 'invalid secret' });
+            return;
+        }
+
+        const cookies = payload.cookies && typeof payload.cookies === 'object' ? payload.cookies : {};
+        const parts = SOCIAL_COOKIE_ALLOWLIST
+            .filter(name => name !== 'psid')
+            .map(name => {
+                const value = cookies[name];
+                return typeof value === 'string' && value.trim() ? `${name}=${value.trim()}` : undefined;
+            })
+            .filter((value): value is string => Boolean(value));
+        const psid = typeof cookies.psid === 'string' && cookies.psid.trim()
+            ? cookies.psid.trim()
+            : undefined;
+
+        if (!psid && parts.length === 0) {
+            json(res, 400, { ok: false, error: 'no allowed cookies found' });
+            return;
+        }
+
+        await persistSocialCookies(psid, parts.join('; '));
+
+        json(res, 200, {
+            ok: true,
+            updated: {
+                sessionId: Boolean(psid),
+                authCookieNames: parts.map(part => part.split('=')[0])
+            }
+        });
+    } catch (error) {
+        json(res, 400, {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
 };
 
 const handleAccountModeUpdate = async (req: IncomingMessage, res: ServerResponse) => {
@@ -340,18 +361,20 @@ const handleRiskSettingsUpdate = async (req: IncomingMessage, res: ServerRespons
         const maxDailyOrders = Number(payload.maxDailyOrders);
         const maxDailyRub = Number(payload.maxDailyRub);
 
-        if (!Number.isFinite(maxOrderRub) || maxOrderRub < 0 || maxOrderRub > 100_000) {
-            json(res, 400, { ok: false, error: 'maxOrderRub must be 0..100000' });
+        const baseConfig = getRobotConfig();
+
+        if (!Number.isFinite(maxOrderRub) || maxOrderRub < 0 || maxOrderRub > baseConfig.maxRuntimeOrderRub) {
+            json(res, 400, { ok: false, error: `maxOrderRub must be 0..${baseConfig.maxRuntimeOrderRub}` });
             return;
         }
 
-        if (!Number.isFinite(maxDailyOrders) || maxDailyOrders < 0 || maxDailyOrders > 100) {
-            json(res, 400, { ok: false, error: 'maxDailyOrders must be 0..100' });
+        if (!Number.isFinite(maxDailyOrders) || maxDailyOrders < 0 || maxDailyOrders > baseConfig.maxRuntimeDailyOrders) {
+            json(res, 400, { ok: false, error: `maxDailyOrders must be 0..${baseConfig.maxRuntimeDailyOrders}` });
             return;
         }
 
-        if (!Number.isFinite(maxDailyRub) || maxDailyRub < 0 || maxDailyRub > 1_000_000) {
-            json(res, 400, { ok: false, error: 'maxDailyRub must be 0..1000000' });
+        if (!Number.isFinite(maxDailyRub) || maxDailyRub < 0 || maxDailyRub > baseConfig.maxRuntimeDailyRub) {
+            json(res, 400, { ok: false, error: `maxDailyRub must be 0..${baseConfig.maxRuntimeDailyRub}` });
             return;
         }
 
@@ -444,6 +467,9 @@ const safeConfig = (config: RobotConfig) => ({
     maxOrderRub: config.maxOrderRub,
     maxDailyOrders: config.maxDailyOrders,
     maxDailyRub: config.maxDailyRub,
+    maxRuntimeOrderRub: config.maxRuntimeOrderRub,
+    maxRuntimeDailyOrders: config.maxRuntimeDailyOrders,
+    maxRuntimeDailyRub: config.maxRuntimeDailyRub,
     signalCooldownMs: config.signalCooldownMs,
     signalPriceChangePercent: config.signalPriceChangePercent,
     buySignalJournalIntervalMs: config.buySignalJournalIntervalMs,
@@ -561,6 +587,32 @@ const getTradesPayload = async (url: URL) => {
     };
 };
 
+const getOrderSafetyPayload = async (url: URL) => {
+    const requestedLimit = Number(url.searchParams.get('limit') ?? 80);
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 80, 1), 300);
+    const trades = await TradesModel.findAll({
+        order: [['createdAt', 'DESC']],
+        limit
+    });
+    const rows = trades.map(trade => trade.toJSON() as Record<string, unknown>);
+    const openStatuses = new Set(['LOCAL_PENDING_SUBMIT', 'LOCAL_SUBMIT_UNKNOWN', 'EXECUTION_REPORT_STATUS_NEW', 'EXECUTION_REPORT_STATUS_PARTIALLYFILL']);
+    const unknown = rows.filter(row => row.status === 'LOCAL_SUBMIT_UNKNOWN').length;
+    const pending = rows.filter(row => row.status === 'LOCAL_PENDING_SUBMIT' || row.status === 'EXECUTION_REPORT_STATUS_NEW').length;
+    const partial = rows.filter(row => row.status === 'EXECUTION_REPORT_STATUS_PARTIALLYFILL').length;
+    const open = rows.filter(row => openStatuses.has(String(row.status ?? ''))).length;
+
+    return {
+        summary: {
+            open,
+            pending,
+            unknown,
+            partial,
+            checked: rows.length
+        },
+        orders: rows
+    };
+};
+
 const getSnapshotsPayload = async (url: URL) => {
     const requestedLimit = Number(url.searchParams.get('limit') ?? 50);
     const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 50, 1), 500);
@@ -615,7 +667,7 @@ const getPreviewPayload = async (config: RobotConfig) => {
                 const price = numberToQuotation(preview.currentPrice);
                 const [maxLots, orderPrice] = await Promise.all([
                     OrdersService.getMaxLots(accountId, preview.instrumentUid, price),
-                    OrdersService.getOrderPrice(accountId, 1, quantity, price, preview.instrumentUid)
+                    OrdersService.getOrderPrice(accountId, ORDER_SIDE.BUY, quantity, price, preview.instrumentUid)
                 ]);
 
                 previews.push({
@@ -649,17 +701,17 @@ const getPreviewPayload = async (config: RobotConfig) => {
 const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedAt: string) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
 
-    if (req.method === 'POST' && url.pathname === '/api/social-cookies') {
-        await handleSocialCookieUpdate(req, res);
-        return;
-    }
-
     if (url.pathname === '/api/health') {
         json(res, 200, { ok: true, startedAt, uptimeSeconds: Math.round(process.uptime()) });
         return;
     }
 
     if (!requireAuth(req, res)) return;
+
+    if (req.method === 'POST' && url.pathname === '/api/social-cookies') {
+        await handleSocialCookieUpdate(req, res);
+        return;
+    }
 
     if (req.method === 'POST' && url.pathname === '/api/admin/account-mode') {
         await handleAccountModeUpdate(req, res);
@@ -718,6 +770,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/trades') {
         json(res, 200, await getTradesPayload(url));
+        return;
+    }
+
+    if (url.pathname === '/api/order-safety') {
+        json(res, 200, await getOrderSafetyPayload(url));
         return;
     }
 
@@ -937,6 +994,12 @@ export const startReadOnlyHttpServer = () => {
         return undefined;
     }
 
+    const authConfigError = getHttpAuthConfigError();
+    if (authConfigError) {
+        console.error(`Read-only HTTP server disabled: ${authConfigError}`);
+        return undefined;
+    }
+
     const port = parsePort(env.ROBOT_HTTP_PORT);
     const startedAt = new Date().toISOString();
     const server = http.createServer((req, res) => {
@@ -947,7 +1010,7 @@ export const startReadOnlyHttpServer = () => {
     });
 
     server.listen(port, '0.0.0.0', () => {
-        const authStatus = env.ROBOT_WEB_PASSWORD ? 'enabled' : 'disabled';
+        const authStatus = env.ROBOT_WEB_PASSWORD ? 'enabled' : 'disabled-local-dev';
         console.log(`Read-only HTTP server listening on ${port}. Auth: ${authStatus}.`);
     });
 

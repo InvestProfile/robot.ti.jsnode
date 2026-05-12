@@ -4,6 +4,7 @@ import BuySignalEvaluatorService from '../services/buy-signal-evaluator.service'
 import marketData from '../services/marketData.service';
 import operationService from '../services/operations.service';
 import orderService from '../services/orders.service';
+import { ORDER_SIDE, OrderSide } from '../services/orders.service';
 import RiskManagerService from '../services/risk-manager.service';
 import TradeJournalService from '../services/trade-journal.service';
 import TradesService from '../services/trades.service';
@@ -16,6 +17,7 @@ import SellPolicyService from '../services/sell-policy.service';
 import StrategyEngine from '../strategies/strategy-engine';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
 import { normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
+import { isRejectedOrderStatus } from '../utils/order-status';
 
 const delay = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
 
@@ -89,9 +91,24 @@ const getOrderMetadata = (orderResult: unknown) => {
 
 const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
+const validateLiveOrderAllowed = (config: RobotConfig, side: OrderSide) => {
+    const pauseReason = getLiveTradingPauseReason(config);
+    if (config.dryRun) throw new Error('live order blocked: dry-run mode is enabled');
+    if (pauseReason) throw new Error(`live order blocked: ${pauseReason}`);
+    if (!config.liveAllowedActions.includes(side)) {
+        throw new Error(`live order blocked: ${side} is disabled by ROBOT_LIVE_ALLOWED_ACTIONS`);
+    }
+};
+
+const getSubmittedDecisionStatus = (orderSubmission: { pendingTrade?: { getDataValue?: (key: string) => unknown } }) => {
+    const brokerStatus = orderSubmission.pendingTrade?.getDataValue?.('status');
+    return isRejectedOrderStatus(brokerStatus ? String(brokerStatus) : undefined) ? 'order-rejected' : 'order-posted';
+};
+
 const submitTrackedOrder = async (input: {
+    config: RobotConfig;
     accountId: string;
-    direction: '1' | '2';
+    side: OrderSide;
     quantityLots: number;
     price: { units: number; nano: number; currency?: string };
     figi: string;
@@ -100,10 +117,24 @@ const submitTrackedOrder = async (input: {
     name?: string;
 }) => {
     const clientOrderId = orderService.createClientOrderId();
+    try {
+        validateLiveOrderAllowed(input.config, input.side);
+    } catch (error) {
+        return {
+            orderResult: undefined,
+            pendingTrade: undefined,
+            clientOrderId,
+            unknown: false,
+            failedBeforeSubmit: true,
+            error
+        };
+    }
+
+    const direction = input.side === ORDER_SIDE.SELL ? '2' : '1';
     const pendingTrade = await TradesService.createPendingOrder({
         figi: input.figi,
         quantity: '1',
-        direction: input.direction,
+        direction,
         priceUnits: input.price.units,
         priceNano: input.price.nano,
         uid: input.instrumentUid,
@@ -119,7 +150,7 @@ const submitTrackedOrder = async (input: {
     try {
         const orderResult = await orderService.postOrder(
             input.accountId,
-            input.direction === '2' ? 2 : 1,
+            input.side,
             input.quantityLots,
             {
                 currency: input.price.currency ?? 'rub',
@@ -285,7 +316,8 @@ const executeBuySignals = async (
 
         const orderSubmission = await submitTrackedOrder({
             accountId,
-            direction: '1',
+            config,
+            side: ORDER_SIDE.BUY,
             quantityLots: preview.quantityLots,
             price: numberToQuotation(preview.currentPrice ?? 0),
             figi: preview.figi,
@@ -293,6 +325,25 @@ const executeBuySignals = async (
             ticker: preview.ticker,
             name: preview.name
         });
+
+        if (orderSubmission.failedBeforeSubmit) {
+            await TradeJournalService.logDecision({
+                accountId,
+                accountAlias: preview.accountAlias,
+                accountMode: 'trade',
+                figi: preview.figi,
+                instrumentUid: preview.instrumentUid,
+                ticker: preview.ticker,
+                name: preview.name,
+                status: 'order-failed-before-submit',
+                signalSource: preview.signal?.source,
+                reason: getErrorMessage(orderSubmission.error),
+                currentPrice: preview.currentPrice,
+                quantityLots: preview.quantityLots,
+                estimatedOrderRub: preview.estimatedOrderRub
+            });
+            continue;
+        }
 
         if (orderSubmission.unknown) {
             await TradeJournalService.logDecision({
@@ -303,7 +354,7 @@ const executeBuySignals = async (
                 instrumentUid: preview.instrumentUid,
                 ticker: preview.ticker,
                 name: preview.name,
-                status: 'order-failed',
+                status: 'order-unknown',
                 signalSource: preview.signal?.source,
                 reason: `postOrder state is unknown; duplicate orders blocked by clientOrderId ${orderSubmission.clientOrderId}: ${getErrorMessage(orderSubmission.error)}`,
                 currentPrice: preview.currentPrice,
@@ -321,7 +372,7 @@ const executeBuySignals = async (
             instrumentUid: preview.instrumentUid,
             ticker: preview.ticker,
             name: preview.name,
-            status: 'order-posted',
+            status: getSubmittedDecisionStatus(orderSubmission),
             signalSource: preview.signal?.source,
             reason: orderSubmission.reconciled
                 ? `${preview.reason}; order reconciled after postOrder error`
@@ -546,7 +597,8 @@ export const executeTrades = async (
 
         const orderSubmission = await submitTrackedOrder({
             accountId,
-            direction: '2',
+            config,
+            side: ORDER_SIDE.SELL,
             quantityLots: sellPolicy.allowedLots,
             price: orderPrice,
             figi: position.figi,
@@ -554,6 +606,26 @@ export const executeTrades = async (
             ticker: instrument?.ticker,
             name: instrument?.name
         });
+
+        if (orderSubmission.failedBeforeSubmit) {
+            await TradeJournalService.logDecision({
+                accountId,
+                accountAlias,
+                accountMode,
+                figi: position?.figi,
+                instrumentUid: position?.instrumentUid,
+                ticker: instrument?.ticker,
+                name: instrument?.name,
+                status: 'order-failed-before-submit',
+                signalSource: signal?.source,
+                reason: getErrorMessage(orderSubmission.error),
+                averagePrice,
+                currentPrice,
+                profitPercent: risk.profitPercent,
+                quantityLots: sellPolicy.allowedLots
+            });
+            continue;
+        }
 
         if (orderSubmission.unknown) {
             await TradeJournalService.logDecision({
@@ -564,7 +636,7 @@ export const executeTrades = async (
                 instrumentUid: position?.instrumentUid,
                 ticker: instrument?.ticker,
                 name: instrument?.name,
-                status: 'order-failed',
+                status: 'order-unknown',
                 signalSource: signal?.source,
                 reason: `postOrder state is unknown; duplicate orders blocked by clientOrderId ${orderSubmission.clientOrderId}: ${getErrorMessage(orderSubmission.error)}`,
                 averagePrice,
@@ -583,7 +655,7 @@ export const executeTrades = async (
             instrumentUid: position?.instrumentUid,
             ticker: instrument?.ticker,
             name: instrument?.name,
-            status: 'order-posted',
+            status: getSubmittedDecisionStatus(orderSubmission),
             signalSource: signal?.source,
             reason: orderSubmission.reconciled
                 ? `${risk.reason}; ${sellPolicy.reason}; order reconciled after postOrder error`

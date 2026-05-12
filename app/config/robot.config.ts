@@ -180,6 +180,9 @@ export interface RobotConfig {
     maxOrderRub: number;
     maxDailyOrders: number;
     maxDailyRub: number;
+    maxRuntimeOrderRub: number;
+    maxRuntimeDailyOrders: number;
+    maxRuntimeDailyRub: number;
     signalCooldownMs: number;
     signalPriceChangePercent: number;
     buySignalJournalIntervalMs: number;
@@ -225,6 +228,9 @@ export const getRobotConfig = (): RobotConfig => {
 
     const buyTickers = parseOptionalAccountIds(env.ROBOT_BUY_TICKERS).map(ticker => ticker.toUpperCase());
     const scanTickers = parseOptionalAccountIds(env.ROBOT_SCAN_TICKERS).map(ticker => ticker.toUpperCase());
+    const maxOrderRub = Math.max(0, parseNumber(env.ROBOT_MAX_ORDER_RUB, 1_000));
+    const maxDailyOrders = Math.max(0, Math.trunc(parseNumber(env.ROBOT_MAX_DAILY_ORDERS, 3)));
+    const maxDailyRub = Math.max(0, parseNumber(env.ROBOT_MAX_DAILY_RUB, 2_000));
 
     return {
         accountIds,
@@ -261,9 +267,12 @@ export const getRobotConfig = (): RobotConfig => {
         buyMinMomentumPercent: parseNumber(env.ROBOT_BUY_MIN_MOMENTUM_PERCENT, 0),
         buyMinScore: Math.max(1, Math.min(100, parseNumber(env.ROBOT_BUY_MIN_SCORE, 70))),
         buyScoreProfiles: parseBuyScoreProfiles(env.ROBOT_BUY_SCORE_PROFILES),
-        maxOrderRub: parseNumber(env.ROBOT_MAX_ORDER_RUB, 1_000),
-        maxDailyOrders: Math.max(0, Math.trunc(parseNumber(env.ROBOT_MAX_DAILY_ORDERS, 3))),
-        maxDailyRub: Math.max(0, parseNumber(env.ROBOT_MAX_DAILY_RUB, 2_000)),
+        maxOrderRub,
+        maxDailyOrders,
+        maxDailyRub,
+        maxRuntimeOrderRub: Math.max(0, parseNumber(env.ROBOT_MAX_RUNTIME_ORDER_RUB, maxOrderRub)),
+        maxRuntimeDailyOrders: Math.max(0, Math.trunc(parseNumber(env.ROBOT_MAX_RUNTIME_DAILY_ORDERS, maxDailyOrders))),
+        maxRuntimeDailyRub: Math.max(0, parseNumber(env.ROBOT_MAX_RUNTIME_DAILY_RUB, maxDailyRub)),
         signalCooldownMs: Math.max(0, parseNumber(env.ROBOT_SIGNAL_COOLDOWN_MS, 30 * 60 * 1000)),
         signalPriceChangePercent: Math.max(0, parseNumber(env.ROBOT_SIGNAL_PRICE_CHANGE_PERCENT, 1)),
         buySignalJournalIntervalMs: Math.max(0, parseNumber(env.ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS, 15 * 60 * 1000)),

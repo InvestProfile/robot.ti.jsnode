@@ -52,12 +52,11 @@ const normalizeLiveActions = (actions: string[] | undefined, fallback: LiveActio
     return normalized.length > 0 ? [...new Set(normalized)] : fallback;
 };
 
-const capRuntimeNumber = (value: unknown, fallback: number, options: { integer?: boolean } = {}) => {
+const capRuntimeNumber = (value: unknown, fallback: number, absoluteMax: number, options: { integer?: boolean } = {}) => {
     const parsed = Number(value);
     const normalized = Number.isFinite(parsed) ? Math.max(0, parsed) : fallback;
-    const capped = fallback <= 0
-        ? fallback
-        : Math.min(normalized, fallback);
+    const ceiling = Math.max(0, absoluteMax);
+    const capped = ceiling <= 0 ? 0 : Math.min(normalized, ceiling);
 
     return options.integer ? Math.trunc(capped) : capped;
 };
@@ -204,9 +203,9 @@ export default class RuntimeConfigService {
         const maxDailyRub = byKey.get(MAX_DAILY_RUB_KEY);
 
         return {
-            maxOrderRub: capRuntimeNumber(maxOrderRub, baseConfig.maxOrderRub),
-            maxDailyOrders: capRuntimeNumber(maxDailyOrders, baseConfig.maxDailyOrders, { integer: true }),
-            maxDailyRub: capRuntimeNumber(maxDailyRub, baseConfig.maxDailyRub)
+            maxOrderRub: capRuntimeNumber(maxOrderRub, baseConfig.maxOrderRub, baseConfig.maxRuntimeOrderRub),
+            maxDailyOrders: capRuntimeNumber(maxDailyOrders, baseConfig.maxDailyOrders, baseConfig.maxRuntimeDailyOrders, { integer: true }),
+            maxDailyRub: capRuntimeNumber(maxDailyRub, baseConfig.maxDailyRub, baseConfig.maxRuntimeDailyRub)
         };
     }
 
@@ -216,9 +215,9 @@ export default class RuntimeConfigService {
         maxDailyRub?: number;
     }, updatedBy = 'web') {
         const baseConfig = getRobotConfig();
-        const maxOrderRub = capRuntimeNumber(input.maxOrderRub, baseConfig.maxOrderRub);
-        const maxDailyOrders = capRuntimeNumber(input.maxDailyOrders, baseConfig.maxDailyOrders, { integer: true });
-        const maxDailyRub = capRuntimeNumber(input.maxDailyRub, baseConfig.maxDailyRub);
+        const maxOrderRub = capRuntimeNumber(input.maxOrderRub, baseConfig.maxOrderRub, baseConfig.maxRuntimeOrderRub);
+        const maxDailyOrders = capRuntimeNumber(input.maxDailyOrders, baseConfig.maxDailyOrders, baseConfig.maxRuntimeDailyOrders, { integer: true });
+        const maxDailyRub = capRuntimeNumber(input.maxDailyRub, baseConfig.maxDailyRub, baseConfig.maxRuntimeDailyRub);
 
         await RuntimeSettingModel.upsert({
             key: MAX_ORDER_RUB_KEY,

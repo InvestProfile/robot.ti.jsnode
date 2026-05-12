@@ -462,15 +462,22 @@ td {
   min-width: 930px;
 }
 
+.order-safety-table {
+  min-width: 1060px;
+}
+
 .decision-table td,
 .decision-table th,
 .trade-review-table td,
-.trade-review-table th {
+.trade-review-table th,
+.order-safety-table td,
+.order-safety-table th {
   vertical-align: top;
 }
 
 .decision-table .pill,
-.trade-review-table .pill {
+.trade-review-table .pill,
+.order-safety-table .pill {
   min-height: 22px;
 }
 

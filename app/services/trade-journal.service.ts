@@ -3,7 +3,14 @@ import { SignalStateModel } from '../models/signal-state.model';
 import { TradeDecisionModel } from '../models/trade-decision.model';
 import InstrumentsService from './instruments.service';
 
-export type TradeDecisionStatus = 'skip' | 'dry-run' | 'order-posted' | 'order-failed';
+export type TradeDecisionStatus =
+    | 'skip'
+    | 'dry-run'
+    | 'order-posted'
+    | 'order-rejected'
+    | 'order-failed-before-submit'
+    | 'order-unknown'
+    | 'order-failed';
 
 interface TradeDecisionLog {
     accountId: string;
@@ -36,7 +43,7 @@ export default class TradeJournalService {
         if (reason.includes('sell policy')) return 'sell-policy';
         if (reason.includes('postorder') || reason.includes('open buy order')) return 'orders';
         if (reason.includes('score-buy') || decision.estimatedOrderRub !== undefined) return 'score-buy';
-        if (decision.status === 'order-posted' || decision.status === 'order-failed') return 'orders';
+        if (decision.status.startsWith('order-')) return 'orders';
         return 'risk-check';
     }
 
@@ -116,7 +123,7 @@ export default class TradeJournalService {
     }
 
     private static async shouldWriteDecision(decision: TradeDecisionLog) {
-        if (decision.status === 'order-posted' || decision.status === 'order-failed') {
+        if (decision.status.startsWith('order-')) {
             return true;
         }
 

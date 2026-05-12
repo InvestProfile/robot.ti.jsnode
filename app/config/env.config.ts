@@ -43,6 +43,9 @@ interface EnvConfig {
     ROBOT_MAX_ORDER_RUB: string | undefined;
     ROBOT_MAX_DAILY_ORDERS: string | undefined;
     ROBOT_MAX_DAILY_RUB: string | undefined;
+    ROBOT_MAX_RUNTIME_ORDER_RUB: string | undefined;
+    ROBOT_MAX_RUNTIME_DAILY_RUB: string | undefined;
+    ROBOT_MAX_RUNTIME_DAILY_ORDERS: string | undefined;
     ROBOT_SIGNAL_COOLDOWN_MS: string | undefined;
     ROBOT_SIGNAL_PRICE_CHANGE_PERCENT: string | undefined;
     ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS: string | undefined;
@@ -77,6 +80,7 @@ interface EnvConfig {
     ROBOT_SOCIAL_COOKIE_UPDATE_SECRET: string | undefined;
     ROBOT_HTTP_ENABLED: string | undefined;
     ROBOT_HTTP_PORT: string | undefined;
+    ROBOT_HTTP_LOCAL_DEV: string | undefined;
     ROBOT_WEB_USERNAME: string | undefined;
     ROBOT_WEB_PASSWORD: string | undefined;
 }
@@ -124,6 +128,9 @@ export const getEnv = () => {
         ROBOT_MAX_ORDER_RUB: process.env.ROBOT_MAX_ORDER_RUB,
         ROBOT_MAX_DAILY_ORDERS: process.env.ROBOT_MAX_DAILY_ORDERS,
         ROBOT_MAX_DAILY_RUB: process.env.ROBOT_MAX_DAILY_RUB,
+        ROBOT_MAX_RUNTIME_ORDER_RUB: process.env.ROBOT_MAX_RUNTIME_ORDER_RUB,
+        ROBOT_MAX_RUNTIME_DAILY_RUB: process.env.ROBOT_MAX_RUNTIME_DAILY_RUB,
+        ROBOT_MAX_RUNTIME_DAILY_ORDERS: process.env.ROBOT_MAX_RUNTIME_DAILY_ORDERS,
         ROBOT_SIGNAL_COOLDOWN_MS: process.env.ROBOT_SIGNAL_COOLDOWN_MS,
         ROBOT_SIGNAL_PRICE_CHANGE_PERCENT: process.env.ROBOT_SIGNAL_PRICE_CHANGE_PERCENT,
         ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS: process.env.ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS,
@@ -158,6 +165,7 @@ export const getEnv = () => {
         ROBOT_SOCIAL_COOKIE_UPDATE_SECRET: process.env.ROBOT_SOCIAL_COOKIE_UPDATE_SECRET,
         ROBOT_HTTP_ENABLED: process.env.ROBOT_HTTP_ENABLED,
         ROBOT_HTTP_PORT: process.env.ROBOT_HTTP_PORT,
+        ROBOT_HTTP_LOCAL_DEV: process.env.ROBOT_HTTP_LOCAL_DEV,
         ROBOT_WEB_USERNAME: process.env.ROBOT_WEB_USERNAME,
         ROBOT_WEB_PASSWORD: process.env.ROBOT_WEB_PASSWORD
     };
