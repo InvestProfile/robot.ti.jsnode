@@ -360,6 +360,47 @@ main {
   line-height: 1.35;
 }
 
+.stage-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px 14px 14px;
+}
+
+.stage-tile {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #283746;
+  border-radius: 7px;
+  background: #111820;
+}
+
+.stage-tile span,
+.stage-tile strong,
+.stage-tile small {
+  display: block;
+}
+
+.stage-tile span {
+  margin-bottom: 8px;
+  color: #93a1b2;
+  font-size: 12px;
+}
+
+.stage-tile strong {
+  overflow-wrap: anywhere;
+  color: #edf2f7;
+  font-size: 20px;
+}
+
+.stage-tile small {
+  margin-top: 6px;
+  color: #a8b4c2;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -773,6 +814,10 @@ td {
     grid-template-columns: 1fr;
   }
 
+  .stage-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .pipeline-step {
     grid-template-columns: 78px minmax(0, 1fr);
   }
@@ -802,6 +847,10 @@ td {
   }
 
   .settings-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .stage-strip {
     grid-template-columns: 1fr;
   }
 

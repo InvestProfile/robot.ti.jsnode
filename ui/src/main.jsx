@@ -353,6 +353,18 @@ const Checklist = ({ items }) => (
   </div>
 );
 
+const StageStrip = ({ items }) => (
+  <div className="stage-strip">
+    {items.map((item) => (
+      <div className="stage-tile" key={item.label}>
+        <span>{item.label}</span>
+        <strong className={item.tone || ''}>{item.value}</strong>
+        <small>{item.detail}</small>
+      </div>
+    ))}
+  </div>
+);
+
 function MarketControls({ data, onMarketRegimeChange }) {
   const config = data.status?.config || {};
   const health = config.marketRegimeMinHealthPercent ?? 40;
@@ -432,7 +444,7 @@ function MarketLab({ data, loading }) {
   );
 }
 
-function Overview({ data, loadingKeys, onMarketRegimeChange }) {
+function Overview({ data, onMarketRegimeChange }) {
   const blockers = getReadiness(data);
   const status = data.status;
   const social = data.socialCollector;
@@ -577,9 +589,43 @@ function Buy({ data, loadingKeys }) {
   const dailyBuyList = data.dailyBuyList || {};
   const dailyItems = dailyBuyList.items || [];
   const dailyExcluded = dailyBuyList.excluded || [];
+  const previews = data.preview?.previews || [];
+  const allowedPreviews = previews.filter((row) => row.status === 'allowed');
+  const blockedPreviews = previews.filter((row) => row.status !== 'allowed');
+  const buyRecommendations = data.buyRecommendations?.items || [];
+  const buyScan = data.buyScan?.items || [];
+  const tradeLimit = getTradeLimit(data);
+  const topBlocker = blockedPreviews[0]?.reason || buyRecommendations[0]?.reason || EMPTY;
 
   return (
     <div className="grid">
+      <Card title="Покупочный pipeline" icon={Signal} className="wide" help="Слева направо: широкий рынок попадает в дневной список, затем score и внешние сигналы выбирают кандидатов, после этого market/risk gate решает, можно ли реально отправлять заявку.">
+        <StageStrip
+          items={[
+            { label: 'Сканер рынка', value: dailyBuyList.universe?.scanned ?? EMPTY, detail: 'бумаг просмотрено' },
+            { label: 'Кандидаты дня', value: dailyItems.length, detail: dailyItems.map((item) => item.ticker).join(', ') || 'список пуст' },
+            { label: 'Прошли preview', value: allowedPreviews.length, tone: allowedPreviews.length ? 'good' : 'warn', detail: `${blockedPreviews.length} заблокировано` },
+            { label: 'Лимиты', value: tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : EMPTY, tone: tradeLimit && Number(tradeLimit.ordersLeft) <= 0 ? 'bad' : 'good', detail: 'заявки / бюджет сегодня' },
+            { label: 'Главный стопор', value: blockedPreviews.length ? 'BLOCK' : allowedPreviews.length ? 'READY' : 'WAIT', tone: blockedPreviews.length ? 'bad' : allowedPreviews.length ? 'good' : 'warn', detail: topBlocker }
+          ]}
+        />
+      </Card>
+
+      <Card title="Боевой предпросмотр" icon={ShieldCheck} help="Самый практический блок покупок: что робот хотел бы купить прямо сейчас, какой score у бумаги, сколько стоит лот и почему заявка разрешена или заблокирована.">
+        <Table
+          columns={[
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
+            { key: 'status', label: 'Gate', render: (row) => <Pill tone={row.status === 'allowed' ? 'good' : 'warn'}>{row.status}</Pill> },
+            { key: 'score', label: 'Score', render: (row) => <ScoreBreakdown analysis={row.scoreAnalysis} /> },
+            { key: 'estimatedOrderRub', label: 'Amount', className: 'right', render: (row) => money(row.estimatedOrderRub) },
+            { key: 'brokerQuote', label: 'Broker', className: 'right', render: (row) => row.brokerQuote ? money(row.brokerQuote.totalOrderAmount) : '-' },
+            { key: 'reason', label: 'Decision reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+          ]}
+          rows={previews}
+          loading={loadingKeys.preview}
+        />
+      </Card>
+
       <Card title="Кандидаты дня" icon={Bot} help="Автоматический buy-list из широкого рынка. Робот выбирает до 5 бумаг с лучшим score среди доступных рублевых акций, вместо старого ручного списка из случайных позиций.">
         <div className="stats compact">
           <Stat label="Source" value={dailyBuyList.source || '-'} />
@@ -612,7 +658,7 @@ function Buy({ data, loadingKeys }) {
         />
       </Card>
 
-      <Card title="Не вошли в день" icon={Eye} help="Бумаги из широкого сканера, которые были близко к проходному score, но не попали в дневной buy-list. Чаще всего причина простая: один лот дороже текущего лимита заявки.">
+      <Card title="Рядом с проходом" icon={Eye} help="Бумаги из широкого сканера, которые были близко к проходному score, но не попали в дневной buy-list. Это очередь на наблюдение, а не заявка.">
         <Table
           columns={[
             { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
@@ -626,23 +672,7 @@ function Buy({ data, loadingKeys }) {
           loading={loadingKeys.dailyBuyList}
         />
       </Card>
-
-      <Card title="Можно / нельзя" icon={ShieldCheck} help="Боевой предпросмотр покупки по торговому счету. Это самый практический блок: что робот хотел бы купить, по какой цене и почему разрешено или заблокировано.">
-        <Table
-          columns={[
-            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
-            { key: 'status', label: 'Status', render: (row) => <Pill tone={row.status === 'allowed' ? 'good' : 'warn'}>{row.status}</Pill> },
-            { key: 'score', label: 'Score', render: (row) => <ScoreBreakdown analysis={row.scoreAnalysis} /> },
-            { key: 'currentPrice', label: 'Price', className: 'right', render: (row) => money(row.currentPrice) },
-            { key: 'estimatedOrderRub', label: 'Amount', className: 'right', render: (row) => money(row.estimatedOrderRub) },
-            { key: 'brokerQuote', label: 'Broker', className: 'right', render: (row) => row.brokerQuote ? money(row.brokerQuote.totalOrderAmount) : '-' },
-            { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
-          ]}
-          rows={data.preview?.previews || []}
-          loading={loadingKeys.preview}
-        />
-      </Card>
-      <Card title="Авторекомендации" icon={ShieldCheck} help="Сжатый список того, что робот предлагает делать с кандидатами: buy-candidate можно покупать при пройденных фильтрах, wait-market ждет рынок, watch близко к порогу, scan-only просто наблюдать.">
+      <Card title="Рекомендации робота" icon={ShieldCheck} help="Сжатый список действий по кандидатам: buy-candidate можно покупать при пройденных фильтрах, wait-market ждет рынок, watch близко к порогу, scan-only просто наблюдать.">
         <Table
           columns={[
             { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
@@ -652,11 +682,11 @@ function Buy({ data, loadingKeys }) {
             { key: 'lastPrice', label: 'Price', className: 'right', render: (row) => money(row.lastPrice) },
             { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
-          rows={data.buyRecommendations?.items || []}
+          rows={buyRecommendations}
           loading={loadingKeys.buyRecommendations}
         />
       </Card>
-      <Card title="Кандидаты на покупку" icon={Signal} help="Оценка бумаг из текущего списка наблюдения. Score 70/100 и выше обычно считается проходным. Base - сама цена/объем, pulse - Пульс, analyst - прогнозы, tech - индикаторы.">
+      <Card title="Score-разбор" icon={Signal} help="Оценка бумаг из текущего списка наблюдения. Score 70/100 и выше обычно считается проходным. Base - сама цена/объем, pulse - Пульс, analyst - прогнозы, tech - индикаторы.">
         <Table
           columns={[
             { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
@@ -665,7 +695,7 @@ function Buy({ data, loadingKeys }) {
             { key: 'passed', label: 'Result', render: (row) => <Pill tone={row.passed ? 'good' : 'warn'}>{row.passed ? 'PASS' : 'WAIT'}</Pill> },
             { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
-          rows={data.buyScan?.items || []}
+          rows={buyScan}
           loading={loadingKeys.buyScan}
         />
       </Card>
@@ -684,6 +714,8 @@ function Sell({ data, loadingKeys }) {
   const executable = liveCandidates.filter((row) => row.status === 'allowed' && Number(row.orderLots || 0) > 0);
   const policyBlocked = liveCandidates.filter((row) => row.status !== 'allowed');
   const observeSignals = items.filter((row) => row.accountMode === 'observe' && row.action === 'sell');
+  const sellEvents = robotEvents.filter((row) => row.direction === 'sell');
+  const lastSell = sellEvents[0];
 
   const sellColumns = [
     { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
@@ -698,7 +730,19 @@ function Sell({ data, loadingKeys }) {
 
   return (
     <div className="grid">
-      <Card title="Боевой sell-лист" icon={AlertTriangle} help="Это список позиций торгового счета, которые робот смог бы продать, если sell включен. Даже при включенном sell заявка пройдет только на robot-owned лоты.">
+      <Card title="Sell pipeline" icon={AlertTriangle} className="wide" help="Цепочка продажи: стратегия видит сигнал, sell-policy проверяет robot-owned лоты, live-action разрешает или блокирует продажу, затем ledger фиксирует исполнение.">
+        <StageStrip
+          items={[
+            { label: 'Сигналы', value: liveCandidates.length, detail: `${observeSignals.length} observe-сигналов отдельно` },
+            { label: 'Robot-owned', value: robotLedger.summary?.positions ?? 0, tone: Number(robotLedger.summary?.positions || 0) ? 'good' : 'warn', detail: 'позиций в ledger робота' },
+            { label: 'Можно продать', value: executable.length, tone: executable.length ? 'bad' : 'good', detail: `${policyBlocked.length} заблокировано политикой` },
+            { label: 'Live sell', value: sellArmed ? 'ON' : 'OFF', tone: sellArmed ? 'bad' : 'good', detail: liveActions.join(', ') || EMPTY },
+            { label: 'Последняя продажа', value: lastSell?.ticker || EMPTY, tone: lastSell ? 'warn' : 'neutral', detail: lastSell ? `${time(lastSell.at)} · ${money(lastSell.price)} RUB` : 'продаж в ledger пока нет' }
+          ]}
+        />
+      </Card>
+
+      <Card title="Боевой sell-лист" icon={AlertTriangle} help="Позиции торгового счета, которые стратегия хочет продать сейчас. Даже при включенном sell заявка пройдет только на robot-owned лоты.">
         <div className="readiness">
           <Pill tone={sellArmed ? 'bad' : 'good'}>{sellArmed ? 'SELL ARMED' : 'SELL OFF'}</Pill>
           <span>{sellArmed ? 'Реальные продажи разрешены политикой действий.' : 'Реальные продажи выключены. Список ниже только показывает готовность.'}</span>
@@ -786,8 +830,29 @@ function Sell({ data, loadingKeys }) {
 }
 
 function Social({ data, loadingKeys }) {
+  const collector = data.socialCollector || {};
+  const profiles = collector.profiles || [];
+  const consensus = data.socialConsensus?.items || [];
+  const signals = data.socialSignals?.signals || [];
+  const readyProfiles = profiles.filter((row) => row.status === 'ready').length;
+  const topConsensus = consensus[0];
+  const bearishCount = consensus.filter((row) => row.mood === 'bearish').length;
+  const bullishCount = consensus.filter((row) => row.mood === 'bullish').length;
+
   return (
     <div className="grid">
+      <Card title="Pulse pipeline" icon={Users} className="wide" help="Социальный контур работает отдельно от торгового цикла: расширение обновляет cookie, collector собирает авторов, затем сигналы агрегируются в поправку к score.">
+        <StageStrip
+          items={[
+            { label: 'Cookie / auth', value: socialCollectorText(collector), tone: collector.health?.pendingAuth > 0 ? 'bad' : collector.health?.staleProfiles > 0 ? 'warn' : 'good', detail: `${collector.health?.pendingAuth || 0} профилей ждут auth` },
+            { label: 'Авторы', value: `${readyProfiles} / ${collector.config?.configuredProfiles ?? profiles.length}`, tone: readyProfiles ? 'good' : 'warn', detail: 'готово / настроено' },
+            { label: 'Сигналы', value: signals.length, detail: 'последние найденные действия' },
+            { label: 'Консенсус', value: consensus.length, detail: `${bullishCount} bullish, ${bearishCount} bearish` },
+            { label: 'Топ мнение', value: topConsensus?.ticker || EMPTY, tone: topConsensus?.mood === 'bullish' ? 'good' : topConsensus?.mood === 'bearish' ? 'bad' : 'neutral', detail: topConsensus?.reason || 'пока нет агрегированного сигнала' }
+          ]}
+        />
+      </Card>
+
       <Card title="Консенсус Пульса" icon={Users} help="Сводное мнение выбранных успешных авторов по тикеру. Чем больше вес и свежесть сигнала, тем сильнее поправка к buy-score.">
         <Table
           columns={[
@@ -838,8 +903,24 @@ function Social({ data, loadingKeys }) {
 
 function Evidence({ data, loadingKeys }) {
   const socialSummary = data.socialEvidence?.summary || {};
+  const scenarios = data.marketLab?.scenarios || [];
+  const strategyRows = data.strategy?.strategies || [];
+  const enoughStrategies = strategyRows.filter((row) => row.status === 'enough-data').length;
+
   return (
     <div className="grid">
+      <Card title="Лабораторный pipeline" icon={BarChart3} className="wide" help="Эта вкладка не торгует. Она показывает доказательства: сценарии рынка, 24ч кандидатов, внешние источники и статистику стратегий.">
+        <StageStrip
+          items={[
+            { label: 'Market scenarios', value: scenarios.length, detail: 'вариантов порогов проверено' },
+            { label: '24ч покупки', value: data.buyLab?.items?.length || 0, detail: 'бумаг рядом с проходом' },
+            { label: 'Аналитики', value: data.analystForecasts?.items?.length || 0, detail: 'консенсус-прогнозы API' },
+            { label: 'Теханализ', value: data.techAnalysis?.items?.length || 0, detail: 'RSI/MACD/MA записи' },
+            { label: 'Evidence', value: `${enoughStrategies} / ${strategyRows.length}`, tone: enoughStrategies ? 'good' : 'warn', detail: 'стратегий с достаточными данными' }
+          ]}
+        />
+      </Card>
+
       <MarketLab data={data} loading={loadingKeys.marketLab} />
 
       <Card title="Режим рынка" icon={Activity} help="Подробности рыночного фильтра: какие базовые бумаги считаются здоровыми и почему общий фильтр пропускает или блокирует покупки.">
@@ -1011,9 +1092,26 @@ function RiskControls({ data, onRiskSettingsChange }) {
 function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle, onRiskSettingsChange }) {
   const liveActions = data.status?.config?.liveAllowedActions || [];
   const sellArmed = liveActions.includes('sell');
+  const accounts = data.accounts?.accounts || [];
+  const tradeAccounts = accounts.filter((row) => row.mode === 'trade');
+  const observeAccounts = accounts.filter((row) => row.mode !== 'trade');
+  const protectedAccounts = accounts.filter((row) => row.protected);
+  const positions = data.positions?.positions || [];
 
   return (
     <div className="grid">
+      <Card title="Контур счетов" icon={Database} className="wide" help="Управление счетами отделено от стратегии. Счет в trade может получать реальные заявки, observe только наблюдается. Protected требует явного подтверждения номером счета.">
+        <StageStrip
+          items={[
+            { label: 'Trade accounts', value: tradeAccounts.length, tone: tradeAccounts.length ? 'bad' : 'warn', detail: tradeAccounts.map((row) => row.alias || row.accountId).join(', ') || 'нет боевых счетов' },
+            { label: 'Observe accounts', value: observeAccounts.length, detail: observeAccounts.map((row) => row.alias || row.accountId).join(', ') || 'нет наблюдаемых' },
+            { label: 'Protected', value: protectedAccounts.length, tone: protectedAccounts.length ? 'warn' : 'good', detail: 'требуют подтверждения перед trade' },
+            { label: 'Live actions', value: liveActions.join(', ') || EMPTY, tone: sellArmed ? 'bad' : 'good', detail: sellArmed ? 'sell включен только для robot-owned лотов' : 'sell выключен' },
+            { label: 'Positions', value: positions.length, detail: 'позиций во всех счетах' }
+          ]}
+        />
+      </Card>
+
       <Card title="Live действия" icon={ShieldCheck} help="Боевые действия робота. Buy уже включен. Sell можно включить отдельно, но он все равно продаст только robot-owned лоты, которые сам ранее купил и записал в журнал.">
         <div className="readiness">
           <Pill tone={sellArmed ? 'bad' : 'good'}>{sellArmed ? 'SELL ARMED' : 'SELL OFF'}</Pill>
@@ -1250,6 +1348,11 @@ function OrderSafety({ data, loading }) {
 function Logs({ data, loadingKeys }) {
   const [filters, setFilters] = useState({ status: 'all', signal: 'all', ticker: '', pnl: 'all', sort: 'newest' });
   const decisions = (data.decisions?.decisions || []).map(toDecisionView);
+  const trades = data.trades?.trades || [];
+  const safetySummary = data.orderSafety?.summary || {};
+  const postedDecisions = decisions.filter((row) => row.status === 'order-posted').length;
+  const skippedDecisions = decisions.filter((row) => row.status === 'skip').length;
+  const criticalDecisions = decisions.filter(isCriticalDecision).length;
   const filteredDecisions = sortDecisions(decisions.filter((row) => {
     const pnl = Number(row.profitPercent);
     if (filters.status !== 'all' && row.status !== filters.status) return false;
@@ -1263,6 +1366,18 @@ function Logs({ data, loadingKeys }) {
 
   return (
     <div className="grid">
+      <Card title="Аудит исполнения" icon={Eye} className="wide" help="Журнал отвечает на вопрос: что решил робот, что реально ушло брокеру, и нет ли заявок в неизвестном состоянии.">
+        <StageStrip
+          items={[
+            { label: 'Решения', value: decisions.length, detail: `${postedDecisions} order-posted, ${skippedDecisions} skip` },
+            { label: 'Critical skips', value: criticalDecisions, tone: criticalDecisions ? 'warn' : 'good', detail: 'stop/profit/trailing сигналы без исполнения' },
+            { label: 'Сделки брокера', value: trades.length, detail: 'последние реальные trade records' },
+            { label: 'Open orders', value: safetySummary.open ?? 0, tone: safetySummary.open ? 'warn' : 'good', detail: `${safetySummary.pending || 0} pending` },
+            { label: 'Unknown orders', value: safetySummary.unknown ?? 0, tone: safetySummary.unknown ? 'bad' : 'good', detail: 'повтор таких заявок запрещен' }
+          ]}
+        />
+      </Card>
+
       <Card title="Последние решения" icon={Eye} className="wide" help="Журнал решений робота: что он рассматривал, какой сигнал увидел, что разрешили/запретили фильтры и почему. Пустые значения показываются как —, фронт их не угадывает.">
         <LogFilters rows={decisions} filters={filters} onChange={setFilters} />
         <Table

@@ -85,7 +85,7 @@ interface EnvConfig {
     ROBOT_WEB_PASSWORD: string | undefined;
 }
 
-export const getEnv = () => {
+export const getEnv = (): EnvConfig => {
     return {
         INVEST_TOKEN: process.env.INVEST_TOKEN,
         INVEST_API_URL: process.env.INVEST_API_URL,
