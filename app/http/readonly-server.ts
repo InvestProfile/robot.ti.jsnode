@@ -1,7 +1,7 @@
 import http, { IncomingMessage, ServerResponse } from 'http';
 import { URL } from 'url';
 import path from 'path';
-import { readFile, rename, stat, writeFile } from 'fs/promises';
+import { chmod, chown, readFile, rename, stat, writeFile } from 'fs/promises';
 import { getEnv } from '../config/env.config';
 import { getRobotConfig, RobotConfig } from '../config/robot.config';
 import { getTradingRuntimeState } from '../modules/common.module';
@@ -151,6 +151,7 @@ const persistSocialCookies = async (sessionId: string | undefined, authCookie: s
     process.env.ROBOT_SOCIAL_AUTH_COOKIE = authCookie;
 
     const envPath = process.env.ROBOT_ENV_PATH || '.env';
+    const currentStat = await stat(envPath).catch(() => undefined);
     let content = await readFile(envPath, 'utf8');
     if (sessionId) {
         content = updateEnvLine(content, 'ROBOT_SOCIAL_SESSION_ID', sessionId);
@@ -158,6 +159,10 @@ const persistSocialCookies = async (sessionId: string | undefined, authCookie: s
     content = updateEnvLine(content, 'ROBOT_SOCIAL_AUTH_COOKIE', authCookie);
     const tmpPath = `${envPath}.tmp-${process.pid}-${Date.now()}`;
     await writeFile(tmpPath, content, { mode: 0o600 });
+    if (currentStat) {
+        await chown(tmpPath, currentStat.uid, currentStat.gid).catch(() => undefined);
+        await chmod(tmpPath, currentStat.mode & 0o777).catch(() => undefined);
+    }
     await rename(tmpPath, envPath);
 };
 
