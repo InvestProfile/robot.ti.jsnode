@@ -2,10 +2,15 @@
 // tradeService.ts
 import { TradesModel } from '../models/trades.model';
 import { Op } from 'sequelize';
-import { isFinalOrderStatus } from '../utils/order-status';
+import {
+    isFinalOrderStatus,
+    LOCAL_PENDING_ORDER_STATUS,
+    LOCAL_UNKNOWN_ORDER_STATUS
+} from '../utils/order-status';
 
 export interface TradeOrderMetadata {
     orderId?: string;
+    clientOrderId?: string;
     orderType?: string;
     status?: string;
     tradeDateTime?: string;
@@ -16,6 +21,7 @@ export interface TradeOrderMetadata {
     executedPriceNano?: string | number;
     totalAmountUnits?: string | number;
     totalAmountNano?: string | number;
+    orderError?: string;
 }
 
 export default class TradesService {
@@ -98,6 +104,7 @@ export default class TradesService {
                 name,
                 lot,
                 orderId: metadata.orderId,
+                clientOrderId: metadata.clientOrderId,
                 orderType: metadata.orderType,
                 status: metadata.status,
                 tradeDateTime: metadata.tradeDateTime,
@@ -107,7 +114,8 @@ export default class TradesService {
                 executedPriceUnits: metadata.executedPriceUnits,
                 executedPriceNano: metadata.executedPriceNano,
                 totalAmountUnits: metadata.totalAmountUnits,
-                totalAmountNano: metadata.totalAmountNano
+                totalAmountNano: metadata.totalAmountNano,
+                orderError: metadata.orderError
             });
 
             console.log("New trade created successfully.", newTrade);
@@ -116,6 +124,74 @@ export default class TradesService {
             console.error('Unable to create new trade:', error);
             throw error; // Выбрасываем ошибку для дальнейшей обработки
         }
+    }
+
+    static async createPendingOrder(input: {
+        figi?: string;
+        quantity?: string;
+        direction: string;
+        priceUnits?: number;
+        priceNano?: number;
+        uid?: string;
+        instrumentUid?: string;
+        accountId?: string;
+        ticker?: string;
+        name?: string;
+        lot?: number;
+        clientOrderId: string;
+        lotsRequested?: number;
+    }) {
+        return await this.createTrade(
+            input.figi,
+            input.quantity,
+            input.direction,
+            input.priceUnits,
+            input.priceNano,
+            input.uid,
+            input.instrumentUid,
+            input.accountId,
+            input.ticker,
+            input.name,
+            input.lot,
+            {
+                orderId: input.clientOrderId,
+                clientOrderId: input.clientOrderId,
+                status: LOCAL_PENDING_ORDER_STATUS,
+                tradeDateTime: new Date().toISOString(),
+                instrumentId: input.instrumentUid,
+                lotsRequested: input.lotsRequested
+            }
+        );
+    }
+
+    static async updateOrderMetadata(trade: TradesModel, metadata: TradeOrderMetadata) {
+        await trade.update({
+            orderId: metadata.orderId ?? metadata.clientOrderId ?? trade.orderId,
+            clientOrderId: metadata.clientOrderId ?? trade.clientOrderId,
+            orderType: metadata.orderType ?? trade.orderType,
+            status: metadata.status ?? trade.status,
+            tradeDateTime: metadata.tradeDateTime ?? trade.tradeDateTime,
+            instrumentId: metadata.instrumentId ?? trade.instrumentId,
+            lotsRequested: metadata.lotsRequested ?? trade.lotsRequested,
+            lotsExecuted: metadata.lotsExecuted ?? trade.lotsExecuted,
+            executedPriceUnits: metadata.executedPriceUnits ?? trade.executedPriceUnits,
+            executedPriceNano: metadata.executedPriceNano ?? trade.executedPriceNano,
+            totalAmountUnits: metadata.totalAmountUnits ?? trade.totalAmountUnits,
+            totalAmountNano: metadata.totalAmountNano ?? trade.totalAmountNano,
+            orderError: metadata.orderError ?? null
+        });
+
+        return trade;
+    }
+
+    static async markOrderUnknown(trade: TradesModel, error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        await trade.update({
+            status: LOCAL_UNKNOWN_ORDER_STATUS,
+            orderError: message
+        });
+
+        return trade;
     }
 
     static async countTodayTrades(accountId: string | undefined) {
@@ -182,9 +258,10 @@ export default class TradesService {
                 || (figi && data.figi === figi)
             );
             const orderId = data.orderId ? String(data.orderId) : undefined;
+            const clientOrderId = data.clientOrderId ? String(data.clientOrderId) : undefined;
             const status = data.status ? String(data.status) : undefined;
 
-            return sameInstrument && Boolean(orderId) && !isFinalOrderStatus(status);
+            return sameInstrument && Boolean(orderId || clientOrderId) && !isFinalOrderStatus(status);
         });
     }
 }

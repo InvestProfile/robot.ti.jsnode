@@ -13,6 +13,7 @@ import MarketRegimeService from '../services/market-regime.service';
 import PaperTradingService from '../services/paper-trading.service';
 import BuySignalEvaluatorService from '../services/buy-signal-evaluator.service';
 import TradesService from '../services/trades.service';
+import DatabaseService from '../services/database.service';
 
 const ok = (label: string, details = '') => console.log(`OK    ${label}${details ? ': ' + details : ''}`);
 const warn = (label: string, details = '') => console.log(`WARN  ${label}${details ? ': ' + details : ''}`);
@@ -33,7 +34,7 @@ const main = async () => {
     console.log(strictLive ? '==============' : '=========');
 
     try {
-        await sequelize.authenticate();
+        await DatabaseService.init();
         ok('DB connection');
     } catch (error) {
         failures.push('DB connection failed');

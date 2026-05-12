@@ -18,6 +18,7 @@ export class TradesModel extends Model {
     public accountId!: string;
     public orderType!: string;
     public orderId!: string;
+    public clientOrderId!: string;
     public tradeDateTime!: string;
     public instrumentId!: string;
     public uid!: string;
@@ -29,6 +30,7 @@ export class TradesModel extends Model {
     public executedPriceNano!: string;
     public totalAmountUnits!: string;
     public totalAmountNano!: string;
+    public orderError!: string;
     // и так далее
 }
 
@@ -90,6 +92,10 @@ TradesModel.init({
         type: DataTypes.STRING,
         allowNull: true,
     },
+    clientOrderId: {
+        type: DataTypes.STRING,
+        allowNull: true,
+    },
     tradeDateTime:{
         type: DataTypes.STRING,
         allowNull: true,
@@ -132,6 +138,10 @@ TradesModel.init({
     },
     totalAmountNano: {
         type: DataTypes.STRING,
+        allowNull: true,
+    },
+    orderError: {
+        type: DataTypes.TEXT,
         allowNull: true,
     }
     // и так далее

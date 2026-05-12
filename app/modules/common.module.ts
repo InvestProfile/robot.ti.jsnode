@@ -74,6 +74,7 @@ const getOrderMetadata = (orderResult: unknown) => {
 
     return {
         orderId: getString('orderId', 'clientOrderId'),
+        clientOrderId: getString('clientOrderId'),
         orderType: normalizeOrderType(data.orderType),
         status: normalizeOrderStatus(data.executionReportStatus ?? data.status),
         tradeDateTime: getString('tradeDateTime', 'createdAt'),
@@ -84,6 +85,93 @@ const getOrderMetadata = (orderResult: unknown) => {
         totalAmountUnits: totalAmount.units as string | number | undefined,
         totalAmountNano: totalAmount.nano as string | number | undefined
     };
+};
+
+const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+const submitTrackedOrder = async (input: {
+    accountId: string;
+    direction: '1' | '2';
+    quantityLots: number;
+    price: { units: number; nano: number; currency?: string };
+    figi: string;
+    instrumentUid: string;
+    ticker?: string;
+    name?: string;
+}) => {
+    const clientOrderId = orderService.createClientOrderId();
+    const pendingTrade = await TradesService.createPendingOrder({
+        figi: input.figi,
+        quantity: '1',
+        direction: input.direction,
+        priceUnits: input.price.units,
+        priceNano: input.price.nano,
+        uid: input.instrumentUid,
+        instrumentUid: input.instrumentUid,
+        accountId: input.accountId,
+        ticker: input.ticker,
+        name: input.name,
+        lot: input.quantityLots,
+        clientOrderId,
+        lotsRequested: input.quantityLots
+    });
+
+    try {
+        const orderResult = await orderService.postOrder(
+            input.accountId,
+            input.direction === '2' ? 2 : 1,
+            input.quantityLots,
+            {
+                currency: input.price.currency ?? 'rub',
+                units: input.price.units,
+                nano: input.price.nano
+            },
+            input.figi,
+            input.instrumentUid,
+            clientOrderId
+        );
+
+        await TradesService.updateOrderMetadata(pendingTrade, {
+            ...getOrderMetadata(orderResult),
+            clientOrderId,
+            instrumentId: input.instrumentUid
+        });
+
+        return {
+            orderResult,
+            pendingTrade,
+            clientOrderId,
+            unknown: false
+        };
+    } catch (error) {
+        try {
+            const reconciled = await OrderReconciliationService.reconcileTrade(pendingTrade);
+            if (reconciled) {
+                return {
+                    orderResult: undefined,
+                    pendingTrade,
+                    clientOrderId,
+                    unknown: false,
+                    reconciled: true
+                };
+            }
+        } catch (reconcileError) {
+            console.error('Order submit reconciliation failed:', {
+                clientOrderId,
+                error: getErrorMessage(reconcileError)
+            });
+        }
+
+        await TradesService.markOrderUnknown(pendingTrade, error);
+
+        return {
+            orderResult: undefined,
+            pendingTrade,
+            clientOrderId,
+            unknown: true,
+            error
+        };
+    }
 };
 
 const getLiveTradingPauseReason = (config: RobotConfig) => {
@@ -195,16 +283,18 @@ const executeBuySignals = async (
             continue;
         }
 
-        const orderResult = await orderService.postOrder(
+        const orderSubmission = await submitTrackedOrder({
             accountId,
-            1,
-            preview.quantityLots,
-            numberToQuotation(preview.currentPrice ?? 0),
-            preview.figi,
-            preview.instrumentUid
-        );
+            direction: '1',
+            quantityLots: preview.quantityLots,
+            price: numberToQuotation(preview.currentPrice ?? 0),
+            figi: preview.figi,
+            instrumentUid: preview.instrumentUid,
+            ticker: preview.ticker,
+            name: preview.name
+        });
 
-        if (!orderResult) {
+        if (orderSubmission.unknown) {
             await TradeJournalService.logDecision({
                 accountId,
                 accountAlias: preview.accountAlias,
@@ -215,31 +305,13 @@ const executeBuySignals = async (
                 name: preview.name,
                 status: 'order-failed',
                 signalSource: preview.signal?.source,
-                reason: 'postOrder returned empty result',
+                reason: `postOrder state is unknown; duplicate orders blocked by clientOrderId ${orderSubmission.clientOrderId}: ${getErrorMessage(orderSubmission.error)}`,
                 currentPrice: preview.currentPrice,
                 quantityLots: preview.quantityLots,
                 estimatedOrderRub: preview.estimatedOrderRub
             });
             continue;
         }
-
-        await TradesService.createTrade(
-            preview.figi,
-            '1',
-            '1',
-            Math.trunc(preview.currentPrice ?? 0),
-            Math.round(((preview.currentPrice ?? 0) - Math.trunc(preview.currentPrice ?? 0)) * 1e9),
-            preview.instrumentUid,
-            preview.instrumentUid,
-            accountId,
-            preview.ticker,
-            preview.name,
-            preview.quantityLots,
-            {
-                ...getOrderMetadata(orderResult),
-                instrumentId: preview.instrumentUid
-            }
-        );
 
         await TradeJournalService.logDecision({
             accountId,
@@ -251,7 +323,9 @@ const executeBuySignals = async (
             name: preview.name,
             status: 'order-posted',
             signalSource: preview.signal?.source,
-            reason: preview.reason,
+            reason: orderSubmission.reconciled
+                ? `${preview.reason}; order reconciled after postOrder error`
+                : preview.reason,
             currentPrice: preview.currentPrice,
             quantityLots: preview.quantityLots,
             estimatedOrderRub: preview.estimatedOrderRub
@@ -450,16 +524,38 @@ export const executeTrades = async (
             continue;
         }
 
-        const orderResult = await orderService.postOrder(
-            accountId,
-            2,
-            sellPolicy.allowedLots,
-            orderPrice,
-            position.figi,
-            position.instrumentUid
-        );
+        if (await TradesService.hasOpenOrderForInstrument(accountId, position.figi, position.instrumentUid, '2')) {
+            await TradeJournalService.logDecision({
+                accountId,
+                accountAlias,
+                accountMode,
+                figi: position?.figi,
+                instrumentUid: position?.instrumentUid,
+                ticker: instrument?.ticker,
+                name: instrument?.name,
+                status: 'skip',
+                signalSource: signal?.source,
+                reason: 'open sell order already exists',
+                averagePrice,
+                currentPrice,
+                profitPercent: risk.profitPercent,
+                quantityLots: sellPolicy.allowedLots
+            });
+            continue;
+        }
 
-        if (!orderResult) {
+        const orderSubmission = await submitTrackedOrder({
+            accountId,
+            direction: '2',
+            quantityLots: sellPolicy.allowedLots,
+            price: orderPrice,
+            figi: position.figi,
+            instrumentUid: position.instrumentUid,
+            ticker: instrument?.ticker,
+            name: instrument?.name
+        });
+
+        if (orderSubmission.unknown) {
             await TradeJournalService.logDecision({
                 accountId,
                 accountAlias,
@@ -470,7 +566,7 @@ export const executeTrades = async (
                 name: instrument?.name,
                 status: 'order-failed',
                 signalSource: signal?.source,
-                reason: 'postOrder returned empty result',
+                reason: `postOrder state is unknown; duplicate orders blocked by clientOrderId ${orderSubmission.clientOrderId}: ${getErrorMessage(orderSubmission.error)}`,
                 averagePrice,
                 currentPrice,
                 profitPercent: risk.profitPercent,
@@ -478,24 +574,6 @@ export const executeTrades = async (
             });
             continue;
         }
-
-        await TradesService.createTrade(
-            position?.figi,
-            '1',
-            '2',
-            position?.currentPrice?.units,
-            position?.currentPrice?.nano,
-            position?.instrumentUid,
-            position?.instrumentUid,
-            accountId,
-            instrument?.ticker,
-            instrument?.name,
-            sellPolicy.allowedLots,
-            {
-                ...getOrderMetadata(orderResult),
-                instrumentId: position?.instrumentUid
-            }
-        );
 
         await TradeJournalService.logDecision({
             accountId,
@@ -507,7 +585,9 @@ export const executeTrades = async (
             name: instrument?.name,
             status: 'order-posted',
             signalSource: signal?.source,
-            reason: `${risk.reason}; ${sellPolicy.reason}`,
+            reason: orderSubmission.reconciled
+                ? `${risk.reason}; ${sellPolicy.reason}; order reconciled after postOrder error`
+                : `${risk.reason}; ${sellPolicy.reason}`,
             averagePrice,
             currentPrice,
             profitPercent: risk.profitPercent,

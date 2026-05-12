@@ -16,6 +16,15 @@ const lotsFromTrade = (data: Record<string, unknown>) => {
     const executed = Number(data.lotsExecuted ?? 0);
     if (Number.isFinite(executed) && executed > 0) return executed;
 
+    const status = data.status ? String(data.status) : undefined;
+    if (
+        status === 'LOCAL_PENDING_SUBMIT'
+        || status === 'LOCAL_SUBMIT_UNKNOWN'
+        || status === 'EXECUTION_REPORT_STATUS_NEW'
+    ) {
+        return 0;
+    }
+
     const requested = Number(data.lotsRequested ?? 0);
     if (Number.isFinite(requested) && requested > 0) return requested;
 

@@ -4,7 +4,7 @@ import {getSdk} from './get-sdk';
 
 import { v4 as uuidv4 } from 'uuid';
 
-import {OrderDirection, OrderType, TimeInForceType} from "tinkoff-sdk-grpc-js/dist/generated/orders";
+import {OrderDirection, OrderIdType, OrderType, TimeInForceType} from "tinkoff-sdk-grpc-js/dist/generated/orders";
 import {PriceType} from "tinkoff-sdk-grpc-js/dist/generated/common";
 import TInvestApiCacheService from './tinvest-api-cache.service';
 
@@ -16,60 +16,94 @@ interface Price {
     nano: number;
 }
 
+const normalizeDirection = (direction: number) => {
+    if (direction === OrderDirection.ORDER_DIRECTION_BUY || direction === 1) {
+        return OrderDirection.ORDER_DIRECTION_BUY;
+    }
+
+    if (direction === OrderDirection.ORDER_DIRECTION_SELL || direction === 2) {
+        return OrderDirection.ORDER_DIRECTION_SELL;
+    }
+
+    throw new Error(`Unsupported order direction: ${direction}`);
+};
+
+const validateOrderInput = (input: {
+    accountId: string;
+    direction: number;
+    quantity: number | undefined;
+    price: Price;
+    figi: string;
+    instrumentId: string;
+}) => {
+    if (!envVariables.INVEST_TOKEN) throw new Error('INVEST_TOKEN is not defined.');
+    if (!input.accountId) throw new Error('accountId is required for order placement');
+    if (!input.figi) throw new Error('figi is required for order placement');
+    if (!input.instrumentId) throw new Error('instrumentId is required for order placement');
+
+    normalizeDirection(input.direction);
+
+    const quantity = Number(input.quantity);
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+        throw new Error(`Order quantity must be a positive integer, got ${input.quantity}`);
+    }
+
+    const price = Number(input.price?.units ?? 0) + Number(input.price?.nano ?? 0) * 1e-9;
+    if (!Number.isFinite(price) || price <= 0) {
+        throw new Error('Order price must be positive');
+    }
+};
+
 export default class OrdersService {
+    static createClientOrderId() {
+        return uuidv4();
+    }
+
     static async postOrder(
         accountId: string,
         direction: number,
         quantity: number | undefined,
         price: Price,
         figi: string,
-        instrumentId: string
+        instrumentId: string,
+        clientOrderId = OrdersService.createClientOrderId()
     ) {
-        if (envVariables.INVEST_TOKEN) {
-            const {orders} = getSdk(envVariables.INVEST_TOKEN);
-            const clientOrderId = uuidv4();
+        validateOrderInput({ accountId, direction, quantity, price, figi, instrumentId });
 
-            try {
-                const response = await TInvestApiCacheService.withRetry(() => orders.postOrder({
-                    accountId,
-                    orderId: clientOrderId,
-                    timeInForce: TimeInForceType.TIME_IN_FORCE_UNSPECIFIED,
-                    direction: direction === 2?OrderDirection.ORDER_DIRECTION_SELL:OrderDirection.ORDER_DIRECTION_BUY,
-                    orderType: OrderType.ORDER_TYPE_MARKET,
-                    quantity,
-                    price,
-                    figi,
-                    instrumentId,
-                    priceType: PriceType.PRICE_TYPE_CURRENCY
-                }));
+        const token = envVariables.INVEST_TOKEN;
+        if (!token) throw new Error('INVEST_TOKEN is not defined.');
 
-                return {
-                    ...response,
-                    clientOrderId
-                };
-            } catch (error: any) {
-                // Обрабатываем ошибку, если инструмент недоступен для торгов
-                if (error?.message?.includes('instrument is not available for trading')) {
-                    console.error('Ошибка: Инструмент недоступен для торгов.', error);
-                } else {
-                    // Обрабатываем другие типы ошибок
-                    console.error('Произошла ошибка при размещении ордера', error);
-                }
-                // Возвращаем null или выбрасываем ошибку в зависимости от логики приложения
-                return null;
-            }
+        const {orders} = getSdk(token);
+        const orderDirection = normalizeDirection(direction);
 
+        const response = await TInvestApiCacheService.withRetry(() => orders.postOrder({
+            accountId,
+            orderId: clientOrderId,
+            timeInForce: TimeInForceType.TIME_IN_FORCE_UNSPECIFIED,
+            direction: orderDirection,
+            orderType: OrderType.ORDER_TYPE_MARKET,
+            quantity,
+            price,
+            figi,
+            instrumentId,
+            priceType: PriceType.PRICE_TYPE_CURRENCY,
+            confirmMarginTrade: false
+        }));
 
-        }
+        return {
+            ...response,
+            clientOrderId
+        };
     }
 
-    static async getOrderState(accountId: string, orderId: string) {
+    static async getOrderState(accountId: string, orderId: string, orderIdType?: OrderIdType) {
         if (envVariables.INVEST_TOKEN) {
             const {orders} = getSdk(envVariables.INVEST_TOKEN);
             return await TInvestApiCacheService.withRetry(() => orders.getOrderState({
                 accountId,
                 orderId,
-                priceType: PriceType.PRICE_TYPE_CURRENCY
+                priceType: PriceType.PRICE_TYPE_CURRENCY,
+                orderIdType
             }));
         }
     }

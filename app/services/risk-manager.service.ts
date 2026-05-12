@@ -102,7 +102,11 @@ export default class RiskManagerService {
             return { allowed: false, reason: 'estimated order amount is above max order RUB', profitPercent: 0 };
         }
 
-        if (config.maxDailyRub > 0 && input.dailyOrdersRub + estimatedOrderRub > config.maxDailyRub) {
+        if (config.maxDailyRub <= 0) {
+            return { allowed: false, reason: 'daily RUB limit is zero', profitPercent: 0 };
+        }
+
+        if (input.dailyOrdersRub + estimatedOrderRub > config.maxDailyRub) {
             return { allowed: false, reason: 'daily RUB limit reached', profitPercent: 0 };
         }
 
@@ -110,10 +114,15 @@ export default class RiskManagerService {
             return { allowed: false, reason: 'not enough cash for buy signal', profitPercent: 0 };
         }
 
+        const signalLots = Math.trunc(input.signal.quantityLots ?? 0);
+        if (signalLots <= 0) {
+            return { allowed: false, reason: 'quantityLots is empty or zero', profitPercent: 0 };
+        }
+
         return {
             allowed: true,
             reason: `${input.signal.source}: ${input.signal.reason}`,
-            quantity: Math.trunc(input.signal.quantityLots ?? 1),
+            quantity: Math.min(signalLots, config.maxLotsPerOrder),
             profitPercent: 0,
             estimatedOrderRub
         };
