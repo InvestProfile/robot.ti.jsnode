@@ -535,7 +535,10 @@ export const executeTrades = async (
             accountId,
             figi: position?.figi,
             instrumentUid: position?.instrumentUid,
-            requestedLots: risk.quantity
+            requestedLots: risk.quantity,
+            signalSource: signal?.source,
+            profitPercent: risk.profitPercent,
+            minProfitPercent: config.minProfitPercent
         });
 
         if (!sellPolicy.allowed) {

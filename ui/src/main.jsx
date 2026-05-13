@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Database,
   Eye,
+  ArrowLeftRight,
   LineChart,
   RefreshCw,
   ShieldCheck,
@@ -52,6 +53,7 @@ const endpointGroups = {
   evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
   sell: ['sellBrain', 'positions', 'robotPositions'],
+  trades: ['trades', 'robotPositions', 'decisions', 'orderSafety'],
   logs: ['decisions', 'trades', 'robotPositions', 'orderSafety']
 };
 
@@ -59,6 +61,7 @@ const tabs = [
   { id: 'overview', label: 'Обзор', icon: Activity },
   { id: 'buy', label: 'Покупки', icon: Signal },
   { id: 'sell', label: 'Продажи', icon: AlertTriangle },
+  { id: 'trades', label: 'Сделки', icon: ArrowLeftRight },
   { id: 'social', label: 'Пульс', icon: Users },
   { id: 'evidence', label: 'Лаборатория', icon: BarChart3 },
   { id: 'accounts', label: 'Счета', icon: Database },
@@ -883,22 +886,6 @@ function Sell({ data, loadingKeys }) {
         />
       </Card>
 
-      <Card title="Сделки робота" icon={Database} help="Последние buy/sell события из внутреннего журнала заявок. Они объясняют, из чего сложился robot-owned остаток.">
-        <Table
-          columns={[
-            { key: 'at', label: 'Time', render: (row) => time(row.at) },
-            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || '-'}</strong><div className="muted">{row.name}</div></> },
-            { key: 'direction', label: 'Side', render: (row) => <Pill tone={row.direction === 'buy' ? 'good' : 'bad'}>{row.direction}</Pill> },
-            { key: 'lots', label: 'Lots', className: 'right', render: (row) => money(row.lots) },
-            { key: 'price', label: 'Price', className: 'right', render: (row) => money(row.price) },
-            { key: 'status', label: 'Status', render: (row) => <Reason>{row.status || '-'}</Reason> }
-          ]}
-          rows={robotEvents}
-          empty="No robot trades yet"
-          loading={loadingKeys.robotPositions}
-        />
-      </Card>
-
       <Card title="Наблюдаемые sell-сигналы" icon={Eye} help="Это мнения по долгосрочному счету, ИИС и Инвесткопилке. Они не исполняются, а нужны, чтобы учить и проверять стратегию продаж.">
         <Table
           columns={sellColumns}
@@ -1349,7 +1336,22 @@ function LogFilters({ rows, filters, onChange }) {
   );
 }
 
-function TradeReview({ data, loading }) {
+const sideFromDirection = (direction) => {
+  const value = String(direction || '').toLowerCase();
+  if (value === '1' || value === 'buy') return 'buy';
+  if (value === '2' || value === 'sell') return 'sell';
+  return value || EMPTY;
+};
+
+const sortTrades = (rows, sort) => {
+  const copy = [...rows];
+  if (sort === 'oldest') return copy.reverse();
+  if (sort === 'amount-desc') return copy.sort((a, b) => Number(b.tradeAmount ?? 0) - Number(a.tradeAmount ?? 0));
+  if (sort === 'amount-asc') return copy.sort((a, b) => Number(a.tradeAmount ?? 0) - Number(b.tradeAmount ?? 0));
+  return copy;
+};
+
+const buildTradeRows = (data) => {
   const trades = data.trades?.trades || [];
   const events = data.robotPositions?.events || [];
   const decisions = data.decisions?.decisions || [];
@@ -1359,11 +1361,12 @@ function TradeReview({ data, loading }) {
       .map((decision) => [decision.ticker, decision])
   );
 
-  const rows = trades.slice(0, 20).map((trade) => {
+  return trades.map((trade) => {
     const event = events.find((item) => item.orderId && item.orderId === trade.orderId);
     const decision = lastOrderDecisionByTicker.get(trade.ticker);
     return {
       ...trade,
+      side: sideFromDirection(trade.direction),
       ledgerStatus: event ? 'в ledger' : 'только broker',
       decisionReason: decision?.reason,
       signalSource: decision?.signalSource,
@@ -1372,22 +1375,72 @@ function TradeReview({ data, loading }) {
       createdAt: trade.tradeDateTime || trade.createdAt
     };
   });
+};
+
+function TradeFilters({ rows, filters, onChange }) {
+  const statuses = [...new Set(rows.map((row) => row.status).filter(Boolean))].sort();
 
   return (
-    <Card title="Разбор сделок" icon={Database} help="Последние реальные сделки из брокера плюс связь с внутренним ledger. Если сделка есть у брокера, но не попала в ledger, это отдельный повод смотреть reconciliation.">
+    <div className="filters trade-filters">
+      <label>
+        <span>Сторона</span>
+        <select value={filters.side} onChange={(event) => onChange({ ...filters, side: event.target.value })}>
+          <option value="all">Все</option>
+          <option value="buy">Buy</option>
+          <option value="sell">Sell</option>
+        </select>
+      </label>
+      <label>
+        <span>Статус</span>
+        <select value={filters.status} onChange={(event) => onChange({ ...filters, status: event.target.value })}>
+          <option value="all">Все</option>
+          {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
+        </select>
+      </label>
+      <label>
+        <span>Ledger</span>
+        <select value={filters.ledger} onChange={(event) => onChange({ ...filters, ledger: event.target.value })}>
+          <option value="all">Любой</option>
+          <option value="в ledger">В ledger</option>
+          <option value="только broker">Только broker</option>
+        </select>
+      </label>
+      <label>
+        <span>Тикер</span>
+        <input value={filters.ticker} onChange={(event) => onChange({ ...filters, ticker: event.target.value.toUpperCase() })} placeholder="AQUA" />
+      </label>
+      <label>
+        <span>Сортировка</span>
+        <select value={filters.sort} onChange={(event) => onChange({ ...filters, sort: event.target.value })}>
+          <option value="newest">Новые</option>
+          <option value="oldest">Старые</option>
+          <option value="amount-desc">Сумма выше</option>
+          <option value="amount-asc">Сумма ниже</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
+function TradeReview({ rows, loading, children, className }) {
+  const visibleRows = rows.slice(0, 80);
+
+  return (
+    <Card title="Сделки брокера" icon={Database} className={className} help="Последние реальные сделки из брокера плюс связь с внутренним ledger. Если сделка есть у брокера, но не попала в ledger, это отдельный повод смотреть reconciliation.">
+      {children}
       <Table
         className="trade-review-table"
         columns={[
           { key: 'createdAt', label: 'Время', width: '150px', render: (row) => time(row.createdAt) },
           { key: 'ticker', label: 'Тикер', width: '90px', render: (row) => <TextCell>{row.ticker}</TextCell> },
-          { key: 'side', label: 'Сторона', width: '90px', render: (row) => <Pill tone={row.direction === 'buy' ? 'good' : 'bad'}>{display(row.direction)}</Pill> },
+          { key: 'side', label: 'Сторона', width: '90px', render: (row) => <Pill tone={row.side === 'buy' ? 'good' : 'bad'}>{display(row.side)}</Pill> },
           { key: 'quantityLots', label: 'Лоты', width: '70px', className: 'right', render: (row) => money(row.lotsExecuted ?? row.lotsRequested ?? row.lot) },
           { key: 'price', label: 'Цена', width: '90px', className: 'right', render: (row) => money(row.tradePrice) },
           { key: 'amount', label: 'Сумма', width: '95px', className: 'right', render: (row) => money(row.tradeAmount) },
           { key: 'ledgerStatus', label: 'Ledger', width: '115px', render: (row) => <Pill tone={row.ledgerStatus === 'в ledger' ? 'good' : 'warn'}>{row.ledgerStatus}</Pill> },
           { key: 'decisionReason', label: 'Решение', className: 'reason', render: (row) => <Reason>{row.decisionReason || row.status || EMPTY}</Reason> }
         ]}
-        rows={rows}
+        rows={visibleRows}
         empty="Сделок пока нет"
         loading={loading}
       />
@@ -1424,6 +1477,66 @@ function OrderSafety({ data, loading }) {
         loading={loading}
       />
     </Card>
+  );
+}
+
+function Trades({ data, loadingKeys }) {
+  const [filters, setFilters] = useState({ side: 'all', status: 'all', ledger: 'all', ticker: '', sort: 'newest' });
+  const rows = buildTradeRows(data);
+  const robotEvents = data.robotPositions?.events || [];
+  const buyCount = rows.filter((row) => row.side === 'buy').length;
+  const sellCount = rows.filter((row) => row.side === 'sell').length;
+  const brokerOnly = rows.filter((row) => row.ledgerStatus === 'только broker').length;
+  const filteredRows = sortTrades(rows.filter((row) => {
+    if (filters.side !== 'all' && row.side !== filters.side) return false;
+    if (filters.status !== 'all' && row.status !== filters.status) return false;
+    if (filters.ledger !== 'all' && row.ledgerStatus !== filters.ledger) return false;
+    if (filters.ticker && !String(row.ticker || '').toUpperCase().includes(filters.ticker)) return false;
+    return true;
+  }), filters.sort);
+  const filteredRobotEvents = robotEvents.filter((row) => {
+    if (filters.side !== 'all' && row.direction !== filters.side) return false;
+    if (filters.ticker && !String(row.ticker || '').toUpperCase().includes(filters.ticker)) return false;
+    return true;
+  });
+
+  return (
+    <div className="grid">
+      <Card title="Поток сделок" icon={ArrowLeftRight} className="wide" help="Отдельная страница фактических сделок: broker records, связь с ledger робота и заявки/order safety. Это не buy/sell-сигналы, а то, что реально произошло.">
+        <StageStrip
+          items={[
+            { label: 'Всего записей', value: rows.length, detail: 'broker trade records' },
+            { label: 'Buy / Sell', value: `${buyCount} / ${sellCount}`, tone: sellCount ? 'warn' : 'good', detail: 'стороны сделок' },
+            { label: 'Ledger', value: `${rows.length - brokerOnly} / ${rows.length}`, tone: brokerOnly ? 'warn' : 'good', detail: brokerOnly ? `${brokerOnly} только broker` : 'все связаны' },
+            { label: 'Фильтр', value: filteredRows.length, detail: 'строк сейчас видно' },
+            { label: 'Последняя', value: rows[0]?.ticker || EMPTY, detail: rows[0] ? `${rows[0].side} · ${time(rows[0].createdAt)}` : 'сделок нет' }
+          ]}
+        />
+      </Card>
+
+      <TradeReview rows={filteredRows} loading={loadingKeys.trades || loadingKeys.robotPositions || loadingKeys.decisions} className="wide">
+        <TradeFilters rows={rows} filters={filters} onChange={setFilters} />
+      </TradeReview>
+
+      <Card title="Ledger робота" icon={Bot} className="wide" help="Внутренние события robot-owned ledger: из них робот понимает, какие лоты купил сам и какие может продавать.">
+        <Table
+          columns={[
+            { key: 'at', label: 'Время', width: '150px', render: (row) => time(row.at) },
+            { key: 'ticker', label: 'Тикер', width: '110px', render: (row) => <><strong>{row.ticker || '-'}</strong><div className="muted">{row.name}</div></> },
+            { key: 'direction', label: 'Сторона', width: '90px', render: (row) => <Pill tone={row.direction === 'buy' ? 'good' : 'bad'}>{row.direction}</Pill> },
+            { key: 'lots', label: 'Лоты', width: '70px', className: 'right', render: (row) => money(row.lots) },
+            { key: 'price', label: 'Цена', width: '90px', className: 'right', render: (row) => money(row.price) },
+            { key: 'amount', label: 'Сумма', width: '100px', className: 'right', render: (row) => money(row.amount) },
+            { key: 'status', label: 'Статус', render: (row) => <Reason>{row.status || '-'}</Reason> }
+          ]}
+          rows={filteredRobotEvents}
+          empty="Событий ledger под фильтр нет"
+          loading={loadingKeys.robotPositions}
+        />
+      </Card>
+
+      <OrderSafety data={data} loading={loadingKeys.orderSafety} />
+    </div>
   );
 }
 
@@ -1479,7 +1592,6 @@ function Logs({ data, loadingKeys }) {
           loading={loadingKeys.decisions}
         />
       </Card>
-      <TradeReview data={data} loading={loadingKeys.trades || loadingKeys.robotPositions} />
       <OrderSafety data={data} loading={loadingKeys.orderSafety} />
     </div>
   );
@@ -1621,6 +1733,7 @@ function App() {
     evidence: <Evidence data={data} loadingKeys={loadingKeys} />,
     accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} onLiveSellToggle={updateLiveSell} onRiskSettingsChange={updateRiskSettings} />,
     sell: <Sell data={data} loadingKeys={loadingKeys} />,
+    trades: <Trades data={data} loadingKeys={loadingKeys} />,
     logs: <Logs data={data} loadingKeys={loadingKeys} />
   }[active.id];
 

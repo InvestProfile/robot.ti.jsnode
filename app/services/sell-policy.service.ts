@@ -33,8 +33,14 @@ const lotsFromTrade = (data: Record<string, unknown>) => {
 };
 
 export default class SellPolicyService {
-    static async getRobotOwnedLots(accountId: string, figi?: string, instrumentUid?: string) {
-        if (!accountId || (!figi && !instrumentUid)) return 0;
+    private static async getRobotPosition(accountId: string, figi?: string, instrumentUid?: string) {
+        if (!accountId || (!figi && !instrumentUid)) {
+            return {
+                robotOwnedLots: 0,
+                latestDirection: undefined as string | undefined,
+                latestTradeAt: undefined as unknown
+            };
+        }
 
         const trades = await TradesModel.findAll({
             where: {
@@ -47,7 +53,9 @@ export default class SellPolicyService {
             limit: 500
         });
 
-        return Math.max(0, trades.reduce((netLots, trade) => {
+        let latestDirection: string | undefined;
+        let latestTradeAt: unknown;
+        const robotOwnedLots = Math.max(0, trades.reduce((netLots, trade) => {
             const data = trade.get({ plain: true }) as Record<string, unknown>;
             if (!sameInstrument(data, figi, instrumentUid)) return netLots;
 
@@ -55,10 +63,24 @@ export default class SellPolicyService {
             if (status && BLOCKED_STATUSES.has(status)) return netLots;
 
             const lots = lotsFromTrade(data);
+            if (lots > 0) {
+                latestDirection = String(data.direction);
+                latestTradeAt = data.tradeDateTime || data.createdAt;
+            }
             if (String(data.direction) === '1') return netLots + lots;
             if (String(data.direction) === '2') return netLots - lots;
             return netLots;
         }, 0));
+
+        return {
+            robotOwnedLots,
+            latestDirection,
+            latestTradeAt
+        };
+    }
+
+    static async getRobotOwnedLots(accountId: string, figi?: string, instrumentUid?: string) {
+        return (await this.getRobotPosition(accountId, figi, instrumentUid)).robotOwnedLots;
     }
 
     static async evaluateSellPermission(input: {
@@ -66,16 +88,26 @@ export default class SellPolicyService {
         figi?: string;
         instrumentUid?: string;
         requestedLots?: number;
+        signalSource?: string;
+        profitPercent?: number;
+        minProfitPercent?: number;
     }) {
         const requestedLots = Math.max(0, Math.trunc(input.requestedLots ?? 0));
-        const robotOwnedLots = await this.getRobotOwnedLots(input.accountId, input.figi, input.instrumentUid);
+        const robotPosition = await this.getRobotPosition(input.accountId, input.figi, input.instrumentUid);
+        const robotOwnedLots = robotPosition.robotOwnedLots;
         const allowedLots = Math.min(requestedLots, Math.trunc(robotOwnedLots));
+        const minProfitPercent = Number(input.minProfitPercent ?? 0);
+        const profitPercent = Number(input.profitPercent);
+        const latestWasBuy = robotPosition.latestDirection === '1';
+        const emergencySell = input.signalSource === 'stop-loss';
 
         if (requestedLots <= 0) {
             return {
                 allowed: false,
                 allowedLots: 0,
                 robotOwnedLots,
+                latestDirection: robotPosition.latestDirection,
+                latestTradeAt: robotPosition.latestTradeAt,
                 reason: 'sell policy blocked: requested lots is empty'
             };
         }
@@ -85,7 +117,25 @@ export default class SellPolicyService {
                 allowed: false,
                 allowedLots: 0,
                 robotOwnedLots,
+                latestDirection: robotPosition.latestDirection,
+                latestTradeAt: robotPosition.latestTradeAt,
                 reason: 'sell policy blocked: no robot-owned lots'
+            };
+        }
+
+        if (
+            latestWasBuy
+            && !emergencySell
+            && minProfitPercent > 0
+            && (!Number.isFinite(profitPercent) || profitPercent < minProfitPercent)
+        ) {
+            return {
+                allowed: false,
+                allowedLots: 0,
+                robotOwnedLots,
+                latestDirection: robotPosition.latestDirection,
+                latestTradeAt: robotPosition.latestTradeAt,
+                reason: `sell policy blocked: latest robot action is buy and ${input.signalSource ?? 'sell'} signal is not strong enough, profit ${Number.isFinite(profitPercent) ? profitPercent.toFixed(2) : '-'}% < min ${minProfitPercent.toFixed(2)}%`
             };
         }
 
@@ -93,6 +143,8 @@ export default class SellPolicyService {
             allowed: true,
             allowedLots,
             robotOwnedLots,
+            latestDirection: robotPosition.latestDirection,
+            latestTradeAt: robotPosition.latestTradeAt,
             reason: allowedLots < requestedLots
                 ? `sell policy capped: ${allowedLots}/${requestedLots} robot-owned lots`
                 : `sell policy passed: ${allowedLots} robot-owned lots`
