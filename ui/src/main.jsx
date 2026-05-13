@@ -1351,6 +1351,17 @@ const sortTrades = (rows, sort) => {
   return copy;
 };
 
+const lotCount = (row) => {
+  const value = Number(row.lotsExecuted ?? row.lotsRequested ?? row.lot ?? 0);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+};
+
+const tradeKey = (row) => {
+  const instrumentKey = row.instrumentUid || row.instrumentId || row.uid || row.figi || row.ticker || '';
+  if (!instrumentKey) return '';
+  return [row.accountId || '', instrumentKey].join(':');
+};
+
 const buildTradeRows = (data) => {
   const trades = data.trades?.trades || [];
   const events = data.robotPositions?.events || [];
@@ -1375,6 +1386,97 @@ const buildTradeRows = (data) => {
       createdAt: trade.tradeDateTime || trade.createdAt
     };
   });
+};
+
+const buildRoundTrips = (rows) => {
+  const openBuys = new Map();
+  const roundTrips = [];
+
+  const chronologicalRows = [...rows]
+    .filter((row) => row.side === 'buy' || row.side === 'sell')
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  for (const row of chronologicalRows) {
+    const lots = lotCount(row);
+    const amount = Number(row.tradeAmount);
+    const key = tradeKey(row);
+    if (!key || lots <= 0 || !Number.isFinite(amount) || amount <= 0) continue;
+
+    if (row.side === 'buy') {
+      const queue = openBuys.get(key) || [];
+      queue.push({
+        row,
+        remainingLots: lots,
+        unitAmount: amount / lots
+      });
+      openBuys.set(key, queue);
+      continue;
+    }
+
+    let remainingSellLots = lots;
+    let matchedLots = 0;
+    let entryAmount = 0;
+    const exitAmount = amount;
+    const queue = openBuys.get(key) || [];
+    const entries = [];
+
+    while (remainingSellLots > 0 && queue.length > 0) {
+      const buy = queue[0];
+      const matched = Math.min(remainingSellLots, buy.remainingLots);
+      matchedLots += matched;
+      entryAmount += buy.unitAmount * matched;
+      entries.push(buy.row);
+      buy.remainingLots -= matched;
+      remainingSellLots -= matched;
+
+      if (buy.remainingLots <= 0) queue.shift();
+    }
+
+    openBuys.set(key, queue);
+
+    if (matchedLots <= 0 || entryAmount <= 0) {
+      roundTrips.push({
+        id: `unmatched-${row.id}`,
+        ticker: row.ticker,
+        name: row.name,
+        lots,
+        entryAt: undefined,
+        exitAt: row.createdAt,
+        entryPrice: undefined,
+        exitPrice: row.tradePrice,
+        entryAmount: undefined,
+        exitAmount,
+        pnlRub: undefined,
+        pnlPercent: undefined,
+        status: 'без пары',
+        reason: 'В последних сделках не найден соответствующий buy. Возможно, вход старше текущего API-лимита.'
+      });
+      continue;
+    }
+
+    const matchedExitAmount = exitAmount * (matchedLots / lots);
+    const pnlRub = matchedExitAmount - entryAmount;
+    const pnlPercent = entryAmount > 0 ? pnlRub / entryAmount * 100 : undefined;
+
+    roundTrips.push({
+      id: `round-${row.id}`,
+      ticker: row.ticker,
+      name: row.name,
+      lots: matchedLots,
+      entryAt: entries[0]?.createdAt,
+      exitAt: row.createdAt,
+      entryPrice: entryAmount / matchedLots,
+      exitPrice: matchedExitAmount / matchedLots,
+      entryAmount,
+      exitAmount: matchedExitAmount,
+      pnlRub,
+      pnlPercent,
+      status: remainingSellLots > 0 ? 'частично' : 'закрыто',
+      reason: entries.length > 1 ? `Склеено из ${entries.length} buy-сделок по FIFO.` : 'Пара buy -> sell по FIFO.'
+    });
+  }
+
+  return roundTrips.reverse();
 };
 
 function TradeFilters({ rows, filters, onChange }) {
@@ -1487,6 +1589,14 @@ function Trades({ data, loadingKeys }) {
   const buyCount = rows.filter((row) => row.side === 'buy').length;
   const sellCount = rows.filter((row) => row.side === 'sell').length;
   const brokerOnly = rows.filter((row) => row.ledgerStatus === 'только broker').length;
+  const roundTrips = buildRoundTrips(rows);
+  const filteredRoundTrips = roundTrips.filter((row) => {
+    if (filters.ticker && !String(row.ticker || '').toUpperCase().includes(filters.ticker)) return false;
+    if (filters.side === 'buy') return false;
+    return true;
+  });
+  const realizedPnlRub = filteredRoundTrips.reduce((sum, row) => Number.isFinite(Number(row.pnlRub)) ? sum + Number(row.pnlRub) : sum, 0);
+  const closedRoundTrips = filteredRoundTrips.filter((row) => Number.isFinite(Number(row.pnlRub))).length;
   const filteredRows = sortTrades(rows.filter((row) => {
     if (filters.side !== 'all' && row.side !== filters.side) return false;
     if (filters.status !== 'all' && row.status !== filters.status) return false;
@@ -1509,7 +1619,7 @@ function Trades({ data, loadingKeys }) {
             { label: 'Buy / Sell', value: `${buyCount} / ${sellCount}`, tone: sellCount ? 'warn' : 'good', detail: 'стороны сделок' },
             { label: 'Ledger', value: `${rows.length - brokerOnly} / ${rows.length}`, tone: brokerOnly ? 'warn' : 'good', detail: brokerOnly ? `${brokerOnly} только broker` : 'все связаны' },
             { label: 'Фильтр', value: filteredRows.length, detail: 'строк сейчас видно' },
-            { label: 'Последняя', value: rows[0]?.ticker || EMPTY, detail: rows[0] ? `${rows[0].side} · ${time(rows[0].createdAt)}` : 'сделок нет' }
+            { label: 'Round-trip P/L', value: `${money(realizedPnlRub)} RUB`, tone: realizedPnlRub >= 0 ? 'good' : 'bad', detail: `${closedRoundTrips} закрытых пар, gross` }
           ]}
         />
       </Card>
@@ -1517,6 +1627,25 @@ function Trades({ data, loadingKeys }) {
       <TradeReview rows={filteredRows} loading={loadingKeys.trades || loadingKeys.robotPositions || loadingKeys.decisions} className="wide">
         <TradeFilters rows={rows} filters={filters} onChange={setFilters} />
       </TradeReview>
+
+      <Card title="Round-trip P/L" icon={LineChart} className="wide" help="Закрытые пары buy -> sell по FIFO. Это не новая торговая логика, а бухгалтерия поверх последних broker records: сколько робот заработал или потерял на завершенных входах. Сейчас это gross P/L без отдельного вычета комиссий, если комиссии не пришли отдельными записями.">
+        <Table
+          columns={[
+            { key: 'exitAt', label: 'Выход', width: '150px', render: (row) => time(row.exitAt) },
+            { key: 'ticker', label: 'Тикер', width: '110px', render: (row) => <><strong>{row.ticker || '-'}</strong><div className="muted">{row.name}</div></> },
+            { key: 'status', label: 'Статус', width: '95px', render: (row) => <Pill tone={row.status === 'закрыто' ? 'good' : 'warn'}>{row.status}</Pill> },
+            { key: 'lots', label: 'Лоты', width: '70px', className: 'right', render: (row) => money(row.lots) },
+            { key: 'entryPrice', label: 'Вход', width: '90px', className: 'right', render: (row) => money(row.entryPrice) },
+            { key: 'exitPrice', label: 'Выход', width: '90px', className: 'right', render: (row) => money(row.exitPrice) },
+            { key: 'pnlRub', label: 'P/L RUB', width: '105px', className: 'right', render: (row) => <span className={Number(row.pnlRub) >= 0 ? 'good' : 'bad'}>{money(row.pnlRub)}</span> },
+            { key: 'pnlPercent', label: 'P/L %', width: '90px', className: 'right', render: (row) => percent(row.pnlPercent) },
+            { key: 'reason', label: 'Пояснение', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+          ]}
+          rows={filteredRoundTrips}
+          empty="Закрытых пар под фильтр нет"
+          loading={loadingKeys.trades}
+        />
+      </Card>
 
       <Card title="Ledger робота" icon={Bot} className="wide" help="Внутренние события robot-owned ledger: из них робот понимает, какие лоты купил сам и какие может продавать.">
         <Table
