@@ -1,5 +1,6 @@
 import { Op } from 'sequelize';
 import { TradesModel } from '../models/trades.model';
+import TradesService from './trades.service';
 
 const BLOCKED_STATUSES = new Set([
     'EXECUTION_REPORT_STATUS_REJECTED',
@@ -55,25 +56,36 @@ export default class SellPolicyService {
 
         let latestDirection: string | undefined;
         let latestTradeAt: unknown;
-        const robotOwnedLots = Math.max(0, trades.reduce((netLots, trade) => {
+        let robotOwnedLots = 0;
+        let robotCostRub = 0;
+
+        for (const trade of trades) {
             const data = trade.get({ plain: true }) as Record<string, unknown>;
-            if (!sameInstrument(data, figi, instrumentUid)) return netLots;
+            if (!sameInstrument(data, figi, instrumentUid)) continue;
 
             const status = data.status ? String(data.status) : undefined;
-            if (status && BLOCKED_STATUSES.has(status)) return netLots;
+            if (status && BLOCKED_STATUSES.has(status)) continue;
 
             const lots = lotsFromTrade(data);
             if (lots > 0) {
                 latestDirection = String(data.direction);
                 latestTradeAt = data.tradeDateTime || data.createdAt;
             }
-            if (String(data.direction) === '1') return netLots + lots;
-            if (String(data.direction) === '2') return netLots - lots;
-            return netLots;
-        }, 0));
+            if (String(data.direction) === '1') {
+                const amount = TradesService.amountFromTrade(data);
+                robotOwnedLots += lots;
+                if (amount !== undefined) robotCostRub += amount;
+            } else if (String(data.direction) === '2') {
+                const sellLots = Math.min(lots, robotOwnedLots);
+                const averageLotCostRub = robotOwnedLots > 0 ? robotCostRub / robotOwnedLots : 0;
+                robotOwnedLots -= sellLots;
+                robotCostRub -= sellLots * averageLotCostRub;
+            }
+        }
 
         return {
-            robotOwnedLots,
+            robotOwnedLots: Math.max(0, robotOwnedLots),
+            robotAverageLotCostRub: robotOwnedLots > 0 ? robotCostRub / robotOwnedLots : undefined,
             latestDirection,
             latestTradeAt
         };
@@ -91,6 +103,8 @@ export default class SellPolicyService {
         signalSource?: string;
         profitPercent?: number;
         minProfitPercent?: number;
+        currentPrice?: number;
+        lotSize?: number;
     }) {
         const requestedLots = Math.max(0, Math.trunc(input.requestedLots ?? 0));
         const robotPosition = await this.getRobotPosition(input.accountId, input.figi, input.instrumentUid);
@@ -100,6 +114,10 @@ export default class SellPolicyService {
         const profitPercent = Number(input.profitPercent);
         const latestWasBuy = robotPosition.latestDirection === '1';
         const emergencySell = input.signalSource === 'stop-loss';
+        const currentLotValueRub = Number(input.currentPrice) * Math.max(1, Number(input.lotSize || 1));
+        const robotProfitPercent = robotPosition.robotAverageLotCostRub && Number.isFinite(currentLotValueRub) && currentLotValueRub > 0
+            ? (currentLotValueRub / robotPosition.robotAverageLotCostRub - 1) * 100
+            : undefined;
 
         if (requestedLots <= 0) {
             return {
@@ -139,15 +157,35 @@ export default class SellPolicyService {
             };
         }
 
+        if (
+            latestWasBuy
+            && !emergencySell
+            && minProfitPercent > 0
+            && (robotProfitPercent === undefined || robotProfitPercent < minProfitPercent)
+        ) {
+            return {
+                allowed: false,
+                allowedLots: 0,
+                robotOwnedLots,
+                latestDirection: robotPosition.latestDirection,
+                latestTradeAt: robotPosition.latestTradeAt,
+                robotAverageLotCostRub: robotPosition.robotAverageLotCostRub,
+                robotProfitPercent,
+                reason: `sell policy blocked: robot-owned entry is not profitable enough for ${input.signalSource ?? 'sell'}, robot P/L ${robotProfitPercent !== undefined ? robotProfitPercent.toFixed(2) : '-'}% < min ${minProfitPercent.toFixed(2)}%`
+            };
+        }
+
         return {
             allowed: true,
             allowedLots,
             robotOwnedLots,
             latestDirection: robotPosition.latestDirection,
             latestTradeAt: robotPosition.latestTradeAt,
+            robotAverageLotCostRub: robotPosition.robotAverageLotCostRub,
+            robotProfitPercent,
             reason: allowedLots < requestedLots
                 ? `sell policy capped: ${allowedLots}/${requestedLots} robot-owned lots`
-                : `sell policy passed: ${allowedLots} robot-owned lots`
+                : `sell policy passed: ${allowedLots} robot-owned lots${robotProfitPercent !== undefined ? `, robot P/L ${robotProfitPercent.toFixed(2)}%` : ''}`
         };
     }
 }

@@ -78,7 +78,9 @@ export default class SellBrainService {
                         requestedLots: risk.quantity,
                         signalSource: signal?.source,
                         profitPercent: risk.profitPercent,
-                        minProfitPercent: config.minProfitPercent
+                        minProfitPercent: config.minProfitPercent,
+                        currentPrice,
+                        lotSize: instrument?.lot
                     })
                     : undefined;
                 const policyBlocked = account.mode === 'trade' && risk.allowed && sellPolicy && !sellPolicy.allowed;
@@ -114,6 +116,8 @@ export default class SellBrainService {
                     robotOwnedLots: sellPolicy?.robotOwnedLots,
                     latestRobotAction: sellPolicy?.latestDirection === '1' ? 'buy' : sellPolicy?.latestDirection === '2' ? 'sell' : undefined,
                     latestRobotTradeAt: sellPolicy?.latestTradeAt,
+                    robotAverageLotCostRub: sellPolicy?.robotAverageLotCostRub,
+                    robotProfitPercent: sellPolicy?.robotProfitPercent,
                     sellPolicy: sellPolicy?.reason,
                     confidence: signal?.confidence,
                     factors: signal?.factors

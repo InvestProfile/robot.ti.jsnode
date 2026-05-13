@@ -811,6 +811,7 @@ function Sell({ data, loadingKeys }) {
     { key: 'orderLots', label: 'Sell', className: 'right', render: (row) => row.orderLots ?? '-' },
     { key: 'quantityLots', label: 'Total', className: 'right', render: (row) => row.quantityLots ?? '-' },
     { key: 'profitPercent', label: 'P/L', className: 'right', render: (row) => percent(row.profitPercent) },
+    { key: 'robotProfitPercent', label: 'Robot P/L', className: 'right', render: (row) => percent(row.robotProfitPercent) },
     { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
   ];
 
@@ -879,6 +880,7 @@ function Sell({ data, loadingKeys }) {
             { key: 'source', label: 'Signal' },
             { key: 'robotOwnedLots', label: 'Robot', className: 'right', render: (row) => row.robotOwnedLots ?? '-' },
             { key: 'orderLots', label: 'Sell', className: 'right', render: (row) => row.orderLots ?? '-' },
+            { key: 'robotProfitPercent', label: 'Robot P/L', className: 'right', render: (row) => percent(row.robotProfitPercent) },
             { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.sellPolicy || row.reason}</Reason> }
           ]}
           rows={liveCandidates}
