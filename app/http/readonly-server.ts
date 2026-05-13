@@ -39,6 +39,7 @@ import BuyRecommendationService from '../services/buy-recommendation.service';
 import RobotPositionLedgerService from '../services/robot-position-ledger.service';
 import MarketRegimeLabService from '../services/market-regime-lab.service';
 import DailyBuyListService from '../services/daily-buy-list.service';
+import TradePnlService from '../services/trade-pnl.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -593,6 +594,11 @@ const getTradesPayload = async (url: URL) => {
     };
 };
 
+const getTradePnlPayload = async (url: URL, config: RobotConfig) => {
+    const requestedLimit = Number(url.searchParams.get('limit') ?? 500);
+    return await TradePnlService.getRoundTripPnl(config, requestedLimit);
+};
+
 const getOrderSafetyPayload = async (url: URL) => {
     const requestedLimit = Number(url.searchParams.get('limit') ?? 80);
     const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 80, 1), 300);
@@ -776,6 +782,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/trades') {
         json(res, 200, await getTradesPayload(url));
+        return;
+    }
+
+    if (url.pathname === '/api/trade-pnl') {
+        json(res, 200, await getTradePnlPayload(url, config));
         return;
     }
 
