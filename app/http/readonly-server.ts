@@ -646,18 +646,42 @@ const getLimitsPayload = async (config: RobotConfig) => {
     const limits = [];
 
     for (const accountId of config.accountIds) {
-        const ordersUsed = await TradesService.countTodayTrades(accountId);
-        const rubUsed = await TradesService.sumTodayBuyTradesRub(accountId);
+        const [ordersUsed, rubUsed, portfolio] = await Promise.all([
+            TradesService.countTodayTrades(accountId),
+            TradesService.sumTodayBuyTradesRub(accountId),
+            OperationsService.getPortfolio(accountId)
+        ]);
+        const totalRub = quotationToNumber(portfolio?.totalAmountPortfolio);
+        const cashRub = quotationToNumber(portfolio?.totalAmountCurrencies);
+        const dailyExposureRub = Math.min(config.maxDailyRub, config.maxDailyOrders * config.maxOrderRub);
+        const stopLossRiskRub = dailyExposureRub * Math.max(0, config.stopLossPercent) / 100;
+        const baseTrailingGivebackRub = dailyExposureRub * Math.max(0, config.trailingStopPercent) / 100;
+        const percentOfPortfolio = (value: number | undefined) =>
+            totalRub && totalRub > 0 && value !== undefined ? value / totalRub * 100 : undefined;
 
         limits.push({
             accountId,
             accountAlias: config.accountAliases[accountId],
+            mode: 'trade',
             ordersUsed,
             ordersLimit: config.maxDailyOrders,
             ordersLeft: Math.max(0, config.maxDailyOrders - ordersUsed),
             rubUsed,
             rubLimit: config.maxDailyRub,
-            rubLeft: Math.max(0, config.maxDailyRub - rubUsed)
+            rubLeft: Math.max(0, config.maxDailyRub - rubUsed),
+            cashRub,
+            totalRub,
+            budget: {
+                maxOrderRub: config.maxOrderRub,
+                dailyExposureRub,
+                stopLossPercent: config.stopLossPercent,
+                stopLossRiskRub,
+                baseTrailingGivebackRub,
+                maxOrderPortfolioPercent: percentOfPortfolio(config.maxOrderRub),
+                dailyExposurePortfolioPercent: percentOfPortfolio(dailyExposureRub),
+                stopLossRiskPortfolioPercent: percentOfPortfolio(stopLossRiskRub),
+                cashUsagePercent: cashRub && cashRub > 0 ? dailyExposureRub / cashRub * 100 : undefined
+            }
         });
     }
 

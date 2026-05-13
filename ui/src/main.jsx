@@ -1111,7 +1111,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
   const maxDailyRub = Number(config.maxDailyRub || 0);
   const orderButtons = [500, 1000, 1500, 2500].filter((value) => value <= Number(config.maxRuntimeOrderRub || value));
   const orderCountButtons = [1, 3, 5, 10].filter((value) => value <= Number(config.maxRuntimeDailyOrders || value));
-  const dailyRubButtons = [500, 1500, 3000, 5000].filter((value) => value <= Number(config.maxRuntimeDailyRub || value));
+  const dailyRubButtons = [500, 1500, 2500, 3000, 5000].filter((value) => value <= Number(config.maxRuntimeDailyRub || value));
 
   return (
     <Card title="Лимиты риска" icon={ShieldCheck} help="Меняет реальные лимиты робота без перезапуска. Лимит заявки - потолок одной заявки, заявки в день - сколько заявок за день, бюджет дня - общий дневной бюджет.">
@@ -1161,6 +1161,25 @@ function RiskControls({ data, onRiskSettingsChange }) {
   );
 }
 
+function RiskBudget({ data }) {
+  const tradeLimit = getTradeLimit(data);
+  const budget = tradeLimit?.budget || {};
+
+  return (
+    <Card title="Бюджет риска" icon={ShieldCheck} className="wide" help="Показывает не просто лимит покупок, а примерную сумму под риском: дневная экспозиция и сколько робот теоретически потеряет, если все новые входы закроются по stop-loss.">
+      <div className="stats compact">
+        <Stat label="Счет" value={`${money(tradeLimit?.totalRub)} RUB`} title="Текущая стоимость торгового счета по портфелю брокера." />
+        <Stat label="Дневная экспозиция" value={`${money(budget.dailyExposureRub)} RUB`} title="Сколько робот максимум задействует сегодня: min(дневной бюджет, заявок в день * лимит заявки)." />
+        <Stat label="Экспозиция / счет" value={percent(budget.dailyExposurePortfolioPercent)} title="Доля дневной экспозиции от торгового счета." />
+        <Stat label="Stop-loss риск" value={`${money(budget.stopLossRiskRub)} RUB`} tone="bad" title="Грубый worst-case по новым входам: дневная экспозиция * stop-loss %. Комиссии и гэпы отдельно не учитываются." />
+        <Stat label="Stop-loss / счет" value={percent(budget.stopLossRiskPortfolioPercent)} tone="bad" title="Та же потенциальная потеря как доля счета." />
+        <Stat label="Trailing giveback" value={`${money(budget.baseTrailingGivebackRub)} RUB`} title="Сколько прибыли может быть отдано базовым trailing-stop. Адаптивный trailing может быть шире для волатильной бумаги." />
+        <Stat label="Cash usage" value={percent(budget.cashUsagePercent)} title="Доля свободных денег, которую дневной бюджет может задействовать." />
+      </div>
+    </Card>
+  );
+}
+
 function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle, onRiskSettingsChange }) {
   const liveActions = data.status?.config?.liveAllowedActions || [];
   const sellArmed = liveActions.includes('sell');
@@ -1200,6 +1219,7 @@ function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle, onRiskSet
         </div>
       </Card>
       <RiskControls data={data} onRiskSettingsChange={onRiskSettingsChange} />
+      <RiskBudget data={data} />
       <Card title="Счета" icon={Database} className="wide" help="Кнопка меняет режим счета без перезапуска робота. Protected-счет можно перевести в trade только после отдельного подтверждения номером счета.">
         <Table
           columns={[
