@@ -124,6 +124,32 @@ const findNearestDecision = (
 
 const sourceLabel = (value: unknown) => String(value || 'unknown');
 
+const parseScore = (value: unknown) => {
+    const match = String(value || '').match(/score\s+(-?\d+(?:\.\d+)?)(?:\/\d+)?/i);
+    if (!match) return undefined;
+
+    const score = Number(match[1]);
+    return Number.isFinite(score) ? score : undefined;
+};
+
+const exitKind = (signalSource: unknown, reason: unknown) => {
+    const text = `${signalSource || ''} ${reason || ''}`.toLowerCase();
+    if (text.includes('stop-loss')) return 'stop-loss';
+    if (text.includes('trailing-stop')) return 'trailing-stop';
+    if (text.includes('profit-take')) return 'profit-take';
+    if (text.includes('hold-winner')) return 'hold-winner';
+    if (text.includes('score-buy')) return 'score-buy';
+    return sourceLabel(signalSource);
+};
+
+const minutesBetween = (from: unknown, to: unknown) => {
+    const fromTime = new Date(String(from || '')).getTime();
+    const toTime = new Date(String(to || '')).getTime();
+    if (!Number.isFinite(fromTime) || !Number.isFinite(toTime)) return undefined;
+
+    return Math.max(0, (toTime - fromTime) / 60_000);
+};
+
 const dateLabel = (value: unknown) => {
     const date = new Date(String(value || ''));
     if (Number.isNaN(date.getTime())) return 'unknown';
@@ -167,6 +193,55 @@ const summarize = <T extends Record<string, unknown>>(rows: T[], key: (row: T) =
             winRate: group.count > 0 ? group.wins / group.count * 100 : undefined
         }))
         .sort((a, b) => Math.abs(b.pnlRub) - Math.abs(a.pnlRub));
+};
+
+const diagnoseRoundTrip = (row: Record<string, unknown>) => {
+    const pnlRub = Number(row.pnlRub);
+    const entrySignal = sourceLabel(row.entrySignalSource);
+    const exitSignal = sourceLabel(row.exitSignalSource);
+    const entryScore = parseScore(row.entryDecisionReason);
+    const holdMinutes = minutesBetween(row.entryAt, row.exitAt);
+    const kind = exitKind(row.exitSignalSource, row.exitDecisionReason);
+    const diagnoses = [];
+
+    if (Number.isFinite(pnlRub)) {
+        diagnoses.push(pnlRub >= 0 ? 'gross-profit' : 'gross-loss');
+    }
+
+    if (entrySignal === 'unknown') diagnoses.push('missing-entry-signal');
+    if (exitSignal === 'unknown') diagnoses.push('missing-exit-signal');
+    if (kind !== 'unknown') diagnoses.push(`exit:${kind}`);
+    diagnoses.push('execution:gross-only');
+
+    return {
+        id: row.id,
+        ticker: row.ticker,
+        name: row.name,
+        pnlRub: row.pnlRub,
+        pnlPercent: row.pnlPercent,
+        entrySignalSource: row.entrySignalSource,
+        exitSignalSource: row.exitSignalSource,
+        entryScore,
+        exitKind: kind,
+        holdMinutes,
+        entryAt: row.entryAt,
+        exitAt: row.exitAt,
+        diagnoses,
+        executionAccounting: 'gross-only',
+        note: 'No separate commission/slippage fields are available in this report yet.'
+    };
+};
+
+const summarizeDiagnostics = (diagnostics: Record<string, unknown>[]) => {
+    const expanded = diagnostics.flatMap(row => {
+        const diagnoses = Array.isArray(row.diagnoses) ? row.diagnoses : [];
+        return diagnoses.map(diagnosis => ({
+            ...row,
+            diagnosis: String(diagnosis)
+        }));
+    });
+
+    return summarize(expanded, row => sourceLabel(row.diagnosis));
 };
 
 export default class TradePnlService {
@@ -326,6 +401,7 @@ export default class TradePnlService {
         const realizedPnlRub = closedRoundTrips.reduce((sum, row) => sum + Number(row.pnlRub), 0);
         const wins = closedRoundTrips.filter(row => Number(row.pnlRub) > 0).length;
         const losses = closedRoundTrips.filter(row => Number(row.pnlRub) < 0).length;
+        const diagnostics = closedRoundTrips.map(diagnoseRoundTrip);
 
         return {
             generatedAt: new Date().toISOString(),
@@ -346,8 +422,10 @@ export default class TradePnlService {
                 byDate: summarize(closedRoundTrips, row => dateLabel(row.exitAt)),
                 byEntrySignal: summarize(closedRoundTrips, row => sourceLabel(row.entrySignalSource)),
                 byExitSignal: summarize(closedRoundTrips, row => sourceLabel(row.exitSignalSource)),
-                byTicker: summarize(closedRoundTrips, row => sourceLabel(row.ticker))
-            }
+                byTicker: summarize(closedRoundTrips, row => sourceLabel(row.ticker)),
+                byDiagnosis: summarizeDiagnostics(diagnostics)
+            },
+            diagnostics
         };
     }
 }

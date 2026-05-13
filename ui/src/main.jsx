@@ -1508,6 +1508,28 @@ function PnlBreakdown({ title, rows, loading, help }) {
   );
 }
 
+function PnlDiagnostics({ rows, loading }) {
+  return (
+    <Card title="Диагностика качества" icon={ShieldCheck} className="wide" help="Разделяет качество стратегии и качество исполнения. Entry/Exit показывают сигналы робота, Hold - сколько держали позицию, Diagnostics - фактические метки. Execution пока gross-only: без отдельного учета комиссий и проскальзывания.">
+      <Table
+        columns={[
+          { key: 'ticker', label: 'Тикер', width: '110px', render: (row) => <><strong>{row.ticker || EMPTY}</strong><div className="muted">{row.name}</div></> },
+          { key: 'pnlRub', label: 'P/L', width: '105px', className: 'right', render: (row) => <span className={Number(row.pnlRub) >= 0 ? 'good' : 'bad'}>{money(row.pnlRub)}</span> },
+          { key: 'pnlPercent', label: 'P/L %', width: '90px', className: 'right', render: (row) => percent(row.pnlPercent) },
+          { key: 'holdMinutes', label: 'Hold', width: '95px', className: 'right', render: (row) => row.holdMinutes === undefined ? EMPTY : `${money(row.holdMinutes)} мин` },
+          { key: 'entrySignalSource', label: 'Entry', width: '135px', render: (row) => <><TextCell>{row.entrySignalSource || EMPTY}</TextCell><div className="muted">score {money(row.entryScore)}</div></> },
+          { key: 'exitKind', label: 'Exit', width: '135px', render: (row) => <><TextCell>{row.exitSignalSource || EMPTY}</TextCell><div className="muted">{row.exitKind || EMPTY}</div></> },
+          { key: 'diagnoses', label: 'Diagnostics', className: 'reason', render: (row) => <Reason>{(row.diagnoses || []).join(', ')}</Reason> },
+          { key: 'executionAccounting', label: 'Execution', width: '125px', render: (row) => <Pill tone="warn">{row.executionAccounting || EMPTY}</Pill> }
+        ]}
+        rows={rows || []}
+        empty="Закрытых пар для диагностики пока нет"
+        loading={loading}
+      />
+    </Card>
+  );
+}
+
 function Trades({ data, loadingKeys }) {
   const [filters, setFilters] = useState({ side: 'all', status: 'all', ledger: 'all', ticker: '', sort: 'newest' });
   const rows = buildTradeRows(data);
@@ -1517,6 +1539,7 @@ function Trades({ data, loadingKeys }) {
   const brokerOnly = rows.filter((row) => row.ledgerStatus === 'только broker').length;
   const tradePnlSummary = data.tradePnl?.summary || {};
   const tradePnlBreakdowns = data.tradePnl?.breakdowns || {};
+  const tradePnlDiagnostics = data.tradePnl?.diagnostics || [];
   const roundTrips = data.tradePnl?.roundTrips || [];
   const filteredRoundTrips = roundTrips.filter((row) => {
     if (filters.ticker && !String(row.ticker || '').toUpperCase().includes(filters.ticker)) return false;
@@ -1607,6 +1630,15 @@ function Trades({ data, loadingKeys }) {
         loading={loadingKeys.tradePnl}
         help="Сводка по инструментам: какие бумаги робот закрыл в плюс или минус."
       />
+
+      <PnlBreakdown
+        title="P/L по диагнозу"
+        rows={tradePnlBreakdowns.byDiagnosis}
+        loading={loadingKeys.tradePnl}
+        help="Фактические метки по закрытым парам: gross-profit/loss, missing-entry/exit-signal, exit:* и execution:gross-only. Одна сделка может попадать в несколько меток."
+      />
+
+      <PnlDiagnostics rows={tradePnlDiagnostics} loading={loadingKeys.tradePnl} />
 
       <Card title="Ledger робота" icon={Bot} className="wide" help="Внутренние события robot-owned ledger: из них робот понимает, какие лоты купил сам и какие может продавать.">
         <Table
