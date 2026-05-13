@@ -455,6 +455,7 @@ const safeConfig = (config: RobotConfig) => ({
     minProfitPercent: config.minProfitPercent,
     stopLossPercent: config.stopLossPercent,
     trailingStopPercent: config.trailingStopPercent,
+    trailingStopMinProfitPercent: config.trailingStopMinProfitPercent,
     trailingBaseline: config.trailingBaseline,
     sellHoldWinnerMinProfitPercent: config.sellHoldWinnerMinProfitPercent,
     sellHoldWinnerMaxDrawdownPercent: config.sellHoldWinnerMaxDrawdownPercent,

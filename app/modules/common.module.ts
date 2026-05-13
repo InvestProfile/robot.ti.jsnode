@@ -14,6 +14,7 @@ import BuySignalJournalService from '../services/buy-signal-journal.service';
 import PaperTradingService from '../services/paper-trading.service';
 import RuntimeConfigService from '../services/runtime-config.service';
 import SellPolicyService from '../services/sell-policy.service';
+import PositionStateService from '../services/position-state.service';
 import StrategyEngine from '../strategies/strategy-engine';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
 import { normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
@@ -91,6 +92,14 @@ const getOrderMetadata = (orderResult: unknown) => {
 
 const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
+const moneyPartsToNumber = (units: unknown, nano: unknown) => {
+    const parsedUnits = Number(units ?? 0);
+    const parsedNano = Number(nano ?? 0);
+    const value = parsedUnits + parsedNano * 1e-9;
+
+    return Number.isFinite(value) && value > 0 ? value : undefined;
+};
+
 const validateLiveOrderAllowed = (config: RobotConfig, side: OrderSide) => {
     const pauseReason = getLiveTradingPauseReason(config);
     if (config.dryRun) throw new Error('live order blocked: dry-run mode is enabled');
@@ -162,11 +171,26 @@ const submitTrackedOrder = async (input: {
             clientOrderId
         );
 
+        const metadata = getOrderMetadata(orderResult);
+
         await TradesService.updateOrderMetadata(pendingTrade, {
-            ...getOrderMetadata(orderResult),
+            ...metadata,
             clientOrderId,
             instrumentId: input.instrumentUid
         });
+
+        if (input.side === ORDER_SIDE.BUY && !isRejectedOrderStatus(metadata.status)) {
+            await PositionStateService.resetHighWaterMark({
+                accountId: input.accountId,
+                figi: input.figi,
+                instrumentUid: input.instrumentUid,
+                ticker: input.ticker,
+                name: input.name,
+                currentPrice: moneyPartsToNumber(metadata.executedPriceUnits, metadata.executedPriceNano)
+                    ?? moneyPartsToNumber(input.price.units, input.price.nano)
+                    ?? 0
+            });
+        }
 
         return {
             orderResult,

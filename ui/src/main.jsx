@@ -224,6 +224,32 @@ const shortReason = (value) => {
   return `${text.slice(0, 86).trim()}...`;
 };
 
+const classifyBlocker = (reason) => {
+  const text = String(reason || '').toLowerCase();
+  if (text.includes('already in portfolio')) return 'уже в портфеле';
+  if (text.includes('daily order limit')) return 'дневной лимит';
+  if (text.includes('market regime')) return 'рыночный фильтр';
+  if (text.includes('normal trading status')) return 'статус торгов';
+  if (text.includes('score-buy blocked')) return 'score ниже порога';
+  if (text.includes('cash')) return 'денег не хватает';
+  if (text.includes('open buy order')) return 'есть открытая заявка';
+  return reason || EMPTY;
+};
+
+const summarizeBlockers = (rows) => {
+  if (!rows.length) return EMPTY;
+
+  const counts = rows.reduce((acc, row) => {
+    const key = classifyBlocker(row.reason);
+    acc.set(key, (acc.get(key) || 0) + 1);
+    return acc;
+  }, new Map());
+
+  return [...counts.entries()]
+    .map(([reason, count]) => `${count} ${reason}`)
+    .join(', ');
+};
+
 const Reason = ({ children }) => {
   const text = String(children || EMPTY);
   if (text.length <= 90) return <span className="reason-short" title={text}>{text}</span>;
@@ -650,7 +676,7 @@ function Buy({ data, loadingKeys }) {
   const buyRecommendations = data.buyRecommendations?.items || [];
   const buyScan = data.buyScan?.items || [];
   const tradeLimit = getTradeLimit(data);
-  const topBlocker = blockedPreviews[0]?.reason || buyRecommendations[0]?.reason || EMPTY;
+  const blockerSummary = summarizeBlockers(blockedPreviews) || buyRecommendations[0]?.reason || EMPTY;
 
   return (
     <div className="grid">
@@ -661,7 +687,7 @@ function Buy({ data, loadingKeys }) {
             { label: 'Кандидаты дня', value: dailyItems.length, detail: dailyItems.map((item) => item.ticker).join(', ') || 'список пуст' },
             { label: 'Предпросмотр', value: allowedPreviews.length, tone: allowedPreviews.length ? 'good' : 'warn', detail: `${blockedPreviews.length} заблокировано до заявки` },
             { label: 'Лимиты', value: tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : EMPTY, tone: tradeLimit && Number(tradeLimit.ordersLeft) <= 0 ? 'bad' : 'good', detail: 'заявки / бюджет сегодня' },
-            { label: 'Исполнение', value: blockedPreviews.length ? 'BLOCKED' : allowedPreviews.length ? 'READY' : 'WAIT', tone: blockedPreviews.length ? 'bad' : allowedPreviews.length ? 'good' : 'warn', detail: topBlocker }
+            { label: 'Исполнение', value: blockedPreviews.length ? 'BLOCKED' : allowedPreviews.length ? 'READY' : 'WAIT', tone: blockedPreviews.length ? 'bad' : allowedPreviews.length ? 'good' : 'warn', detail: blockerSummary }
           ]}
         />
       </Card>

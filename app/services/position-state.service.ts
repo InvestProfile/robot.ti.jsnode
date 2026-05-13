@@ -71,4 +71,32 @@ export default class PositionStateService {
             previousHighestPrice: Number(state.highestPrice)
         };
     }
+
+    static async resetHighWaterMark(input: Omit<UpdateInput, 'trailingBaseline'>) {
+        if (!Number.isFinite(input.currentPrice) || input.currentPrice <= 0) return;
+
+        const [state] = await PositionStateModel.findOrCreate({
+            where: {
+                accountId: input.accountId,
+                instrumentUid: input.instrumentUid
+            },
+            defaults: {
+                accountId: input.accountId,
+                figi: input.figi,
+                instrumentUid: input.instrumentUid,
+                ticker: input.ticker,
+                name: input.name,
+                highestPrice: input.currentPrice,
+                lastPrice: input.currentPrice
+            }
+        });
+
+        await state.update({
+            figi: input.figi,
+            ticker: input.ticker,
+            name: input.name,
+            highestPrice: input.currentPrice,
+            lastPrice: input.currentPrice
+        });
+    }
 }

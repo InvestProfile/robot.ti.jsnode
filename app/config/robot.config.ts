@@ -251,7 +251,7 @@ export const getRobotConfig = (): RobotConfig => {
         minProfitPercent,
         stopLossPercent: parseNumber(env.ROBOT_STOP_LOSS_PERCENT, 3),
         trailingStopPercent: parseNumber(env.ROBOT_TRAILING_STOP_PERCENT, 2),
-        trailingStopMinProfitPercent: parseNumber(env.ROBOT_TRAILING_STOP_MIN_PROFIT_PERCENT, 0),
+        trailingStopMinProfitPercent: parseNumber(env.ROBOT_TRAILING_STOP_MIN_PROFIT_PERCENT, minProfitPercent),
         trailingBaseline: parseTrailingBaseline(env.ROBOT_TRAILING_BASELINE),
         sellHoldWinnerMinProfitPercent: Math.max(
             minProfitPercent,

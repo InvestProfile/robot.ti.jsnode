@@ -97,10 +97,10 @@ export default class PaperTradingService {
             };
         }
 
-        if (drawdownPercent >= config.trailingStopPercent) {
+        if (drawdownPercent >= config.trailingStopPercent && profitPercent >= config.trailingStopMinProfitPercent) {
             return {
                 source: 'trailing-stop',
-                reason: `paper trailing-stop: ${drawdownPercent.toFixed(2)}% below high ${highestPrice.toFixed(2)}`
+                reason: `paper trailing-stop: ${drawdownPercent.toFixed(2)}% below high ${highestPrice.toFixed(2)}, profit ${profitPercent.toFixed(2)}% >= trailing min ${config.trailingStopMinProfitPercent.toFixed(2)}%`
             };
         }
 
