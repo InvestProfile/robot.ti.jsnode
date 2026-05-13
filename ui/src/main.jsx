@@ -1488,6 +1488,26 @@ function OrderSafety({ data, loading }) {
   );
 }
 
+function PnlBreakdown({ title, rows, loading, help }) {
+  return (
+    <Card title={title} icon={LineChart} className="wide" help={help}>
+      <Table
+        columns={[
+          { key: 'key', label: 'Разрез', render: (row) => <strong>{row.key || EMPTY}</strong> },
+          { key: 'count', label: 'Пар', width: '80px', className: 'right', render: (row) => money(row.count) },
+          { key: 'wins', label: 'W/L', width: '90px', className: 'right', render: (row) => `${row.wins || 0}/${row.losses || 0}` },
+          { key: 'winRate', label: 'Win rate', width: '95px', className: 'right', render: (row) => percent(row.winRate) },
+          { key: 'pnlRub', label: 'P/L RUB', width: '105px', className: 'right', render: (row) => <span className={Number(row.pnlRub) >= 0 ? 'good' : 'bad'}>{money(row.pnlRub)}</span> },
+          { key: 'averagePnlRub', label: 'Avg RUB', width: '100px', className: 'right', render: (row) => money(row.averagePnlRub) }
+        ]}
+        rows={rows || []}
+        empty="Закрытых пар пока нет"
+        loading={loading}
+      />
+    </Card>
+  );
+}
+
 function Trades({ data, loadingKeys }) {
   const [filters, setFilters] = useState({ side: 'all', status: 'all', ledger: 'all', ticker: '', sort: 'newest' });
   const rows = buildTradeRows(data);
@@ -1496,6 +1516,7 @@ function Trades({ data, loadingKeys }) {
   const sellCount = rows.filter((row) => row.side === 'sell').length;
   const brokerOnly = rows.filter((row) => row.ledgerStatus === 'только broker').length;
   const tradePnlSummary = data.tradePnl?.summary || {};
+  const tradePnlBreakdowns = data.tradePnl?.breakdowns || {};
   const roundTrips = data.tradePnl?.roundTrips || [];
   const filteredRoundTrips = roundTrips.filter((row) => {
     if (filters.ticker && !String(row.ticker || '').toUpperCase().includes(filters.ticker)) return false;
@@ -1543,6 +1564,8 @@ function Trades({ data, loadingKeys }) {
           columns={[
             { key: 'exitAt', label: 'Выход', width: '150px', render: (row) => time(row.exitAt) },
             { key: 'ticker', label: 'Тикер', width: '110px', render: (row) => <><strong>{row.ticker || '-'}</strong><div className="muted">{row.name}</div></> },
+            { key: 'entrySignalSource', label: 'Вход', width: '120px', render: (row) => <TextCell>{row.entrySignalSource || EMPTY}</TextCell> },
+            { key: 'exitSignalSource', label: 'Выход signal', width: '125px', render: (row) => <TextCell>{row.exitSignalSource || EMPTY}</TextCell> },
             { key: 'status', label: 'Статус', width: '95px', render: (row) => <Pill tone={row.status === 'closed' ? 'good' : 'warn'}>{roundTripStatusLabel(row.status)}</Pill> },
             { key: 'lots', label: 'Лоты', width: '70px', className: 'right', render: (row) => money(row.lots) },
             { key: 'entryPrice', label: 'Вход', width: '90px', className: 'right', render: (row) => money(row.entryPrice) },
@@ -1556,6 +1579,34 @@ function Trades({ data, loadingKeys }) {
           loading={loadingKeys.tradePnl}
         />
       </Card>
+
+      <PnlBreakdown
+        title="P/L по датам"
+        rows={tradePnlBreakdowns.byDate}
+        loading={loadingKeys.tradePnl}
+        help="Закрытые пары сгруппированы по дате выхода. Так видно, какие торговые дни реально дали плюс или минус."
+      />
+
+      <PnlBreakdown
+        title="P/L по входному сигналу"
+        rows={tradePnlBreakdowns.byEntrySignal}
+        loading={loadingKeys.tradePnl}
+        help="Группировка по ближайшему решению робота перед buy-сделкой. Это первый шаг к ответу, какая стратегия входа зарабатывает."
+      />
+
+      <PnlBreakdown
+        title="P/L по выходному сигналу"
+        rows={tradePnlBreakdowns.byExitSignal}
+        loading={loadingKeys.tradePnl}
+        help="Группировка по ближайшему решению робота перед sell-сделкой. Тут видно, какие причины выхода режут убыток или забирают прибыль."
+      />
+
+      <PnlBreakdown
+        title="P/L по тикерам"
+        rows={tradePnlBreakdowns.byTicker}
+        loading={loadingKeys.tradePnl}
+        help="Сводка по инструментам: какие бумаги робот закрыл в плюс или минус."
+      />
 
       <Card title="Ledger робота" icon={Bot} className="wide" help="Внутренние события robot-owned ledger: из них робот понимает, какие лоты купил сам и какие может продавать.">
         <Table

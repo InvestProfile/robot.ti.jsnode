@@ -187,6 +187,11 @@ main {
   grid-column: 1 / -1;
 }
 
+.grid > .panel:has(.table-wrap),
+.overview-grid > .panel:has(.table-wrap) {
+  grid-column: 1 / -1;
+}
+
 .panel-head {
   display: flex;
   justify-content: space-between;
