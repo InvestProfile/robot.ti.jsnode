@@ -21,6 +21,11 @@ export default class TrailingStopStrategy {
         const drawdownPercent = ((state.highestPrice - input.currentPrice) / state.highestPrice) * 100;
         if (drawdownPercent < config.trailingStopPercent) return undefined;
 
+        if (!Number.isFinite(input.averagePrice) || input.averagePrice <= 0) return undefined;
+
+        const profitPercent = ((input.currentPrice - input.averagePrice) / input.averagePrice) * 100;
+        if (profitPercent < config.trailingStopMinProfitPercent) return undefined;
+
         const availableLots = Math.trunc(input.quantityLots ?? 0);
         if (availableLots <= 0) return undefined;
 
@@ -28,14 +33,13 @@ export default class TrailingStopStrategy {
             action: 'sell',
             source: 'trailing-stop',
             confidence: 1,
-            reason: `current price is ${drawdownPercent.toFixed(2)}% below ${config.trailingBaseline} high ${state.highestPrice.toFixed(2)}`,
+            reason: `current price is ${drawdownPercent.toFixed(2)}% below ${config.trailingBaseline} high ${state.highestPrice.toFixed(2)}, profit ${profitPercent.toFixed(2)}% >= trailing min ${config.trailingStopMinProfitPercent.toFixed(2)}%`,
             quantityLots: Math.min(availableLots, config.maxLotsPerOrder),
-            profitPercent: input.averagePrice > 0
-                ? ((input.currentPrice - input.averagePrice) / input.averagePrice) * 100
-                : 0,
+            profitPercent,
             factors: {
                 highestPrice: state.highestPrice,
-                drawdownPercent
+                drawdownPercent,
+                trailingStopMinProfitPercent: config.trailingStopMinProfitPercent
             }
         };
     }

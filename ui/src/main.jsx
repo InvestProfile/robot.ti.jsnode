@@ -135,25 +135,73 @@ const adjustmentTone = (value) => {
   return 'neutral';
 };
 
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
 const ScoreBreakdown = ({ analysis }) => {
   const factors = analysis?.factors || {};
   const items = [
-    { key: 'base', label: 'base', value: factors.baseScore, title: 'Базовый score: тренд, momentum, откат от хая, волатильность и объем.' },
-    { key: 'social', label: 'pulse', value: factors.socialScoreAdjustment, title: 'Поправка от выбранных успешных авторов Пульса.' },
-    { key: 'analyst', label: 'analyst', value: factors.analystScoreAdjustment, title: 'Поправка от консенсус-прогноза аналитиков T-Invest.' },
-    { key: 'tech', label: 'tech', value: factors.technicalScoreAdjustment, title: 'Поправка от официальных индикаторов T-Invest: RSI, MACD и средние.' }
+    { key: 'base', label: 'База', value: factors.baseScore, title: 'Базовый score: тренд, momentum, откат от хая, волатильность и объем.', base: true },
+    { key: 'social', label: 'Пульс', value: factors.socialScoreAdjustment, title: 'Поправка от выбранных успешных авторов Пульса.' },
+    { key: 'analyst', label: 'Аналит.', value: factors.analystScoreAdjustment, title: 'Поправка от консенсус-прогноза аналитиков T-Invest.' },
+    { key: 'tech', label: 'Тех.', value: factors.technicalScoreAdjustment, title: 'Поправка от официальных индикаторов T-Invest: RSI, MACD и средние.' }
   ];
 
   if (!analysis) return EMPTY;
+  const score = Number(analysis.score ?? 0);
 
   return (
-    <div className="score-breakdown" title={analysis.reason}>
-      <strong>{analysis.score ?? '-'}</strong>
-      {items.map((item) => (
-        <span key={item.key} className={adjustmentTone(item.value)} title={item.title}>
-          {item.label} {signedNumber(item.value)}
-        </span>
-      ))}
+    <div className="score-card" title={analysis.reason}>
+      <div className="score-main">
+        <strong>{analysis.score ?? '-'}</strong>
+        <span>итоговый score</span>
+        <div className="score-bar"><i style={{ width: `${clamp(score, 0, 100)}%` }} /></div>
+      </div>
+      <div className="score-components">
+        {items.map((item) => (
+          <span key={item.key} className={adjustmentTone(item.value)} title={item.title}>
+            <b>{item.label}</b>
+            <em>{item.base ? (item.value ?? '-') : signedNumber(item.value)}</em>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const ExecutionDecision = ({ status, reason }) => {
+  const allowed = status === 'allowed';
+  return (
+    <div className="decision-stack" title={reason || status || EMPTY}>
+      <Pill tone={allowed ? 'good' : 'warn'}>{allowed ? 'READY' : 'BLOCKED'}</Pill>
+      <span>{allowed ? 'заявка разрешена' : 'блок до заявки'}</span>
+    </div>
+  );
+};
+
+const ScoreSummary = ({ score, base, social, analyst, technical }) => {
+  const normalizedScore = Number(score ?? 0);
+  const items = [
+    { key: 'base', label: 'База', value: base, base: true },
+    { key: 'social', label: 'Пульс', value: social },
+    { key: 'analyst', label: 'Аналит.', value: analyst },
+    { key: 'tech', label: 'Тех.', value: technical }
+  ];
+
+  return (
+    <div className="score-card compact-score">
+      <div className="score-main">
+        <strong>{score ?? '-'}</strong>
+        <span>score</span>
+        <div className="score-bar"><i style={{ width: `${clamp(normalizedScore, 0, 100)}%` }} /></div>
+      </div>
+      <div className="score-components">
+        {items.map((item) => (
+          <span key={item.key} className={adjustmentTone(item.value)}>
+            <b>{item.label}</b>
+            <em>{item.base ? (item.value ?? '-') : signedNumber(item.value)}</em>
+          </span>
+        ))}
+      </div>
     </div>
   );
 };
@@ -378,14 +426,14 @@ function MarketControls({ data, onMarketRegimeChange }) {
   const trend = config.marketRegimeMinAvgTrendPercent ?? -1;
 
   return (
-    <Card title="Пороги Market Gate" icon={ShieldCheck} help="Это настройки допуска рынка, а не текущий результат. Required score - сколько базовых бумаг должно пройти фильтр. Required trend - насколько бумага может быть ниже своей 20-дневной средней.">
+    <Card title="Пороги рыночного фильтра" icon={ShieldCheck} help="Это настройки допуска рынка, а не текущий результат. Required score - сколько базовых бумаг должно пройти фильтр. Required trend - насколько бумага может быть ниже своей 20-дневной средней.">
       <div className="settings-summary">
         <div>
-          <span>Required score</span>
+          <span>Нужный score</span>
           <strong>{health}%</strong>
         </div>
         <div>
-          <span>Required trend</span>
+          <span>Мин. тренд</span>
           <strong>{trend}%</strong>
         </div>
       </div>
@@ -421,7 +469,7 @@ function MarketLab({ data, loading }) {
   const scenarios = data.marketLab?.scenarios || [];
 
   return (
-    <Card title="Лаборатория рынка" icon={BarChart3} help="Сравнение: какие покупки прошли бы при разных порогах health. Это не меняет настройки, только показывает последствия.">
+    <Card title="Лаборатория рынка" icon={BarChart3} className="wide" help="Сравнение: какие покупки прошли бы при разных порогах health. Это не меняет настройки, только показывает последствия.">
       <Table
         columns={[
           { key: 'label', label: 'Mode', render: (row) => <><strong>{row.label}</strong><div className="muted">health {row.minHealthPercent}%</div></> },
@@ -517,7 +565,7 @@ function Overview({ data, onMarketRegimeChange }) {
       detail: statusKnown ? dryRun ? 'Реальные заявки выключены.' : `Live actions: ${liveActions.join(', ') || EMPTY}.` : 'Ждем runtime config.'
     },
     {
-      label: 'Market Gate',
+      label: 'Рыночный фильтр',
       status: marketKnown ? market.passed ? 'PASSED' : 'BLOCKED' : 'WAIT',
       tone: marketKnown ? stageTone(marketBlocked) : 'warn',
       detail: market.reason || 'Рынок еще не рассчитан.'
@@ -561,7 +609,7 @@ function Overview({ data, onMarketRegimeChange }) {
         <Pipeline steps={pipelineSteps} />
       </Card>
 
-      <Card title="Market Gate" icon={Activity} help="Текущий расчет рынка. Current score - фактическая доля здоровых базовых бумаг. Required score - порог, который можно менять отдельно в блоке настроек.">
+      <Card title="Рыночный фильтр" icon={Activity} help="Текущий расчет рынка. Current score - фактическая доля здоровых базовых бумаг. Required score - порог, который можно менять отдельно в блоке настроек.">
         <div className="readiness">
           <Pill tone={marketKnown ? market.passed ? 'good' : 'bad' : 'warn'}>{marketKnown ? market.passed ? 'PASSED' : 'BLOCKED' : 'WAIT'}</Pill>
           <span>{market.reason}</span>
@@ -574,7 +622,7 @@ function Overview({ data, onMarketRegimeChange }) {
         </div>
       </Card>
 
-      <Card title="Live Safety" icon={ShieldCheck} help="Короткий чеклист перед доверием денег роботу: доступ, режим, рынок, дневные лимиты, неизвестные заявки и cookie-сборщик.">
+      <Card title="Безопасность live" icon={ShieldCheck} help="Короткий чеклист перед доверием денег роботу: доступ, режим, рынок, дневные лимиты, неизвестные заявки и cookie-сборщик.">
         <Checklist items={safetyItems} />
       </Card>
 
@@ -606,27 +654,28 @@ function Buy({ data, loadingKeys }) {
 
   return (
     <div className="grid">
-      <Card title="Покупочный pipeline" icon={Signal} className="wide" help="Слева направо: широкий рынок попадает в дневной список, затем score и внешние сигналы выбирают кандидатов, после этого market/risk gate решает, можно ли реально отправлять заявку.">
+      <Card title="Цепочка покупки" icon={Signal} className="wide" help="Слева направо: широкий рынок попадает в дневной список, затем score и внешние сигналы выбирают кандидатов, после этого market/risk gate решает, можно ли реально отправлять заявку.">
         <StageStrip
           items={[
             { label: 'Сканер рынка', value: dailyBuyList.universe?.scanned ?? EMPTY, detail: 'бумаг просмотрено' },
             { label: 'Кандидаты дня', value: dailyItems.length, detail: dailyItems.map((item) => item.ticker).join(', ') || 'список пуст' },
-            { label: 'Прошли preview', value: allowedPreviews.length, tone: allowedPreviews.length ? 'good' : 'warn', detail: `${blockedPreviews.length} заблокировано` },
+            { label: 'Предпросмотр', value: allowedPreviews.length, tone: allowedPreviews.length ? 'good' : 'warn', detail: `${blockedPreviews.length} заблокировано до заявки` },
             { label: 'Лимиты', value: tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : EMPTY, tone: tradeLimit && Number(tradeLimit.ordersLeft) <= 0 ? 'bad' : 'good', detail: 'заявки / бюджет сегодня' },
-            { label: 'Главный стопор', value: blockedPreviews.length ? 'BLOCK' : allowedPreviews.length ? 'READY' : 'WAIT', tone: blockedPreviews.length ? 'bad' : allowedPreviews.length ? 'good' : 'warn', detail: topBlocker }
+            { label: 'Исполнение', value: blockedPreviews.length ? 'BLOCKED' : allowedPreviews.length ? 'READY' : 'WAIT', tone: blockedPreviews.length ? 'bad' : allowedPreviews.length ? 'good' : 'warn', detail: topBlocker }
           ]}
         />
       </Card>
 
-      <Card title="Боевой предпросмотр" icon={ShieldCheck} className="wide" help="Самый практический блок покупок: что робот хотел бы купить прямо сейчас, какой score у бумаги, сколько стоит лот и почему заявка разрешена или заблокирована.">
+      <Card title="Боевой предпросмотр" icon={ShieldCheck} className="wide" help="Самый практический блок покупок: качество кандидата отдельно, решение исполнения отдельно. Высокий score не означает покупку, если бумага уже есть в портфеле, рынок закрыт или лимит исчерпан.">
         <Table
+          className="buy-preview-table"
           columns={[
-            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
-            { key: 'status', label: 'Gate', render: (row) => <Pill tone={row.status === 'allowed' ? 'good' : 'warn'}>{row.status}</Pill> },
-            { key: 'score', label: 'Score', render: (row) => <ScoreBreakdown analysis={row.scoreAnalysis} /> },
-            { key: 'estimatedOrderRub', label: 'Amount', className: 'right', render: (row) => money(row.estimatedOrderRub) },
-            { key: 'brokerQuote', label: 'Broker', className: 'right', render: (row) => row.brokerQuote ? money(row.brokerQuote.totalOrderAmount) : '-' },
-            { key: 'reason', label: 'Decision reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+            { key: 'ticker', label: 'Кандидат', width: '190px', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
+            { key: 'score', label: 'Качество кандидата', width: '430px', render: (row) => <ScoreBreakdown analysis={row.scoreAnalysis} /> },
+            { key: 'status', label: 'Исполнение', width: '150px', render: (row) => <ExecutionDecision status={row.status} reason={row.reason} /> },
+            { key: 'estimatedOrderRub', label: 'Сумма', width: '105px', className: 'right', render: (row) => money(row.estimatedOrderRub) },
+            { key: 'brokerQuote', label: 'Брокер', width: '105px', className: 'right', render: (row) => row.brokerQuote ? money(row.brokerQuote.totalOrderAmount) : '-' },
+            { key: 'reason', label: 'Причина', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
           rows={previews}
           loading={loadingKeys.preview}
@@ -635,10 +684,10 @@ function Buy({ data, loadingKeys }) {
 
       <Card title="Кандидаты дня" icon={Bot} className="wide" help="Автоматический buy-list из широкого рынка. Робот выбирает до 5 бумаг с лучшим score среди доступных рублевых акций, вместо старого ручного списка из случайных позиций.">
         <div className="stats compact">
-          <Stat label="Source" value={dailyBuyList.source || '-'} />
+          <Stat label="Источник" value={dailyBuyList.source || '-'} />
           <Stat label="Tickers" value={(dailyBuyList.tickers || []).join(', ') || '-'} />
-          <Stat label="Scanned" value={dailyBuyList.universe?.scanned ?? '-'} />
-          <Stat label="Expires" value={dailyBuyList.expiresAt ? time(dailyBuyList.expiresAt) : '-'} />
+          <Stat label="Просмотрено" value={dailyBuyList.universe?.scanned ?? '-'} />
+          <Stat label="Истекает" value={dailyBuyList.expiresAt ? time(dailyBuyList.expiresAt) : '-'} />
         </div>
         <div className="insight-strip">
           <div>
@@ -697,7 +746,7 @@ function Buy({ data, loadingKeys }) {
         <Table
           columns={[
             { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
-            { key: 'score', label: 'Score', render: (row) => <ScoreBreakdown analysis={row.analysis} /> },
+            { key: 'score', label: 'Качество кандидата', render: (row) => <ScoreBreakdown analysis={row.analysis} /> },
             { key: 'lastPrice', label: 'Price', className: 'right', render: (row) => money(row.lastPrice) },
             { key: 'passed', label: 'Result', render: (row) => <Pill tone={row.passed ? 'good' : 'warn'}>{row.passed ? 'PASS' : 'WAIT'}</Pill> },
             { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
@@ -737,13 +786,13 @@ function Sell({ data, loadingKeys }) {
 
   return (
     <div className="grid">
-      <Card title="Sell pipeline" icon={AlertTriangle} className="wide" help="Цепочка продажи: стратегия видит сигнал, sell-policy проверяет robot-owned лоты, live-action разрешает или блокирует продажу, затем ledger фиксирует исполнение.">
+      <Card title="Цепочка продажи" icon={AlertTriangle} className="wide" help="Цепочка продажи: стратегия видит сигнал, sell-policy проверяет robot-owned лоты, live-action разрешает или блокирует продажу, затем ledger фиксирует исполнение.">
         <StageStrip
           items={[
             { label: 'Сигналы', value: liveCandidates.length, detail: `${observeSignals.length} observe-сигналов отдельно` },
             { label: 'Robot-owned', value: robotLedger.summary?.positions ?? 0, tone: Number(robotLedger.summary?.positions || 0) ? 'good' : 'warn', detail: 'позиций в ledger робота' },
             { label: 'Можно продать', value: executable.length, tone: executable.length ? 'bad' : 'good', detail: `${policyBlocked.length} заблокировано политикой` },
-            { label: 'Live sell', value: sellArmed ? 'ON' : 'OFF', tone: sellArmed ? 'bad' : 'good', detail: liveActions.join(', ') || EMPTY },
+            { label: 'Live-продажа', value: sellArmed ? 'ON' : 'OFF', tone: sellArmed ? 'bad' : 'good', detail: liveActions.join(', ') || EMPTY },
             { label: 'Последняя продажа', value: lastSell?.ticker || EMPTY, tone: lastSell ? 'warn' : 'neutral', detail: lastSell ? `${time(lastSell.at)} · ${money(lastSell.price)} RUB` : 'продаж в ledger пока нет' }
           ]}
         />
@@ -755,10 +804,10 @@ function Sell({ data, loadingKeys }) {
           <span>{sellArmed ? 'Реальные продажи разрешены политикой действий.' : 'Реальные продажи выключены. Список ниже только показывает готовность.'}</span>
         </div>
         <div className="stats compact">
-          <Stat label="Executable" value={executable.length} tone={executable.length ? 'bad' : 'good'} />
-          <Stat label="Policy blocked" value={policyBlocked.length} />
-          <Stat label="Robot lots" value={money(executable.reduce((sum, row) => sum + Number(row.orderLots || 0), 0))} />
-          <Stat label="Live actions" value={liveActions.join(', ') || '-'} tone={sellArmed ? 'bad' : 'good'} />
+          <Stat label="Можно исполнить" value={executable.length} tone={executable.length ? 'bad' : 'good'} />
+          <Stat label="Блок политикой" value={policyBlocked.length} />
+          <Stat label="Лоты робота" value={money(executable.reduce((sum, row) => sum + Number(row.orderLots || 0), 0))} />
+          <Stat label="Live-действия" value={liveActions.join(', ') || '-'} tone={sellArmed ? 'bad' : 'good'} />
         </div>
         <Table
           columns={sellColumns}
@@ -848,7 +897,7 @@ function Social({ data, loadingKeys }) {
 
   return (
     <div className="grid">
-      <Card title="Pulse pipeline" icon={Users} className="wide" help="Социальный контур работает отдельно от торгового цикла: расширение обновляет cookie, collector собирает авторов, затем сигналы агрегируются в поправку к score.">
+      <Card title="Цепочка Пульса" icon={Users} className="wide" help="Социальный контур работает отдельно от торгового цикла: расширение обновляет cookie, collector собирает авторов, затем сигналы агрегируются в поправку к score.">
         <StageStrip
           items={[
             { label: 'Cookie / auth', value: socialCollectorText(collector), tone: collector.health?.pendingAuth > 0 ? 'bad' : collector.health?.staleProfiles > 0 ? 'warn' : 'good', detail: `${collector.health?.pendingAuth || 0} профилей ждут auth` },
@@ -860,7 +909,7 @@ function Social({ data, loadingKeys }) {
         />
       </Card>
 
-      <Card title="Консенсус Пульса" icon={Users} help="Сводное мнение выбранных успешных авторов по тикеру. Чем больше вес и свежесть сигнала, тем сильнее поправка к buy-score.">
+      <Card title="Консенсус Пульса" icon={Users} className="wide" help="Сводное мнение выбранных успешных авторов по тикеру. Чем больше вес и свежесть сигнала, тем сильнее поправка к buy-score.">
         <Table
           columns={[
             { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
@@ -875,7 +924,7 @@ function Social({ data, loadingKeys }) {
           loading={loadingKeys.socialConsensus}
         />
       </Card>
-      <Card title="Авторы" icon={ShieldCheck} help="Список профилей, которых собирает отдельный социальный механизм. Manual - твоя ручная оценка, Auto - автоматическая оценка по данным профиля, Effective - итоговый вес.">
+      <Card title="Авторы" icon={ShieldCheck} className="wide" help="Список профилей, которых собирает отдельный социальный механизм. Manual - твоя ручная оценка, Auto - автоматическая оценка по данным профиля, Effective - итоговый вес.">
         <Table
           columns={[
             { key: 'displayName', label: 'Profile', render: (row) => <><strong>{row.displayName || row.profileKey}</strong><div className="muted">followers {row.followersCount ?? '-'}, ops30d {row.monthOperationsCount ?? '-'}</div></> },
@@ -890,7 +939,7 @@ function Social({ data, loadingKeys }) {
           loading={loadingKeys.socialCollector}
         />
       </Card>
-      <Card title="Сделки авторов" icon={Signal} help="Последние найденные сделки/публичные действия из Пульса. Этот блок ничего не покупает сам, только складывает сигналы для проверки и усиления алгоритма.">
+      <Card title="Сделки авторов" icon={Signal} className="wide" help="Последние найденные сделки/публичные действия из Пульса. Этот блок ничего не покупает сам, только складывает сигналы для проверки и усиления алгоритма.">
         <Table
           columns={[
             { key: 'observedAt', label: 'Time', render: (row) => time(row.observedAt) },
@@ -916,21 +965,21 @@ function Evidence({ data, loadingKeys }) {
 
   return (
     <div className="grid">
-      <Card title="Лабораторный pipeline" icon={BarChart3} className="wide" help="Эта вкладка не торгует. Она показывает доказательства: сценарии рынка, 24ч кандидатов, внешние источники и статистику стратегий.">
+      <Card title="Цепочка лаборатории" icon={BarChart3} className="wide" help="Эта вкладка не торгует. Она показывает доказательства: сценарии рынка, 24ч кандидатов, внешние источники и статистику стратегий.">
         <StageStrip
           items={[
-            { label: 'Market scenarios', value: scenarios.length, detail: 'вариантов порогов проверено' },
+            { label: 'Сценарии рынка', value: scenarios.length, detail: 'вариантов порогов проверено' },
             { label: '24ч покупки', value: data.buyLab?.items?.length || 0, detail: 'бумаг рядом с проходом' },
             { label: 'Аналитики', value: data.analystForecasts?.items?.length || 0, detail: 'консенсус-прогнозы API' },
             { label: 'Теханализ', value: data.techAnalysis?.items?.length || 0, detail: 'RSI/MACD/MA записи' },
-            { label: 'Evidence', value: `${enoughStrategies} / ${strategyRows.length}`, tone: enoughStrategies ? 'good' : 'warn', detail: 'стратегий с достаточными данными' }
+            { label: 'Доказательства', value: `${enoughStrategies} / ${strategyRows.length}`, tone: enoughStrategies ? 'good' : 'warn', detail: 'стратегий с достаточными данными' }
           ]}
         />
       </Card>
 
       <MarketLab data={data} loading={loadingKeys.marketLab} />
 
-      <Card title="Режим рынка" icon={Activity} help="Подробности рыночного фильтра: какие базовые бумаги считаются здоровыми и почему общий фильтр пропускает или блокирует покупки.">
+      <Card title="Режим рынка" icon={Activity} className="wide" help="Подробности рыночного фильтра: какие базовые бумаги считаются здоровыми и почему общий фильтр пропускает или блокирует покупки.">
         <div className="readiness">
           <Pill tone={data.market?.passed ? 'good' : 'bad'}>{data.market?.passed ? 'PASSED' : 'BLOCKED'}</Pill>
           <span>{data.market?.reason}</span>
@@ -947,11 +996,11 @@ function Evidence({ data, loadingKeys }) {
         />
       </Card>
 
-      <Card title="Покупки 24ч" icon={BarChart3} help="Агрегация решений за последние 24 часа. Показывает, какие бумаги чаще всего подходили к порогу покупки, сколько баллов не хватило и что было главным стопором.">
+      <Card title="Покупки 24ч" icon={BarChart3} className="wide" help="Агрегация решений за последние 24 часа. Показывает, какие бумаги чаще всего подходили к порогу покупки, сколько баллов не хватило и что было главным стопором.">
         <Table
           columns={[
             { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker}</strong><div className="muted">{row.name}</div></> },
-            { key: 'latestScore', label: 'Score', render: (row) => <div className="score-breakdown"><strong>{row.latestScore ?? '-'}</strong><span>base {signedNumber(row.baseScore)}</span><span className={adjustmentTone(row.socialScoreAdjustment)}>pulse {signedNumber(row.socialScoreAdjustment)}</span><span className={adjustmentTone(row.analystScoreAdjustment)}>analyst {signedNumber(row.analystScoreAdjustment)}</span><span className={adjustmentTone(row.technicalScoreAdjustment)}>tech {signedNumber(row.technicalScoreAdjustment)}</span></div> },
+            { key: 'latestScore', label: 'Score', render: (row) => <ScoreSummary score={row.latestScore} base={row.baseScore} social={row.socialScoreAdjustment} analyst={row.analystScoreAdjustment} technical={row.technicalScoreAdjustment} /> },
             { key: 'scoreGap', label: 'Gap', className: 'right', render: (row) => row.scoreGap === undefined ? '-' : row.scoreGap <= 0 ? <Pill tone="good">PASS</Pill> : row.scoreGap <= 5 ? <Pill tone="warn">{row.scoreGap}</Pill> : row.scoreGap },
             { key: 'bestScore', label: 'Best', className: 'right' },
             { key: 'count', label: 'Seen', className: 'right' },
@@ -1049,12 +1098,12 @@ function RiskControls({ data, onRiskSettingsChange }) {
   const dailyRubButtons = [500, 1500, 3000, 5000].filter((value) => value <= Number(config.maxRuntimeDailyRub || value));
 
   return (
-    <Card title="Лимиты риска" icon={ShieldCheck} help="Меняет реальные лимиты робота без перезапуска. Max order - потолок одной заявки, daily orders - сколько заявок за день, daily RUB - общий дневной бюджет.">
+    <Card title="Лимиты риска" icon={ShieldCheck} help="Меняет реальные лимиты робота без перезапуска. Лимит заявки - потолок одной заявки, заявки в день - сколько заявок за день, бюджет дня - общий дневной бюджет.">
       <div className="stats compact">
-        <Stat label="Max order" value={`${money(maxOrderRub)} RUB`} title={`Hard cap: ${money(config.maxRuntimeOrderRub)} RUB`} />
-        <Stat label="Daily orders" value={maxDailyOrders} title={`Hard cap: ${config.maxRuntimeDailyOrders}`} />
-        <Stat label="Daily RUB" value={`${money(maxDailyRub)} RUB`} title={`Hard cap: ${money(config.maxRuntimeDailyRub)} RUB`} />
-        <Stat label="Left today" value={tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : '-'} />
+        <Stat label="Лимит заявки" value={`${money(maxOrderRub)} RUB`} title={`Hard cap: ${money(config.maxRuntimeOrderRub)} RUB`} />
+        <Stat label="Заявок в день" value={maxDailyOrders} title={`Hard cap: ${config.maxRuntimeDailyOrders}`} />
+        <Stat label="Бюджет дня" value={`${money(maxDailyRub)} RUB`} title={`Hard cap: ${money(config.maxRuntimeDailyRub)} RUB`} />
+        <Stat label="Осталось сегодня" value={tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : '-'} />
       </div>
       <div className="control-row">
         {orderButtons.map((value) => (
@@ -1110,11 +1159,11 @@ function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle, onRiskSet
       <Card title="Контур счетов" icon={Database} className="wide" help="Управление счетами отделено от стратегии. Счет в trade может получать реальные заявки, observe только наблюдается. Protected требует явного подтверждения номером счета.">
         <StageStrip
           items={[
-            { label: 'Trade accounts', value: tradeAccounts.length, tone: tradeAccounts.length ? 'bad' : 'warn', detail: tradeAccounts.map((row) => row.alias || row.accountId).join(', ') || 'нет боевых счетов' },
-            { label: 'Observe accounts', value: observeAccounts.length, detail: observeAccounts.map((row) => row.alias || row.accountId).join(', ') || 'нет наблюдаемых' },
-            { label: 'Protected', value: protectedAccounts.length, tone: protectedAccounts.length ? 'warn' : 'good', detail: 'требуют подтверждения перед trade' },
-            { label: 'Live actions', value: liveActions.join(', ') || EMPTY, tone: sellArmed ? 'bad' : 'good', detail: sellArmed ? 'sell включен только для robot-owned лотов' : 'sell выключен' },
-            { label: 'Positions', value: positions.length, detail: 'позиций во всех счетах' }
+            { label: 'Боевые счета', value: tradeAccounts.length, tone: tradeAccounts.length ? 'bad' : 'warn', detail: tradeAccounts.map((row) => row.alias || row.accountId).join(', ') || 'нет боевых счетов' },
+            { label: 'Наблюдение', value: observeAccounts.length, detail: observeAccounts.map((row) => row.alias || row.accountId).join(', ') || 'нет наблюдаемых' },
+            { label: 'Защищены', value: protectedAccounts.length, tone: protectedAccounts.length ? 'warn' : 'good', detail: 'требуют подтверждения перед trade' },
+            { label: 'Live-действия', value: liveActions.join(', ') || EMPTY, tone: sellArmed ? 'bad' : 'good', detail: sellArmed ? 'sell включен только для robot-owned лотов' : 'sell выключен' },
+            { label: 'Позиции', value: positions.length, detail: 'позиций во всех счетах' }
           ]}
         />
       </Card>
@@ -1135,7 +1184,7 @@ function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle, onRiskSet
         </div>
       </Card>
       <RiskControls data={data} onRiskSettingsChange={onRiskSettingsChange} />
-      <Card title="Счета" icon={Database} help="Кнопка меняет режим счета без перезапуска робота. Protected-счет можно перевести в trade только после отдельного подтверждения номером счета.">
+      <Card title="Счета" icon={Database} className="wide" help="Кнопка меняет режим счета без перезапуска робота. Protected-счет можно перевести в trade только после отдельного подтверждения номером счета.">
         <Table
           columns={[
             { key: 'alias', label: 'Account', render: (row) => <><strong>{row.alias || row.accountId}</strong><div className="muted">{row.accountId}</div></> },
@@ -1174,7 +1223,7 @@ function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle, onRiskSet
           loading={loadingKeys.accounts}
         />
       </Card>
-      <Card title="Позиции" icon={LineChart} help="Текущие позиции по всем счетам. P/L здесь считается от средней цены позиции к текущей цене из брокерского API.">
+      <Card title="Позиции" icon={LineChart} className="wide" help="Текущие позиции по всем счетам. P/L здесь считается от средней цены позиции к текущей цене из брокерского API.">
         <Table
           columns={[
             { key: 'accountAlias', label: 'Account' },

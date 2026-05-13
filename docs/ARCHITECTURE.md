@@ -42,6 +42,8 @@ portfolio position -> sell strategy signal -> robot-owned lot policy -> live sel
 
 - Sell candidates are built from portfolio positions and strategy signals inside the main runtime services.
 - The sell policy must only sell lots confirmed as bought by the robot.
+- `trailing-stop` is a profit/breakeven guard: it only sells after the drawdown from the observed high is large enough and the current position profit is at or above `ROBOT_TRAILING_STOP_MIN_PROFIT_PERCENT`.
+- Negative exits should normally come from `stop-loss`, not from `trailing-stop`.
 - `app/services/orders.service.ts` submits sell orders only after final validation.
 - The `trades` table is the source of truth for robot-owned lots and order status reconciliation.
 
