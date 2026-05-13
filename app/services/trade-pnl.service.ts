@@ -22,6 +22,7 @@ interface OpenBuy {
 
 interface DecisionMatch {
     id?: unknown;
+    status?: unknown;
     signalSource?: unknown;
     reason?: unknown;
     createdAt?: unknown;
@@ -72,7 +73,15 @@ const queueKeyFromTrade = (row: Record<string, unknown>) => {
     return accountId && instrumentKey ? `${accountId}:${instrumentKey}` : '';
 };
 
-const decisionKey = (accountId: unknown, ticker: unknown) => `${String(accountId || '')}:${String(ticker || '')}`;
+const decisionKey = (accountId: unknown, instrument: unknown) => `${String(accountId || '')}:${String(instrument || '')}`;
+
+const decisionKeys = (row: Record<string, unknown>) => [
+    decisionKey(row.accountId, row.ticker),
+    decisionKey(row.accountId, row.figi),
+    decisionKey(row.accountId, row.instrumentUid),
+    decisionKey(row.accountId, row.instrumentId),
+    decisionKey(row.accountId, row.uid)
+].filter(key => !key.endsWith(':'));
 
 const tradeAmount = (row: Record<string, unknown>, lots: number) => {
     const amount = TradesService.amountFromTrade(row);
@@ -87,11 +96,11 @@ const buildDecisionIndex = (decisions: Record<string, unknown>[]) => {
     const index = new Map<string, Record<string, unknown>[]>();
 
     for (const decision of decisions) {
-        const key = decisionKey(decision.accountId, decision.ticker);
-        if (key === ':') continue;
-        const rows = index.get(key) ?? [];
-        rows.push(decision);
-        index.set(key, rows);
+        for (const key of decisionKeys(decision)) {
+            const rows = index.get(key) ?? [];
+            rows.push(decision);
+            index.set(key, rows);
+        }
     }
 
     for (const rows of index.values()) {
@@ -105,21 +114,60 @@ const findNearestDecision = (
     decisionIndex: Map<string, Record<string, unknown>[]>,
     trade: Record<string, unknown>
 ): DecisionMatch | undefined => {
-    const rows = decisionIndex.get(decisionKey(trade.accountId, trade.ticker)) ?? [];
+    const rows = decisionKeys(trade)
+        .flatMap(key => decisionIndex.get(key) ?? [])
+        .filter((row, index, all) => all.findIndex(candidate => candidate.id === row.id) === index);
     const tradeAt = tradeTimestamp(trade);
     const minTime = tradeAt - 12 * 60 * 60 * 1000;
     const maxTime = tradeAt + 30 * 1000;
-    let match: Record<string, unknown> | undefined;
+    const direction = directionFromTrade(trade);
+    const candidates = [];
 
-    for (const row of rows) {
+    for (const row of rows.sort((a, b) => new Date(String(a.createdAt || '')).getTime() - new Date(String(b.createdAt || '')).getTime())) {
         const createdAt = new Date(String(row.createdAt || '')).getTime();
         if (!Number.isFinite(createdAt)) continue;
         if (createdAt < minTime) continue;
         if (createdAt > maxTime) break;
-        match = row;
+        candidates.push({ row, createdAt });
     }
 
-    return match;
+    if (candidates.length === 0) return undefined;
+
+    const scored = candidates
+        .map(candidate => ({
+            ...candidate,
+            relevance: decisionRelevance(direction, candidate.row),
+            distance: Math.abs(candidate.createdAt - tradeAt)
+        }))
+        .filter(candidate => candidate.relevance > 0)
+        .sort((a, b) => b.relevance - a.relevance || a.distance - b.distance);
+
+    return scored[0]?.row;
+};
+
+const decisionRelevance = (direction: string, decision: Record<string, unknown>) => {
+    const source = sourceLabel(decision.signalSource).toLowerCase();
+    const status = String(decision.status || '').toLowerCase();
+    const reason = String(decision.reason || '').toLowerCase();
+    const text = `${source} ${reason}`;
+
+    if (direction === BUY_DIRECTION) {
+        if (status === 'order-posted' && (source === 'score-buy' || source === 'watchlist-buy')) return 4;
+        if (source === 'score-buy' || source === 'watchlist-buy') return 3;
+        if (status === 'order-posted' && reason.includes('score-buy')) return 2;
+        return 0;
+    }
+
+    if (direction === SELL_DIRECTION) {
+        if (text.includes('stop-loss')) return 4;
+        if (text.includes('trailing-stop')) return 4;
+        if (text.includes('profit-take')) return 4;
+        if (text.includes('hold-winner')) return 3;
+        if (status === 'order-posted' && reason.includes('sell policy')) return 2;
+        return 0;
+    }
+
+    return 0;
 };
 
 const sourceLabel = (value: unknown) => String(value || 'unknown');
@@ -154,6 +202,19 @@ const dateLabel = (value: unknown) => {
     const date = new Date(String(value || ''));
     if (Number.isNaN(date.getTime())) return 'unknown';
     return date.toISOString().slice(0, 10);
+};
+
+const decisionTimeWindow = (rows: Record<string, unknown>[]) => {
+    const timestamps = rows
+        .map(tradeTimestamp)
+        .filter(timestamp => Number.isFinite(timestamp) && timestamp > 0);
+
+    if (timestamps.length === 0) return undefined;
+
+    return {
+        from: new Date(Math.min(...timestamps) - 12 * 60 * 60 * 1000),
+        to: new Date(Math.max(...timestamps) + 5 * 60 * 1000)
+    };
 };
 
 const summarize = <T extends Record<string, unknown>>(rows: T[], key: (row: T) => string) => {
@@ -259,13 +320,15 @@ export default class TradePnlService {
             .map(trade => trade.get({ plain: true }) as Record<string, unknown>)
             .reverse();
         const tickerSet = [...new Set(rows.map(row => String(row.ticker || '')).filter(Boolean))];
+        const timeWindow = decisionTimeWindow(rows);
         const decisions = await TradeDecisionModel.findAll({
             where: {
                 accountId: { [Op.in]: config.accountIds },
-                ...(tickerSet.length ? { ticker: { [Op.in]: tickerSet } } : {})
+                ...(tickerSet.length ? { ticker: { [Op.in]: tickerSet } } : {}),
+                ...(timeWindow ? { createdAt: { [Op.between]: [timeWindow.from, timeWindow.to] } } : {})
             } as any,
             order: [['createdAt', 'ASC']],
-            limit: 5_000
+            limit: 20_000
         });
         const decisionIndex = buildDecisionIndex(decisions.map(decision => decision.get({ plain: true }) as Record<string, unknown>));
         const openBuys = new Map<string, OpenBuy[]>();
