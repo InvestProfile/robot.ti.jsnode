@@ -113,6 +113,25 @@ export default class BuySignalEvaluatorService {
             config,
             buyInstruments.map(instrument => instrument.ticker)
         );
+        const buyConfigByUid = new Map(buyInstruments.map(instrument => [
+            instrument.uid,
+            getBuyScoreConfigForTicker(config, instrument.ticker)
+        ]));
+        const dailyCandlesByUid = new Map<string, Awaited<ReturnType<typeof marketData.getDailyCandles>> | undefined>();
+        const dailyClosesByUid = new Map<string, Awaited<ReturnType<typeof marketData.getDailyClosePrices>> | undefined>();
+
+        await Promise.all(buyInstruments.map(async instrument => {
+            const buyConfig = buyConfigByUid.get(instrument.uid) ?? config;
+            const needsDailyCandles = buyConfig.enabledStrategies.includes('score-buy') || config.liquidityRiskEnabled;
+            const needsDailyCloses = buyConfig.enabledStrategies.includes('trend-follow-buy');
+            const [dailyCandles, dailyCloses] = await Promise.all([
+                needsDailyCandles ? marketData.getDailyCandles(instrument.uid, buyConfig.buyTrendDays) : Promise.resolve(undefined),
+                needsDailyCloses ? marketData.getDailyClosePrices(instrument.uid, buyConfig.buyTrendDays) : Promise.resolve(undefined)
+            ]);
+
+            dailyCandlesByUid.set(instrument.uid, dailyCandles);
+            dailyClosesByUid.set(instrument.uid, dailyCloses);
+        }));
         const previews: BuySignalPreview[] = [];
 
         for (const instrument of buyInstruments) {
@@ -143,18 +162,13 @@ export default class BuySignalEvaluatorService {
             const alreadyInPortfolio = portfolioInstrumentIds.has(instrument.uid);
             const positionValueRub = positionValueByInstrumentUid.get(instrument.uid) ?? 0;
             const tradingStatus = tradingStatuses.get(instrument.uid);
-            const buyConfig = getBuyScoreConfigForTicker(config, instrument.ticker);
+            const buyConfig = buyConfigByUid.get(instrument.uid) ?? config;
             const effectiveBuyConfig = {
                 ...buyConfig,
                 buyTickers: effectiveBuyTickers
             };
-            const needsDailyCandles = buyConfig.enabledStrategies.includes('score-buy') || config.liquidityRiskEnabled;
-            const dailyCandles = needsDailyCandles
-                ? await marketData.getDailyCandles(instrument.uid, buyConfig.buyTrendDays)
-                : undefined;
-            const dailyCloses = buyConfig.enabledStrategies.includes('trend-follow-buy')
-                ? await marketData.getDailyClosePrices(instrument.uid, buyConfig.buyTrendDays)
-                : undefined;
+            const dailyCandles = dailyCandlesByUid.get(instrument.uid);
+            const dailyCloses = dailyClosesByUid.get(instrument.uid);
             const social = socialByTicker.get(instrument.ticker.toUpperCase());
             const analyst = scoreAdjustments.analyst.get(instrument.ticker.toUpperCase());
             const technical = scoreAdjustments.technical.get(instrument.ticker.toUpperCase());

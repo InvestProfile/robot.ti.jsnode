@@ -786,50 +786,54 @@ const getLimitsPayload = async (config: RobotConfig) => {
     return { limits };
 };
 
-const getPreviewPayload = async (config: RobotConfig) => {
+const enrichBrokerQuote = async (accountId: string, preview: Awaited<ReturnType<typeof BuySignalEvaluatorService.evaluateAccount>>[number]) => {
+    if (!preview.instrumentUid || !preview.currentPrice) return preview;
+
+    try {
+        const quantity = Math.max(1, Math.trunc(preview.quantityLots ?? 1));
+        const price = numberToQuotation(preview.currentPrice);
+        const [maxLots, orderPrice] = await Promise.all([
+            OrdersService.getMaxLots(accountId, preview.instrumentUid, price),
+            OrdersService.getOrderPrice(accountId, ORDER_SIDE.BUY, quantity, price, preview.instrumentUid)
+        ]);
+
+        return {
+            ...preview,
+            brokerQuote: {
+                quantity,
+                buyMaxLots: maxLots?.buyLimits?.buyMaxLots,
+                buyMaxMarketLots: maxLots?.buyLimits?.buyMaxMarketLots,
+                totalOrderAmount: quotationToNumber(orderPrice?.totalOrderAmount),
+                initialOrderAmount: quotationToNumber(orderPrice?.initialOrderAmount),
+                executedCommission: quotationToNumber(orderPrice?.executedCommission),
+                executedCommissionRub: quotationToNumber(orderPrice?.executedCommissionRub)
+            }
+        };
+    } catch (error) {
+        return {
+            ...preview,
+            brokerQuoteError: error instanceof Error ? error.message : String(error)
+        };
+    }
+};
+
+const getPreviewPayload = async (config: RobotConfig, url?: URL) => {
     const previews = [];
+    const brokerMode = url?.searchParams.get('broker') ?? 'allowed';
 
     for (const accountId of config.accountIds) {
         const accountPreviews = await BuySignalEvaluatorService.evaluateAccount(accountId, config);
-
-        for (const preview of accountPreviews) {
-            if (!preview.instrumentUid || !preview.currentPrice) {
-                previews.push(preview);
-                continue;
-            }
-
-            try {
-                const quantity = Math.max(1, Math.trunc(preview.quantityLots ?? 1));
-                const price = numberToQuotation(preview.currentPrice);
-                const [maxLots, orderPrice] = await Promise.all([
-                    OrdersService.getMaxLots(accountId, preview.instrumentUid, price),
-                    OrdersService.getOrderPrice(accountId, ORDER_SIDE.BUY, quantity, price, preview.instrumentUid)
-                ]);
-
-                previews.push({
-                    ...preview,
-                    brokerQuote: {
-                        quantity,
-                        buyMaxLots: maxLots?.buyLimits?.buyMaxLots,
-                        buyMaxMarketLots: maxLots?.buyLimits?.buyMaxMarketLots,
-                        totalOrderAmount: quotationToNumber(orderPrice?.totalOrderAmount),
-                        initialOrderAmount: quotationToNumber(orderPrice?.initialOrderAmount),
-                        executedCommission: quotationToNumber(orderPrice?.executedCommission),
-                        executedCommissionRub: quotationToNumber(orderPrice?.executedCommissionRub)
-                    }
-                });
-            } catch (error) {
-                previews.push({
-                    ...preview,
-                    brokerQuoteError: error instanceof Error ? error.message : String(error)
-                });
-            }
-        }
+        const accountRows = await Promise.all(accountPreviews.map(preview => {
+            const shouldQuote = brokerMode === 'all' || (brokerMode !== 'none' && preview.status === 'allowed');
+            return shouldQuote ? enrichBrokerQuote(accountId, preview) : Promise.resolve(preview);
+        }));
+        previews.push(...accountRows);
     }
 
     return {
         mode: config.dryRun ? 'dry-run' : 'live',
         liveAllowedActions: config.liveAllowedActions,
+        brokerQuoteMode: brokerMode,
         previews
     };
 };
@@ -940,7 +944,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
     }
 
     if (url.pathname === '/api/preview') {
-        json(res, 200, await getPreviewPayload(config));
+        json(res, 200, await getPreviewPayload(config, url));
         return;
     }
 

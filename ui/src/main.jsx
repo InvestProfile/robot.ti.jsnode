@@ -1517,8 +1517,20 @@ const sideFromDirection = (direction) => {
 const sortTrades = (rows, sort) => {
   const copy = [...rows];
   if (sort === 'oldest') return copy.reverse();
+  if (sort === 'pnl-desc') return copy.sort((a, b) => Number(b.roundTripPnlRub ?? -Infinity) - Number(a.roundTripPnlRub ?? -Infinity));
+  if (sort === 'pnl-asc') return copy.sort((a, b) => Number(a.roundTripPnlRub ?? Infinity) - Number(b.roundTripPnlRub ?? Infinity));
   if (sort === 'amount-desc') return copy.sort((a, b) => Number(b.tradeAmount ?? 0) - Number(a.tradeAmount ?? 0));
   if (sort === 'amount-asc') return copy.sort((a, b) => Number(a.tradeAmount ?? 0) - Number(b.tradeAmount ?? 0));
+  return copy;
+};
+
+const sortRoundTrips = (rows, sort) => {
+  const copy = [...rows];
+  if (sort === 'oldest') return copy.reverse();
+  if (sort === 'pnl-desc') return copy.sort((a, b) => Number(b.pnlRub ?? -Infinity) - Number(a.pnlRub ?? -Infinity));
+  if (sort === 'pnl-asc') return copy.sort((a, b) => Number(a.pnlRub ?? Infinity) - Number(b.pnlRub ?? Infinity));
+  if (sort === 'amount-desc') return copy.sort((a, b) => Number(b.exitAmount ?? 0) - Number(a.exitAmount ?? 0));
+  if (sort === 'amount-asc') return copy.sort((a, b) => Number(a.exitAmount ?? 0) - Number(b.exitAmount ?? 0));
   return copy;
 };
 
@@ -1533,6 +1545,15 @@ const buildTradeRows = (data) => {
   const trades = data.trades?.trades || [];
   const events = data.robotPositions?.events || [];
   const decisions = data.decisions?.decisions || [];
+  const roundTrips = data.tradePnl?.roundTrips || [];
+  const roundTripByTradeId = new Map();
+
+  roundTrips.forEach((roundTrip) => {
+    (roundTrip.entryTradeIds || []).forEach((id) => roundTripByTradeId.set(String(id), { roundTrip, leg: 'entry' }));
+    if (roundTrip.exitTradeId !== undefined && roundTrip.exitTradeId !== null) {
+      roundTripByTradeId.set(String(roundTrip.exitTradeId), { roundTrip, leg: 'exit' });
+    }
+  });
   const lastOrderDecisionByTicker = new Map(
     decisions
       .filter((decision) => decision.ticker && decision.status === 'order-posted')
@@ -1542,12 +1563,25 @@ const buildTradeRows = (data) => {
   return trades.map((trade) => {
     const event = events.find((item) => item.orderId && item.orderId === trade.orderId);
     const decision = lastOrderDecisionByTicker.get(trade.ticker);
+    const roundTripMatch = roundTripByTradeId.get(String(trade.id));
+    const roundTrip = roundTripMatch?.roundTrip;
+    const matchedReason = roundTripMatch?.leg === 'entry'
+      ? roundTrip?.entryDecisionReason
+      : roundTrip?.exitDecisionReason;
+    const matchedSignal = roundTripMatch?.leg === 'entry'
+      ? roundTrip?.entrySignalSource
+      : roundTrip?.exitSignalSource;
+
     return {
       ...trade,
       side: sideFromDirection(trade.direction),
       ledgerStatus: event ? 'в ledger' : 'только broker',
-      decisionReason: decision?.reason,
-      signalSource: decision?.signalSource,
+      decisionReason: matchedReason || decision?.reason,
+      signalSource: matchedSignal || decision?.signalSource,
+      roundTripLeg: roundTripMatch?.leg,
+      roundTripPnlRub: roundTrip?.pnlRub,
+      roundTripPnlPercent: roundTrip?.pnlPercent,
+      roundTripStatus: roundTrip?.status,
       tradePrice: moneyParts(trade.executedPriceUnits ?? trade.price_units, trade.executedPriceNano ?? trade.price_nano),
       tradeAmount: moneyParts(trade.totalAmountUnits, trade.totalAmountNano),
       createdAt: trade.tradeDateTime || trade.createdAt
@@ -1588,10 +1622,21 @@ function TradeFilters({ rows, filters, onChange }) {
         <input value={filters.ticker} onChange={(event) => onChange({ ...filters, ticker: event.target.value.toUpperCase() })} placeholder="AQUA" />
       </label>
       <label>
+        <span>P/L пары</span>
+        <select value={filters.pnl} onChange={(event) => onChange({ ...filters, pnl: event.target.value })}>
+          <option value="all">Любой</option>
+          <option value="profit">Плюс</option>
+          <option value="loss">Минус</option>
+          <option value="empty">Нет пары</option>
+        </select>
+      </label>
+      <label>
         <span>Сортировка</span>
         <select value={filters.sort} onChange={(event) => onChange({ ...filters, sort: event.target.value })}>
           <option value="newest">Новые</option>
           <option value="oldest">Старые</option>
+          <option value="pnl-desc">P/L выше</option>
+          <option value="pnl-asc">P/L ниже</option>
           <option value="amount-desc">Сумма выше</option>
           <option value="amount-asc">Сумма ниже</option>
         </select>
@@ -1615,6 +1660,7 @@ function TradeReview({ rows, loading, children, className }) {
           { key: 'quantityLots', label: 'Лоты', width: '70px', className: 'right', render: (row) => money(row.lotsExecuted ?? row.lotsRequested ?? row.lot) },
           { key: 'price', label: 'Цена', width: '90px', className: 'right', render: (row) => money(row.tradePrice) },
           { key: 'amount', label: 'Сумма', width: '95px', className: 'right', render: (row) => money(row.tradeAmount) },
+          { key: 'roundTripPnlRub', label: 'P/L пары', width: '105px', className: 'right', render: (row) => row.roundTripPnlRub === undefined ? EMPTY : <span className={Number(row.roundTripPnlRub) >= 0 ? 'good' : 'bad'}>{money(row.roundTripPnlRub)}</span> },
           { key: 'ledgerStatus', label: 'Ledger', width: '115px', render: (row) => <Pill tone={row.ledgerStatus === 'в ledger' ? 'good' : 'warn'}>{row.ledgerStatus}</Pill> },
           { key: 'decisionReason', label: 'Решение', className: 'reason', render: (row) => <Reason>{row.decisionReason || row.status || EMPTY}</Reason> }
         ]}
@@ -1701,7 +1747,7 @@ function PnlDiagnostics({ rows, loading }) {
 }
 
 function Trades({ data, loadingKeys }) {
-  const [filters, setFilters] = useState({ side: 'all', status: 'all', ledger: 'all', ticker: '', sort: 'newest' });
+  const [filters, setFilters] = useState({ side: 'all', status: 'all', ledger: 'all', ticker: '', pnl: 'all', sort: 'newest' });
   const rows = buildTradeRows(data);
   const robotEvents = data.robotPositions?.events || [];
   const buyCount = rows.filter((row) => row.side === 'buy').length;
@@ -1711,21 +1757,33 @@ function Trades({ data, loadingKeys }) {
   const tradePnlBreakdowns = data.tradePnl?.breakdowns || {};
   const tradePnlDiagnostics = data.tradePnl?.diagnostics || [];
   const roundTrips = data.tradePnl?.roundTrips || [];
-  const filteredRoundTrips = roundTrips.filter((row) => {
+  const roundTripMatchesPnl = (row) => {
+    const pnl = Number(row.pnlRub);
+    if (filters.pnl === 'profit') return Number.isFinite(pnl) && pnl > 0;
+    if (filters.pnl === 'loss') return Number.isFinite(pnl) && pnl < 0;
+    if (filters.pnl === 'empty') return !Number.isFinite(pnl);
+    return true;
+  };
+  const filteredRoundTrips = sortRoundTrips(roundTrips.filter((row) => {
     if (filters.ticker && !String(row.ticker || '').toUpperCase().includes(filters.ticker)) return false;
     if (filters.side === 'buy') return false;
+    if (!roundTripMatchesPnl(row)) return false;
     return true;
-  });
-  const allRoundTripsVisible = !filters.ticker && filters.side !== 'buy';
+  }), filters.sort);
+  const allRoundTripsVisible = !filters.ticker && filters.side !== 'buy' && filters.pnl === 'all';
   const realizedPnlRub = allRoundTripsVisible && Number.isFinite(Number(tradePnlSummary.realizedPnlRub))
     ? Number(tradePnlSummary.realizedPnlRub)
     : filteredRoundTrips.reduce((sum, row) => Number.isFinite(Number(row.pnlRub)) ? sum + Number(row.pnlRub) : sum, 0);
   const closedRoundTrips = filteredRoundTrips.filter((row) => Number.isFinite(Number(row.pnlRub))).length;
   const filteredRows = sortTrades(rows.filter((row) => {
+    const pnl = Number(row.roundTripPnlRub);
     if (filters.side !== 'all' && row.side !== filters.side) return false;
     if (filters.status !== 'all' && row.status !== filters.status) return false;
     if (filters.ledger !== 'all' && row.ledgerStatus !== filters.ledger) return false;
     if (filters.ticker && !String(row.ticker || '').toUpperCase().includes(filters.ticker)) return false;
+    if (filters.pnl === 'profit' && !(Number.isFinite(pnl) && pnl > 0)) return false;
+    if (filters.pnl === 'loss' && !(Number.isFinite(pnl) && pnl < 0)) return false;
+    if (filters.pnl === 'empty' && Number.isFinite(pnl)) return false;
     return true;
   }), filters.sort);
   const filteredRobotEvents = robotEvents.filter((row) => {
@@ -1755,6 +1813,7 @@ function Trades({ data, loadingKeys }) {
       <Card title="Round-trip P/L" icon={LineChart} className="wide" help="Закрытые пары buy -> sell по FIFO. Это не новая торговая логика, а backend-бухгалтерия поверх broker records: сколько робот заработал или потерял на завершенных входах. Сейчас это gross P/L без отдельного вычета комиссий, если комиссии не пришли отдельными записями.">
         <Table
           columns={[
+            { key: 'entryAt', label: 'Вход', width: '150px', render: (row) => time(row.entryAt) },
             { key: 'exitAt', label: 'Выход', width: '150px', render: (row) => time(row.exitAt) },
             { key: 'ticker', label: 'Тикер', width: '110px', render: (row) => <><strong>{row.ticker || '-'}</strong><div className="muted">{row.name}</div></> },
             { key: 'entrySignalSource', label: 'Вход', width: '120px', render: (row) => <TextCell>{row.entrySignalSource || EMPTY}</TextCell> },
@@ -1765,7 +1824,8 @@ function Trades({ data, loadingKeys }) {
             { key: 'exitPrice', label: 'Выход', width: '90px', className: 'right', render: (row) => money(row.exitPrice) },
             { key: 'pnlRub', label: 'P/L RUB', width: '105px', className: 'right', render: (row) => <span className={Number(row.pnlRub) >= 0 ? 'good' : 'bad'}>{money(row.pnlRub)}</span> },
             { key: 'pnlPercent', label: 'P/L %', width: '90px', className: 'right', render: (row) => percent(row.pnlPercent) },
-            { key: 'reason', label: 'Пояснение', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+            { key: 'entryDecisionReason', label: 'Причина входа', className: 'reason', render: (row) => <Reason>{row.entryDecisionReason || EMPTY}</Reason> },
+            { key: 'exitDecisionReason', label: 'Причина выхода', className: 'reason', render: (row) => <Reason>{row.exitDecisionReason || row.reason}</Reason> }
           ]}
           rows={filteredRoundTrips}
           empty="Закрытых пар под фильтр нет"
