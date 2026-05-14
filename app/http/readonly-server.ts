@@ -363,11 +363,20 @@ const handleRiskSettingsUpdate = async (req: IncomingMessage, res: ServerRespons
 
     try {
         const payload = await readJsonBody(req);
+        const baseConfig = getRobotConfig();
+        const currentConfig = await RuntimeConfigService.getEffectiveConfig(baseConfig);
         const maxOrderRub = Number(payload.maxOrderRub);
         const maxDailyOrders = Number(payload.maxDailyOrders);
         const maxDailyRub = Number(payload.maxDailyRub);
-
-        const baseConfig = getRobotConfig();
+        const maxPositionSharePercent = payload.maxPositionSharePercent === undefined
+            ? currentConfig.maxPositionSharePercent
+            : Number(payload.maxPositionSharePercent);
+        const minDiversificationPositions = payload.minDiversificationPositions === undefined
+            ? currentConfig.minDiversificationPositions
+            : Number(payload.minDiversificationPositions);
+        const diversificationFirst = payload.diversificationFirst === undefined
+            ? currentConfig.diversificationFirst
+            : payload.diversificationFirst;
 
         if (!Number.isFinite(maxOrderRub) || maxOrderRub < 0 || maxOrderRub > baseConfig.maxRuntimeOrderRub) {
             json(res, 400, { ok: false, error: `maxOrderRub must be 0..${baseConfig.maxRuntimeOrderRub}` });
@@ -384,10 +393,28 @@ const handleRiskSettingsUpdate = async (req: IncomingMessage, res: ServerRespons
             return;
         }
 
+        if (!Number.isFinite(maxPositionSharePercent) || maxPositionSharePercent < 0 || maxPositionSharePercent > 100) {
+            json(res, 400, { ok: false, error: 'maxPositionSharePercent must be 0..100' });
+            return;
+        }
+
+        if (!Number.isFinite(minDiversificationPositions) || minDiversificationPositions < 0 || minDiversificationPositions > 100) {
+            json(res, 400, { ok: false, error: 'minDiversificationPositions must be 0..100' });
+            return;
+        }
+
+        if (typeof diversificationFirst !== 'boolean') {
+            json(res, 400, { ok: false, error: 'diversificationFirst must be boolean' });
+            return;
+        }
+
         const settings = await RuntimeConfigService.setRiskSettings({
             maxOrderRub,
             maxDailyOrders,
-            maxDailyRub
+            maxDailyRub,
+            maxPositionSharePercent,
+            minDiversificationPositions,
+            diversificationFirst
         }, 'web-dashboard');
         const config = await RuntimeConfigService.getEffectiveConfig(getRobotConfig());
 
@@ -395,6 +422,57 @@ const handleRiskSettingsUpdate = async (req: IncomingMessage, res: ServerRespons
             ok: true,
             settings,
             limits: await getLimitsPayload(config)
+        });
+    } catch (error) {
+        json(res, 400, {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+};
+
+const handleSellSettingsUpdate = async (req: IncomingMessage, res: ServerResponse) => {
+    if (!String(req.headers['content-type'] ?? '').includes('application/json')) {
+        json(res, 415, { ok: false, error: 'content-type must be application/json' });
+        return;
+    }
+
+    if (req.headers['x-robot-admin-action'] !== 'sell-settings') {
+        json(res, 403, { ok: false, error: 'missing x-robot-admin-action header' });
+        return;
+    }
+
+    try {
+        const payload = await readJsonBody(req);
+        const currentConfig = await RuntimeConfigService.getEffectiveConfig(getRobotConfig());
+        const settings = {
+            stopLossPercent: payload.stopLossPercent === undefined
+                ? currentConfig.stopLossPercent
+                : Number(payload.stopLossPercent),
+            trailingStopPercent: payload.trailingStopPercent === undefined
+                ? currentConfig.trailingStopPercent
+                : Number(payload.trailingStopPercent),
+            trailingStopMinProfitPercent: payload.trailingStopMinProfitPercent === undefined
+                ? currentConfig.trailingStopMinProfitPercent
+                : Number(payload.trailingStopMinProfitPercent),
+            sellHoldWinnerMinProfitPercent: payload.sellHoldWinnerMinProfitPercent === undefined
+                ? currentConfig.sellHoldWinnerMinProfitPercent
+                : Number(payload.sellHoldWinnerMinProfitPercent),
+            sellHoldWinnerMaxDrawdownPercent: payload.sellHoldWinnerMaxDrawdownPercent === undefined
+                ? currentConfig.sellHoldWinnerMaxDrawdownPercent
+                : Number(payload.sellHoldWinnerMaxDrawdownPercent)
+        };
+
+        for (const [key, value] of Object.entries(settings)) {
+            if (!Number.isFinite(value) || value < 0) {
+                json(res, 400, { ok: false, error: `${key} must be a positive number` });
+                return;
+            }
+        }
+
+        json(res, 200, {
+            ok: true,
+            settings: await RuntimeConfigService.setSellSettings(settings, 'web-dashboard')
         });
     } catch (error) {
         json(res, 400, {
@@ -479,6 +557,9 @@ const safeConfig = (config: RobotConfig) => ({
     maxRuntimeOrderRub: config.maxRuntimeOrderRub,
     maxRuntimeDailyOrders: config.maxRuntimeDailyOrders,
     maxRuntimeDailyRub: config.maxRuntimeDailyRub,
+    maxPositionSharePercent: config.maxPositionSharePercent,
+    minDiversificationPositions: config.minDiversificationPositions,
+    diversificationFirst: config.diversificationFirst,
     signalCooldownMs: config.signalCooldownMs,
     signalPriceChangePercent: config.signalPriceChangePercent,
     buySignalJournalIntervalMs: config.buySignalJournalIntervalMs,
@@ -678,6 +759,12 @@ const getLimitsPayload = async (config: RobotConfig) => {
                 stopLossRiskRub,
                 baseTrailingGivebackRub,
                 maxOrderPortfolioPercent: percentOfPortfolio(config.maxOrderRub),
+                maxPositionSharePercent: config.maxPositionSharePercent,
+                maxPositionRub: totalRub && totalRub > 0
+                    ? totalRub * Math.max(0, config.maxPositionSharePercent) / 100
+                    : undefined,
+                minDiversificationPositions: config.minDiversificationPositions,
+                diversificationFirst: config.diversificationFirst,
                 dailyExposurePortfolioPercent: percentOfPortfolio(dailyExposureRub),
                 stopLossRiskPortfolioPercent: percentOfPortfolio(stopLossRiskRub),
                 cashUsagePercent: cashRub && cashRub > 0 ? dailyExposureRub / cashRub * 100 : undefined
@@ -768,6 +855,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (req.method === 'POST' && url.pathname === '/api/admin/risk-settings') {
         await handleRiskSettingsUpdate(req, res);
+        return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/admin/sell-settings') {
+        await handleSellSettingsUpdate(req, res);
         return;
     }
 

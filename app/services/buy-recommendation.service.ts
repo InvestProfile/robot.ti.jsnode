@@ -10,6 +10,8 @@ const BLOCKER_WEIGHTS: Record<string, number> = {
     'market regime': -3,
     'score below threshold': -2,
     'already in portfolio': -8,
+    'concentration limit': -7,
+    'diversification first': -4,
     'trading status': -10,
     'lot too expensive': -6,
     'not enough cash': -5
@@ -20,6 +22,8 @@ const normalizeBlocker = (value?: string) => {
     if (text.includes('daily limit')) return 'daily limit';
     if (text.includes('market')) return 'market regime';
     if (text.includes('score below')) return 'score below threshold';
+    if (text.includes('concentration')) return 'concentration limit';
+    if (text.includes('diversification')) return 'diversification first';
     if (text.includes('portfolio')) return 'already in portfolio';
     if (text.includes('trading status')) return 'trading status';
     if (text.includes('lot too expensive')) return 'lot too expensive';
@@ -37,6 +41,8 @@ const getLabBoost = (lab?: LabItem) => {
 
 const classify = (score: number, minScore: number, blocker: string, passed?: boolean) => {
     if (blocker === 'already in portfolio') return 'skip-owned';
+    if (blocker === 'concentration limit') return 'skip-concentration';
+    if (blocker === 'diversification first') return 'watch';
     if (blocker === 'trading status') return 'skip-status';
     if (blocker === 'lot too expensive') return 'skip-expensive';
     if (passed && score >= minScore) return 'buy-candidate';
@@ -77,7 +83,7 @@ export default class BuyRecommendationService {
                 reason: `${recommendation}: score ${effectiveScore}/${minScore}, raw ${item.score ?? '-'}, lab +${getLabBoost(labItem)}, blocker ${blocker}`
             };
         }).sort((a, b) => {
-            const order = ['buy-candidate', 'wait-market', 'watch', 'scan-only', 'skip-owned', 'skip-expensive', 'skip-status', 'ignore'];
+            const order = ['buy-candidate', 'wait-market', 'watch', 'scan-only', 'skip-owned', 'skip-concentration', 'skip-expensive', 'skip-status', 'ignore'];
             const aRank = order.indexOf(a.recommendation);
             const bRank = order.indexOf(b.recommendation);
             if (aRank !== bRank) return aRank - bRank;

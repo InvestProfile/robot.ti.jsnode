@@ -7,7 +7,6 @@ export default class TrendFollowBuyStrategy {
     static evaluate(input: BuyStrategyInput, config: RobotConfig): TradeSignal | undefined {
         if (!config.enabledStrategies.includes('trend-follow-buy')) return undefined;
         if (!config.buyTickers.includes(input.ticker.toUpperCase())) return undefined;
-        if (input.alreadyInPortfolio) return undefined;
         if (!Number.isFinite(input.lastPrice) || input.lastPrice <= 0) return undefined;
 
         const closes = input.dailyCloses

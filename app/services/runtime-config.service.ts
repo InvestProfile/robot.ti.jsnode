@@ -39,6 +39,14 @@ const MARKET_AVG_TREND_KEY = 'marketRegimeMinAvgTrendPercent';
 const MAX_ORDER_RUB_KEY = 'maxOrderRub';
 const MAX_DAILY_ORDERS_KEY = 'maxDailyOrders';
 const MAX_DAILY_RUB_KEY = 'maxDailyRub';
+const MAX_POSITION_SHARE_KEY = 'maxPositionSharePercent';
+const MIN_DIVERSIFICATION_POSITIONS_KEY = 'minDiversificationPositions';
+const DIVERSIFICATION_FIRST_KEY = 'diversificationFirst';
+const STOP_LOSS_PERCENT_KEY = 'stopLossPercent';
+const TRAILING_STOP_PERCENT_KEY = 'trailingStopPercent';
+const TRAILING_STOP_MIN_PROFIT_PERCENT_KEY = 'trailingStopMinProfitPercent';
+const SELL_HOLD_WINNER_MIN_PROFIT_PERCENT_KEY = 'sellHoldWinnerMinProfitPercent';
+const SELL_HOLD_WINNER_MAX_DRAWDOWN_PERCENT_KEY = 'sellHoldWinnerMaxDrawdownPercent';
 const ALLOWED_LIVE_ACTIONS = new Set<LiveAction>(['buy', 'sell']);
 
 const isProtectedTradeEnabled = (reason: string | undefined | null) =>
@@ -100,6 +108,7 @@ export default class RuntimeConfigService {
         const liveAllowedActions = await this.getLiveAllowedActions(baseConfig.liveAllowedActions);
         const marketRegime = await this.getMarketRegimeSettings(baseConfig);
         const riskSettings = await this.getRiskSettings(baseConfig);
+        const sellSettings = await this.getSellSettings(baseConfig);
         const accountIds = modes
             .filter(account => account.effectiveMode === 'trade' && (!account.protected || account.protectedTradeEnabled))
             .map(account => account.accountId);
@@ -113,7 +122,8 @@ export default class RuntimeConfigService {
             observeAccountIds,
             liveAllowedActions,
             ...marketRegime,
-            ...riskSettings
+            ...riskSettings,
+            ...sellSettings
         };
     }
 
@@ -193,19 +203,34 @@ export default class RuntimeConfigService {
         const rows = await RuntimeSettingModel.findAll({
             where: {
                 key: {
-                    [Op.in]: [MAX_ORDER_RUB_KEY, MAX_DAILY_ORDERS_KEY, MAX_DAILY_RUB_KEY]
+                    [Op.in]: [
+                        MAX_ORDER_RUB_KEY,
+                        MAX_DAILY_ORDERS_KEY,
+                        MAX_DAILY_RUB_KEY,
+                        MAX_POSITION_SHARE_KEY,
+                        MIN_DIVERSIFICATION_POSITIONS_KEY,
+                        DIVERSIFICATION_FIRST_KEY
+                    ]
                 }
             } as any
         });
-        const byKey = new Map(rows.map(row => [row.key, Number(row.value)]));
+        const byKey = new Map(rows.map(row => [row.key, row.value]));
         const maxOrderRub = byKey.get(MAX_ORDER_RUB_KEY);
         const maxDailyOrders = byKey.get(MAX_DAILY_ORDERS_KEY);
         const maxDailyRub = byKey.get(MAX_DAILY_RUB_KEY);
+        const maxPositionSharePercent = byKey.get(MAX_POSITION_SHARE_KEY);
+        const minDiversificationPositions = byKey.get(MIN_DIVERSIFICATION_POSITIONS_KEY);
+        const diversificationFirst = byKey.get(DIVERSIFICATION_FIRST_KEY);
 
         return {
             maxOrderRub: capRuntimeNumber(maxOrderRub, baseConfig.maxOrderRub, baseConfig.maxRuntimeOrderRub),
             maxDailyOrders: capRuntimeNumber(maxDailyOrders, baseConfig.maxDailyOrders, baseConfig.maxRuntimeDailyOrders, { integer: true }),
-            maxDailyRub: capRuntimeNumber(maxDailyRub, baseConfig.maxDailyRub, baseConfig.maxRuntimeDailyRub)
+            maxDailyRub: capRuntimeNumber(maxDailyRub, baseConfig.maxDailyRub, baseConfig.maxRuntimeDailyRub),
+            maxPositionSharePercent: capRuntimeNumber(maxPositionSharePercent, baseConfig.maxPositionSharePercent, 100),
+            minDiversificationPositions: capRuntimeNumber(minDiversificationPositions, baseConfig.minDiversificationPositions, 100, { integer: true }),
+            diversificationFirst: diversificationFirst === undefined
+                ? baseConfig.diversificationFirst
+                : ['1', 'true', 'yes', 'on'].includes(String(diversificationFirst).trim().toLowerCase())
         };
     }
 
@@ -213,11 +238,19 @@ export default class RuntimeConfigService {
         maxOrderRub?: number;
         maxDailyOrders?: number;
         maxDailyRub?: number;
+        maxPositionSharePercent?: number;
+        minDiversificationPositions?: number;
+        diversificationFirst?: boolean;
     }, updatedBy = 'web') {
         const baseConfig = getRobotConfig();
         const maxOrderRub = capRuntimeNumber(input.maxOrderRub, baseConfig.maxOrderRub, baseConfig.maxRuntimeOrderRub);
         const maxDailyOrders = capRuntimeNumber(input.maxDailyOrders, baseConfig.maxDailyOrders, baseConfig.maxRuntimeDailyOrders, { integer: true });
         const maxDailyRub = capRuntimeNumber(input.maxDailyRub, baseConfig.maxDailyRub, baseConfig.maxRuntimeDailyRub);
+        const maxPositionSharePercent = capRuntimeNumber(input.maxPositionSharePercent, baseConfig.maxPositionSharePercent, 100);
+        const minDiversificationPositions = capRuntimeNumber(input.minDiversificationPositions, baseConfig.minDiversificationPositions, 100, { integer: true });
+        const diversificationFirst = typeof input.diversificationFirst === 'boolean'
+            ? input.diversificationFirst
+            : baseConfig.diversificationFirst;
 
         await RuntimeSettingModel.upsert({
             key: MAX_ORDER_RUB_KEY,
@@ -234,12 +267,116 @@ export default class RuntimeConfigService {
             value: String(maxDailyRub),
             updatedBy
         });
+        await RuntimeSettingModel.upsert({
+            key: MAX_POSITION_SHARE_KEY,
+            value: String(maxPositionSharePercent),
+            updatedBy
+        });
+        await RuntimeSettingModel.upsert({
+            key: MIN_DIVERSIFICATION_POSITIONS_KEY,
+            value: String(minDiversificationPositions),
+            updatedBy
+        });
+        await RuntimeSettingModel.upsert({
+            key: DIVERSIFICATION_FIRST_KEY,
+            value: String(diversificationFirst),
+            updatedBy
+        });
 
         return {
             maxOrderRub,
             maxDailyOrders,
-            maxDailyRub
+            maxDailyRub,
+            maxPositionSharePercent,
+            minDiversificationPositions,
+            diversificationFirst
         };
+    }
+
+    static async getSellSettings(baseConfig: RobotConfig = getRobotConfig()) {
+        const rows = await RuntimeSettingModel.findAll({
+            where: {
+                key: {
+                    [Op.in]: [
+                        STOP_LOSS_PERCENT_KEY,
+                        TRAILING_STOP_PERCENT_KEY,
+                        TRAILING_STOP_MIN_PROFIT_PERCENT_KEY,
+                        SELL_HOLD_WINNER_MIN_PROFIT_PERCENT_KEY,
+                        SELL_HOLD_WINNER_MAX_DRAWDOWN_PERCENT_KEY
+                    ]
+                }
+            } as any
+        });
+        const byKey = new Map(rows.map(row => [row.key, row.value]));
+
+        return {
+            stopLossPercent: capRuntimeNumber(byKey.get(STOP_LOSS_PERCENT_KEY), baseConfig.stopLossPercent, 20),
+            trailingStopPercent: capRuntimeNumber(byKey.get(TRAILING_STOP_PERCENT_KEY), baseConfig.trailingStopPercent, 20),
+            trailingStopMinProfitPercent: capRuntimeNumber(
+                byKey.get(TRAILING_STOP_MIN_PROFIT_PERCENT_KEY),
+                baseConfig.trailingStopMinProfitPercent,
+                20
+            ),
+            sellHoldWinnerMinProfitPercent: capRuntimeNumber(
+                byKey.get(SELL_HOLD_WINNER_MIN_PROFIT_PERCENT_KEY),
+                baseConfig.sellHoldWinnerMinProfitPercent,
+                50
+            ),
+            sellHoldWinnerMaxDrawdownPercent: capRuntimeNumber(
+                byKey.get(SELL_HOLD_WINNER_MAX_DRAWDOWN_PERCENT_KEY),
+                baseConfig.sellHoldWinnerMaxDrawdownPercent,
+                20
+            )
+        };
+    }
+
+    static async setSellSettings(input: {
+        stopLossPercent?: number;
+        trailingStopPercent?: number;
+        trailingStopMinProfitPercent?: number;
+        sellHoldWinnerMinProfitPercent?: number;
+        sellHoldWinnerMaxDrawdownPercent?: number;
+    }, updatedBy = 'web') {
+        const baseConfig = getRobotConfig();
+        const settings = {
+            stopLossPercent: capRuntimeNumber(input.stopLossPercent, baseConfig.stopLossPercent, 20),
+            trailingStopPercent: capRuntimeNumber(input.trailingStopPercent, baseConfig.trailingStopPercent, 20),
+            trailingStopMinProfitPercent: capRuntimeNumber(
+                input.trailingStopMinProfitPercent,
+                baseConfig.trailingStopMinProfitPercent,
+                20
+            ),
+            sellHoldWinnerMinProfitPercent: capRuntimeNumber(
+                input.sellHoldWinnerMinProfitPercent,
+                baseConfig.sellHoldWinnerMinProfitPercent,
+                50
+            ),
+            sellHoldWinnerMaxDrawdownPercent: capRuntimeNumber(
+                input.sellHoldWinnerMaxDrawdownPercent,
+                baseConfig.sellHoldWinnerMaxDrawdownPercent,
+                20
+            )
+        };
+
+        await RuntimeSettingModel.upsert({ key: STOP_LOSS_PERCENT_KEY, value: String(settings.stopLossPercent), updatedBy });
+        await RuntimeSettingModel.upsert({ key: TRAILING_STOP_PERCENT_KEY, value: String(settings.trailingStopPercent), updatedBy });
+        await RuntimeSettingModel.upsert({
+            key: TRAILING_STOP_MIN_PROFIT_PERCENT_KEY,
+            value: String(settings.trailingStopMinProfitPercent),
+            updatedBy
+        });
+        await RuntimeSettingModel.upsert({
+            key: SELL_HOLD_WINNER_MIN_PROFIT_PERCENT_KEY,
+            value: String(settings.sellHoldWinnerMinProfitPercent),
+            updatedBy
+        });
+        await RuntimeSettingModel.upsert({
+            key: SELL_HOLD_WINNER_MAX_DRAWDOWN_PERCENT_KEY,
+            value: String(settings.sellHoldWinnerMaxDrawdownPercent),
+            updatedBy
+        });
+
+        return settings;
     }
 
     static async setAccountMode(

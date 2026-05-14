@@ -20,6 +20,8 @@ const parseScoreReason = (reason: string) => {
 
 const normalizeReason = (reason: string) => {
     if (reason.includes('instrument is already in portfolio')) return 'already in portfolio';
+    if (reason.includes('position concentration limit')) return 'concentration limit';
+    if (reason.includes('diversification first')) return 'diversification first';
     if (reason.includes('daily order limit')) return 'daily limit';
     if (reason.includes('not enough cash')) return 'not enough cash';
     if (reason.includes('estimated lot is above')) return 'lot too expensive';

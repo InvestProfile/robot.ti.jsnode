@@ -219,6 +219,8 @@ const shortReason = (value) => {
     'market regime blocked:',
     'observe-only:',
     'instrument is already in portfolio',
+    'position concentration limit reached',
+    'diversification first',
     'instrument is not in normal trading status',
     'daily order limit reached'
   ];
@@ -231,6 +233,8 @@ const shortReason = (value) => {
 const classifyBlocker = (reason) => {
   const text = String(reason || '').toLowerCase();
   if (text.includes('already in portfolio')) return 'уже в портфеле';
+  if (text.includes('concentration')) return 'лимит позиции';
+  if (text.includes('diversification')) return 'сначала диверсификация';
   if (text.includes('daily order limit')) return 'дневной лимит';
   if (text.includes('market regime')) return 'рыночный фильтр';
   if (text.includes('normal trading status')) return 'статус торгов';
@@ -696,7 +700,7 @@ function Buy({ data, loadingKeys }) {
         />
       </Card>
 
-      <Card title="Боевой предпросмотр" icon={ShieldCheck} className="wide" help="Самый практический блок покупок: качество кандидата отдельно, решение исполнения отдельно. Высокий score не означает покупку, если бумага уже есть в портфеле, рынок закрыт или лимит исчерпан.">
+      <Card title="Боевой предпросмотр" icon={ShieldCheck} className="wide" help="Самый практический блок покупок: качество кандидата отдельно, решение исполнения отдельно. Высокий score не означает покупку, если рынок закрыт, лимит исчерпан или позиция стала бы слишком большой.">
         <Table
           className="buy-preview-table"
           columns={[
@@ -704,6 +708,7 @@ function Buy({ data, loadingKeys }) {
             { key: 'score', label: 'Качество кандидата', width: '430px', render: (row) => <ScoreBreakdown analysis={row.scoreAnalysis} /> },
             { key: 'status', label: 'Исполнение', width: '150px', render: (row) => <ExecutionDecision status={row.status} reason={row.reason} /> },
             { key: 'estimatedOrderRub', label: 'Сумма', width: '105px', className: 'right', render: (row) => money(row.estimatedOrderRub) },
+            { key: 'projectedPositionSharePercent', label: 'Доля', width: '92px', className: 'right', render: (row) => percent(row.projectedPositionSharePercent) },
             { key: 'brokerQuote', label: 'Брокер', width: '105px', className: 'right', render: (row) => row.brokerQuote ? money(row.brokerQuote.totalOrderAmount) : '-' },
             { key: 'reason', label: 'Причина', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
@@ -1109,16 +1114,35 @@ function RiskControls({ data, onRiskSettingsChange }) {
   const maxOrderRub = Number(config.maxOrderRub || 0);
   const maxDailyOrders = Number(config.maxDailyOrders || 0);
   const maxDailyRub = Number(config.maxDailyRub || 0);
-  const orderButtons = [500, 1000, 1500, 2500].filter((value) => value <= Number(config.maxRuntimeOrderRub || value));
-  const orderCountButtons = [1, 3, 5, 10].filter((value) => value <= Number(config.maxRuntimeDailyOrders || value));
-  const dailyRubButtons = [500, 1500, 2500, 3000, 5000].filter((value) => value <= Number(config.maxRuntimeDailyRub || value));
+  const maxPositionSharePercent = Number(config.maxPositionSharePercent || 0);
+  const minDiversificationPositions = Number(config.minDiversificationPositions || 0);
+  const diversificationFirst = config.diversificationFirst !== false;
+  const riskPayload = (patch) => ({
+    maxOrderRub,
+    maxDailyOrders,
+    maxDailyRub,
+    maxPositionSharePercent,
+    minDiversificationPositions,
+    diversificationFirst,
+    ...patch
+  });
+  const orderButtons = [500, 1000, 1500, 2500, 5000, 10000, 25000, 50000, 100000]
+    .filter((value) => value <= Number(config.maxRuntimeOrderRub || value));
+  const orderCountButtons = [1, 3, 5, 10, 20, 50, 100]
+    .filter((value) => value <= Number(config.maxRuntimeDailyOrders || value));
+  const dailyRubButtons = [500, 1500, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000]
+    .filter((value) => value <= Number(config.maxRuntimeDailyRub || value));
+  const positionShareButtons = [5, 10, 15, 20, 25, 33, 50];
+  const diversificationButtons = [0, 3, 5, 8, 12, 20];
 
   return (
-    <Card title="Лимиты риска" icon={ShieldCheck} help="Меняет реальные лимиты робота без перезапуска. Лимит заявки - потолок одной заявки, заявки в день - сколько заявок за день, бюджет дня - общий дневной бюджет.">
+    <Card title="Лимиты риска" icon={ShieldCheck} help="Меняет реальные лимиты робота без перезапуска. Лимит заявки и дневной бюджет управляют оборотом, лимит позиции не дает набрать слишком большой перекос в один тикер.">
       <div className="stats compact">
         <Stat label="Лимит заявки" value={`${money(maxOrderRub)} RUB`} title={`Hard cap: ${money(config.maxRuntimeOrderRub)} RUB`} />
         <Stat label="Заявок в день" value={maxDailyOrders} title={`Hard cap: ${config.maxRuntimeDailyOrders}`} />
         <Stat label="Бюджет дня" value={`${money(maxDailyRub)} RUB`} title={`Hard cap: ${money(config.maxRuntimeDailyRub)} RUB`} />
+        <Stat label="Лимит позиции" value={`${money(maxPositionSharePercent)}%`} title="Максимальная доля одной бумаги после новой покупки." />
+        <Stat label="Мин. бумаг" value={minDiversificationPositions} title="Пока бумаг меньше этого числа, робот старается не докупать уже имеющиеся тикеры." />
         <Stat label="Осталось сегодня" value={tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : '-'} />
       </div>
       <div className="control-row">
@@ -1126,7 +1150,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
           <button
             key={value}
             className={cls('mini-button', value === maxOrderRub && 'active')}
-            onClick={() => onRiskSettingsChange({ maxOrderRub: value, maxDailyOrders, maxDailyRub })}
+            onClick={() => onRiskSettingsChange(riskPayload({ maxOrderRub: value }))}
             title="Поменять максимальный размер одной заявки."
           >
             order {value}
@@ -1138,7 +1162,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
           <button
             key={value}
             className={cls('mini-button', value === maxDailyOrders && 'active')}
-            onClick={() => onRiskSettingsChange({ maxOrderRub, maxDailyOrders: value, maxDailyRub })}
+            onClick={() => onRiskSettingsChange(riskPayload({ maxDailyOrders: value }))}
             title="Поменять максимум заявок за день."
           >
             {value} orders
@@ -1150,12 +1174,43 @@ function RiskControls({ data, onRiskSettingsChange }) {
           <button
             key={value}
             className={cls('mini-button', value === maxDailyRub && 'active')}
-            onClick={() => onRiskSettingsChange({ maxOrderRub, maxDailyOrders, maxDailyRub: value })}
+            onClick={() => onRiskSettingsChange(riskPayload({ maxDailyRub: value }))}
             title="Поменять общий дневной бюджет."
           >
             day {value}
           </button>
         ))}
+      </div>
+      <div className="control-row">
+        {positionShareButtons.map((value) => (
+          <button
+            key={value}
+            className={cls('mini-button', value === maxPositionSharePercent && 'active')}
+            onClick={() => onRiskSettingsChange(riskPayload({ maxPositionSharePercent: value }))}
+            title="Поменять максимальную долю одной бумаги в портфеле после покупки."
+          >
+            position {value}%
+          </button>
+        ))}
+      </div>
+      <div className="control-row">
+        {diversificationButtons.map((value) => (
+          <button
+            key={value}
+            className={cls('mini-button', value === minDiversificationPositions && 'active')}
+            onClick={() => onRiskSettingsChange(riskPayload({ minDiversificationPositions: value }))}
+            title="Поменять целевое минимальное число разных бумаг перед докупкой существующей позиции."
+          >
+            diversify {value}
+          </button>
+        ))}
+        <button
+          className={cls('mini-button', diversificationFirst && 'active')}
+          onClick={() => onRiskSettingsChange(riskPayload({ diversificationFirst: !diversificationFirst }))}
+          title="Когда включено, робот сначала расширяет набор бумаг, а уже потом докупает существующие тикеры."
+        >
+          diversification {diversificationFirst ? 'on' : 'off'}
+        </button>
       </div>
     </Card>
   );
@@ -1174,13 +1229,75 @@ function RiskBudget({ data }) {
         <Stat label="Stop-loss риск" value={`${money(budget.stopLossRiskRub)} RUB`} tone="bad" title="Грубый worst-case по новым входам: дневная экспозиция * stop-loss %. Комиссии и гэпы отдельно не учитываются." />
         <Stat label="Stop-loss / счет" value={percent(budget.stopLossRiskPortfolioPercent)} tone="bad" title="Та же потенциальная потеря как доля счета." />
         <Stat label="Trailing giveback" value={`${money(budget.baseTrailingGivebackRub)} RUB`} title="Сколько прибыли может быть отдано базовым trailing-stop. Адаптивный trailing может быть шире для волатильной бумаги." />
+        <Stat label="Лимит позиции" value={`${money(budget.maxPositionRub)} RUB`} title={`Максимум в одну бумагу: ${money(budget.maxPositionSharePercent)}% от торгового счета.`} />
+        <Stat label="Мин. бумаг" value={budget.minDiversificationPositions ?? '-'} title="Цель диверсификации перед докупкой уже имеющейся бумаги." />
         <Stat label="Cash usage" value={percent(budget.cashUsagePercent)} title="Доля свободных денег, которую дневной бюджет может задействовать." />
       </div>
     </Card>
   );
 }
 
-function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle, onRiskSettingsChange }) {
+function SellControls({ data, onSellSettingsChange }) {
+  const config = data.status?.config || {};
+  const stopLossPercent = Number(config.stopLossPercent || 0);
+  const trailingStopPercent = Number(config.trailingStopPercent || 0);
+  const trailingStopMinProfitPercent = Number(config.trailingStopMinProfitPercent || 0);
+  const sellHoldWinnerMinProfitPercent = Number(config.sellHoldWinnerMinProfitPercent || 0);
+  const sellHoldWinnerMaxDrawdownPercent = Number(config.sellHoldWinnerMaxDrawdownPercent || 0);
+  const payload = (patch) => ({
+    stopLossPercent,
+    trailingStopPercent,
+    trailingStopMinProfitPercent,
+    sellHoldWinnerMinProfitPercent,
+    sellHoldWinnerMaxDrawdownPercent,
+    ...patch
+  });
+  const stopLossButtons = [1, 2, 3, 5, 8, 10, 15, 20];
+  const trailingButtons = [0.5, 1, 2, 3, 5, 8, 10];
+  const profitButtons = [0.5, 1, 2, 3, 5, 8, 10, 15, 25];
+  const drawdownButtons = [0.5, 1, 2, 3, 5, 8, 10];
+
+  return (
+    <Card title="Пороги продаж" icon={AlertTriangle} help="Пороговые настройки выхода без перезапуска. Stop-loss режет убыток, trailing-stop защищает прибыль после движения вверх, hold-winner не дает продать победителя при маленькой просадке.">
+      <div className="stats compact">
+        <Stat label="Stop-loss" value={`${money(stopLossPercent)}%`} tone="bad" />
+        <Stat label="Trailing" value={`${money(trailingStopPercent)}%`} />
+        <Stat label="Trail min profit" value={`${money(trailingStopMinProfitPercent)}%`} />
+        <Stat label="Hold winner" value={`${money(sellHoldWinnerMinProfitPercent)}% / ${money(sellHoldWinnerMaxDrawdownPercent)}%`} />
+      </div>
+      <div className="control-row">
+        {stopLossButtons.map((value) => (
+          <button key={value} className={cls('mini-button', value === stopLossPercent && 'active')} onClick={() => onSellSettingsChange(payload({ stopLossPercent: value }))}>
+            stop {value}%
+          </button>
+        ))}
+      </div>
+      <div className="control-row">
+        {trailingButtons.map((value) => (
+          <button key={value} className={cls('mini-button', value === trailingStopPercent && 'active')} onClick={() => onSellSettingsChange(payload({ trailingStopPercent: value }))}>
+            trail {value}%
+          </button>
+        ))}
+      </div>
+      <div className="control-row">
+        {profitButtons.map((value) => (
+          <button key={value} className={cls('mini-button', value === trailingStopMinProfitPercent && 'active')} onClick={() => onSellSettingsChange(payload({ trailingStopMinProfitPercent: value, sellHoldWinnerMinProfitPercent: Math.max(sellHoldWinnerMinProfitPercent, value) }))}>
+            min profit {value}%
+          </button>
+        ))}
+      </div>
+      <div className="control-row">
+        {drawdownButtons.map((value) => (
+          <button key={value} className={cls('mini-button', value === sellHoldWinnerMaxDrawdownPercent && 'active')} onClick={() => onSellSettingsChange(payload({ sellHoldWinnerMaxDrawdownPercent: value }))}>
+            winner dd {value}%
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle, onRiskSettingsChange, onSellSettingsChange }) {
   const liveActions = data.status?.config?.liveAllowedActions || [];
   const sellArmed = liveActions.includes('sell');
   const accounts = data.accounts?.accounts || [];
@@ -1219,6 +1336,7 @@ function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle, onRiskSet
         </div>
       </Card>
       <RiskControls data={data} onRiskSettingsChange={onRiskSettingsChange} />
+      <SellControls data={data} onSellSettingsChange={onSellSettingsChange} />
       <RiskBudget data={data} />
       <Card title="Счета" icon={Database} className="wide" help="Кнопка меняет режим счета без перезапуска робота. Protected-счет можно перевести в trade только после отдельного подтверждения номером счета.">
         <Table
@@ -1869,13 +1987,32 @@ function App() {
 
     await reload();
   };
+  const updateSellSettings = async (settings) => {
+    setActionError('');
+    const response = await fetch('/api/admin/sell-settings', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-robot-admin-action': 'sell-settings'
+      },
+      body: JSON.stringify(settings)
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      setActionError(payload.error || `HTTP ${response.status}`);
+      return;
+    }
+
+    await reload();
+  };
 
   const content = {
     overview: <Overview data={data} loadingKeys={loadingKeys} onMarketRegimeChange={updateMarketRegime} />,
     buy: <Buy data={data} loadingKeys={loadingKeys} />,
     social: <Social data={data} loadingKeys={loadingKeys} />,
     evidence: <Evidence data={data} loadingKeys={loadingKeys} />,
-    accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} onLiveSellToggle={updateLiveSell} onRiskSettingsChange={updateRiskSettings} />,
+    accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} onLiveSellToggle={updateLiveSell} onRiskSettingsChange={updateRiskSettings} onSellSettingsChange={updateSellSettings} />,
     sell: <Sell data={data} loadingKeys={loadingKeys} />,
     trades: <Trades data={data} loadingKeys={loadingKeys} />,
     logs: <Logs data={data} loadingKeys={loadingKeys} />

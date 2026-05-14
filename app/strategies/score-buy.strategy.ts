@@ -161,7 +161,6 @@ export default class ScoreBuyStrategy {
 
     static evaluate(input: BuyStrategyInput, config: RobotConfig): TradeSignal | undefined {
         if (!config.enabledStrategies.includes('score-buy')) return undefined;
-        if (input.alreadyInPortfolio) return undefined;
 
         const analysis = this.analyze(input, config);
         if (!analysis?.passed || analysis.estimatedOrderRub === undefined) return undefined;

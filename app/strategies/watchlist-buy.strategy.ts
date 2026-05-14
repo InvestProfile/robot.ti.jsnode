@@ -5,7 +5,6 @@ export default class WatchlistBuyStrategy {
     static evaluate(input: BuyStrategyInput, config: RobotConfig): TradeSignal | undefined {
         if (!config.enabledStrategies.includes('watchlist-buy')) return undefined;
         if (!config.buyTickers.includes(input.ticker.toUpperCase())) return undefined;
-        if (input.alreadyInPortfolio) return undefined;
         if (!Number.isFinite(input.lastPrice) || input.lastPrice <= 0) return undefined;
 
         const estimatedLotRub = input.lastPrice * Math.max(1, input.lot);

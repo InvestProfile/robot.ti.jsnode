@@ -35,6 +35,12 @@ export interface BuySignalPreview {
     remainingCashRub: number;
     dailyOrdersCount: number;
     dailyOrdersRub: number;
+    portfolioValueRub?: number;
+    positionValueRub?: number;
+    projectedPositionValueRub?: number;
+    projectedPositionSharePercent?: number;
+    maxPositionValueRub?: number;
+    portfolioPositionsCount?: number;
 }
 
 export default class BuySignalEvaluatorService {
@@ -50,14 +56,34 @@ export default class BuySignalEvaluatorService {
         const shares = instruments ? undefined : await InstrumentsService.getShares();
         const allInstruments = instruments ?? shares?.instruments ?? [];
         const portfolio = await operationService.getPortfolio(accountId);
+        const instrumentByUid = new Map(allInstruments.map(instrument => [instrument.uid, instrument]));
+        const portfolioValueRub = quotationToNumber(portfolio?.totalAmountPortfolio) ?? 0;
         let remainingCashRub = quotationToNumber(portfolio?.totalAmountCurrencies) ?? 0;
         let dailyOrdersCount = await TradesService.countTodayTrades(accountId);
         let dailyOrdersRub = await TradesService.sumTodayBuyTradesRub(accountId);
-        const portfolioInstrumentIds = new Set(
-            portfolio?.positions
-                ?.map(position => position.instrumentUid)
-                .filter(Boolean) ?? []
-        );
+        const positionValueByInstrumentUid = new Map<string, number>();
+
+        for (const position of portfolio?.positions ?? []) {
+            if (!position.instrumentUid) continue;
+
+            const quantityLots = Number(position.quantityLots?.units ?? 0);
+            if (!Number.isFinite(quantityLots) || quantityLots <= 0) continue;
+
+            const currentPrice = quotationToNumber(position.currentPrice)
+                ?? quotationToNumber(position.averagePositionPrice)
+                ?? 0;
+            const lot = Math.max(1, instrumentByUid.get(position.instrumentUid)?.lot ?? 1);
+            const positionValueRub = currentPrice * quantityLots * lot;
+            if (!Number.isFinite(positionValueRub) || positionValueRub <= 0) continue;
+
+            positionValueByInstrumentUid.set(
+                position.instrumentUid,
+                (positionValueByInstrumentUid.get(position.instrumentUid) ?? 0) + positionValueRub
+            );
+        }
+
+        const portfolioInstrumentIds = new Set(positionValueByInstrumentUid.keys());
+        const portfolioPositionsCount = portfolioInstrumentIds.size;
         const buyInstruments = effectiveBuyTickers
             .map(ticker => allInstruments.find(instrument => instrument.ticker?.toUpperCase() === ticker))
             .filter((instrument): instrument is ShareInstrument => Boolean(instrument?.uid && instrument?.figi));
@@ -96,13 +122,18 @@ export default class BuySignalEvaluatorService {
                     reason: 'last price is empty',
                     remainingCashRub,
                     dailyOrdersCount,
-                    dailyOrdersRub
+                    dailyOrdersRub,
+                    portfolioValueRub,
+                    positionValueRub: 0,
+                    projectedPositionValueRub: 0,
+                    portfolioPositionsCount
                 });
                 continue;
             }
 
             const estimatedOrderRub = lastPrice * Math.max(1, instrument.lot ?? 1);
             const alreadyInPortfolio = portfolioInstrumentIds.has(instrument.uid);
+            const positionValueRub = positionValueByInstrumentUid.get(instrument.uid) ?? 0;
             const tradingStatus = tradingStatuses.get(instrument.uid);
             const buyConfig = getBuyScoreConfigForTicker(config, instrument.ticker);
             const effectiveBuyConfig = {
@@ -166,13 +197,15 @@ export default class BuySignalEvaluatorService {
                 availableCashRub: remainingCashRub,
                 dailyOrdersCount,
                 dailyOrdersRub,
+                portfolioValueRub,
+                positionValueRub,
+                portfolioPositionsCount,
+                alreadyInPortfolio,
                 signal: marketRegime.passed ? signal : undefined,
                 tradingStatus: tradingStatus?.tradingStatus
             }, config);
-            const skipReason = alreadyInPortfolio
-                ? 'instrument is already in portfolio'
-                : estimatedOrderRub > config.maxOrderRub
-                    ? 'estimated lot is above max order RUB'
+            const skipReason = estimatedOrderRub > config.maxOrderRub
+                ? 'estimated lot is above max order RUB'
                 : estimatedOrderRub > remainingCashRub
                     ? 'not enough cash for estimated lot'
                     : scoreAnalysis && !scoreAnalysis.passed
@@ -198,7 +231,13 @@ export default class BuySignalEvaluatorService {
                 alreadyInPortfolio,
                 remainingCashRub,
                 dailyOrdersCount,
-                dailyOrdersRub
+                dailyOrdersRub,
+                portfolioValueRub,
+                positionValueRub,
+                projectedPositionValueRub: risk.projectedPositionRub,
+                projectedPositionSharePercent: risk.projectedPositionSharePercent,
+                maxPositionValueRub: risk.maxPositionRub,
+                portfolioPositionsCount
             };
 
             previews.push(preview);
