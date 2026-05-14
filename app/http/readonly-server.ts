@@ -43,6 +43,28 @@ import TradePnlService from '../services/trade-pnl.service';
 
 type AccountMode = 'trade' | 'observe';
 
+const PREVIEW_CACHE_TTL_MS = 30_000;
+const PREVIEW_CACHE_MAX_STALE_MS = 5 * 60_000;
+
+interface PreviewPayload {
+    mode: 'dry-run' | 'live';
+    liveAllowedActions: RobotConfig['liveAllowedActions'];
+    brokerQuoteMode: string;
+    previews: unknown[];
+}
+
+interface PreviewCacheEntry {
+    payload?: PreviewPayload;
+    createdAt: number;
+    refreshing?: Promise<PreviewPayload>;
+}
+
+const previewPayloadCache = new Map<string, PreviewCacheEntry>();
+
+const invalidatePreviewCache = () => {
+    previewPayloadCache.clear();
+};
+
 const parseBoolean = (value: string | undefined, defaultValue: boolean) => {
     if (value === undefined) return defaultValue;
     return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase());
@@ -251,15 +273,18 @@ const handleAccountModeUpdate = async (req: IncomingMessage, res: ServerResponse
             return;
         }
 
+        const result = await RuntimeConfigService.setAccountMode(
+            accountId,
+            mode,
+            'web-dashboard',
+            allowProtectedTrade ? 'web-dashboard protected override' : undefined,
+            allowProtectedTrade
+        );
+        invalidatePreviewCache();
+
         json(res, 200, {
             ok: true,
-            ...await RuntimeConfigService.setAccountMode(
-                accountId,
-                mode,
-                'web-dashboard',
-                allowProtectedTrade ? 'web-dashboard protected override' : undefined,
-                allowProtectedTrade
-            )
+            ...result
         });
     } catch (error) {
         json(res, 400, {
@@ -293,9 +318,12 @@ const handleLiveActionsUpdate = async (req: IncomingMessage, res: ServerResponse
             return;
         }
 
+        const result = await RuntimeConfigService.setLiveAllowedActions(actions, 'web-dashboard');
+        invalidatePreviewCache();
+
         json(res, 200, {
             ok: true,
-            ...await RuntimeConfigService.setLiveAllowedActions(actions, 'web-dashboard')
+            ...result
         });
     } catch (error) {
         json(res, 400, {
@@ -335,6 +363,7 @@ const handleMarketRegimeUpdate = async (req: IncomingMessage, res: ServerRespons
             minHealthPercent,
             minAvgTrendPercent
         }, 'web-dashboard');
+        invalidatePreviewCache();
         const config = await RuntimeConfigService.getEffectiveConfig(getRobotConfig());
 
         json(res, 200, {
@@ -416,6 +445,7 @@ const handleRiskSettingsUpdate = async (req: IncomingMessage, res: ServerRespons
             minDiversificationPositions,
             diversificationFirst
         }, 'web-dashboard');
+        invalidatePreviewCache();
         const config = await RuntimeConfigService.getEffectiveConfig(getRobotConfig());
 
         json(res, 200, {
@@ -817,9 +847,59 @@ const enrichBrokerQuote = async (accountId: string, preview: Awaited<ReturnType<
     }
 };
 
-const getPreviewPayload = async (config: RobotConfig, url?: URL) => {
+const getPreviewCacheKey = (config: RobotConfig, brokerMode: string) => JSON.stringify({
+    brokerMode,
+    config: safeConfig(config)
+});
+
+const withPreviewCacheMeta = (
+    payload: PreviewPayload,
+    source: 'miss' | 'hit' | 'stale',
+    createdAt: number,
+    error?: unknown
+) => ({
+    ...payload,
+    cache: {
+        source,
+        generatedAt: new Date(createdAt).toISOString(),
+        ageMs: Math.max(0, Date.now() - createdAt),
+        error: error instanceof Error ? error.message : error ? String(error) : undefined
+    }
+});
+
+const refreshPreviewCache = (key: string, config: RobotConfig, brokerMode: string) => {
+    const entry = previewPayloadCache.get(key) ?? { createdAt: 0 };
+    if (entry.refreshing) return entry.refreshing;
+
+    const refreshing = buildPreviewPayload(config, brokerMode)
+        .then(payload => {
+            previewPayloadCache.set(key, {
+                payload,
+                createdAt: Date.now()
+            });
+            return payload;
+        })
+        .catch(error => {
+            const current = previewPayloadCache.get(key);
+            if (current) {
+                previewPayloadCache.set(key, {
+                    payload: current.payload,
+                    createdAt: current.createdAt
+                });
+            }
+            throw error;
+        });
+
+    previewPayloadCache.set(key, {
+        ...entry,
+        refreshing
+    });
+
+    return refreshing;
+};
+
+const buildPreviewPayload = async (config: RobotConfig, brokerMode: string): Promise<PreviewPayload> => {
     const previews = [];
-    const brokerMode = url?.searchParams.get('broker') ?? 'allowed';
 
     for (const accountId of config.accountIds) {
         const accountPreviews = await BuySignalEvaluatorService.evaluateAccount(accountId, config);
@@ -836,6 +916,52 @@ const getPreviewPayload = async (config: RobotConfig, url?: URL) => {
         brokerQuoteMode: brokerMode,
         previews
     };
+};
+
+const getPreviewPayload = async (config: RobotConfig, url?: URL) => {
+    const brokerMode = url?.searchParams.get('broker') ?? 'allowed';
+    const forceRefresh = ['1', 'true', 'yes'].includes((url?.searchParams.get('refresh') ?? '').toLowerCase());
+    const key = getPreviewCacheKey(config, brokerMode);
+    const entry = previewPayloadCache.get(key);
+    const now = Date.now();
+
+    if (!forceRefresh && entry?.payload) {
+        const ageMs = now - entry.createdAt;
+
+        if (ageMs <= PREVIEW_CACHE_TTL_MS) {
+            return withPreviewCacheMeta(entry.payload, 'hit', entry.createdAt);
+        }
+
+        if (ageMs <= PREVIEW_CACHE_MAX_STALE_MS) {
+            void refreshPreviewCache(key, config, brokerMode).catch(error => {
+                console.error('Preview cache refresh failed:', error);
+            });
+            return withPreviewCacheMeta(entry.payload, 'stale', entry.createdAt);
+        }
+    }
+
+    try {
+        const payload = await refreshPreviewCache(key, config, brokerMode);
+        return withPreviewCacheMeta(payload, 'miss', Date.now());
+    } catch (error) {
+        if (entry?.payload) {
+            return withPreviewCacheMeta(entry.payload, 'stale', entry.createdAt, error);
+        }
+
+        throw error;
+    }
+};
+
+const warmPreviewCache = async () => {
+    try {
+        const config = await RuntimeConfigService.getEffectiveConfig(getRobotConfig());
+        const brokerMode = 'allowed';
+        const key = getPreviewCacheKey(config, brokerMode);
+        await refreshPreviewCache(key, config, brokerMode);
+        console.log('Preview cache warmed.');
+    } catch (error) {
+        console.error('Preview cache warmup failed:', error instanceof Error ? error.message : error);
+    }
 };
 
 const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedAt: string) => {
@@ -1162,6 +1288,9 @@ export const startReadOnlyHttpServer = () => {
     server.listen(port, '0.0.0.0', () => {
         const authStatus = env.ROBOT_WEB_PASSWORD ? 'enabled' : 'disabled-local-dev';
         console.log(`Read-only HTTP server listening on ${port}. Auth: ${authStatus}.`);
+        setTimeout(() => {
+            void warmPreviewCache();
+        }, 5_000);
     });
 
     return server;
