@@ -2,6 +2,8 @@ import { RobotConfig } from '../config/robot.config';
 import { DailyCandle } from '../strategies/trade-signal';
 import MarketDataService from './marketData.service';
 
+type OrderBookMetrics = NonNullable<Awaited<ReturnType<typeof MarketDataService.getOrderBookMetrics>>>;
+
 interface PreBuyRiskInput {
     instrumentUid: string;
     ticker?: string;
@@ -11,6 +13,8 @@ interface PreBuyRiskInput {
     portfolioValueRub: number;
     sectorValueRub: number;
     dailyCandles?: DailyCandle[];
+    orderBookMetrics?: OrderBookMetrics;
+    orderBookError?: unknown;
 }
 
 export interface PreBuyRiskCheck {
@@ -81,7 +85,8 @@ export default class PreBuyRiskService {
 
         if (config.liquidityRiskEnabled) {
             try {
-                const orderBook = await MarketDataService.getOrderBookMetrics(input.instrumentUid, input.lot);
+                if (input.orderBookError) throw input.orderBookError;
+                const orderBook = input.orderBookMetrics ?? await MarketDataService.getOrderBookMetrics(input.instrumentUid, input.lot);
                 spreadPercent = orderBook?.spreadPercent;
                 askLiquidityRub = orderBook?.askLiquidityRub;
 

@@ -119,8 +119,10 @@ export default class BuySignalEvaluatorService {
         ]));
         const dailyCandlesByUid = new Map<string, Awaited<ReturnType<typeof marketData.getDailyCandles>> | undefined>();
         const dailyClosesByUid = new Map<string, Awaited<ReturnType<typeof marketData.getDailyClosePrices>> | undefined>();
+        const orderBookByUid = new Map<string, Awaited<ReturnType<typeof marketData.getOrderBookMetrics>> | undefined>();
+        const orderBookErrorByUid = new Map<string, unknown>();
 
-        await Promise.all(buyInstruments.map(async instrument => {
+        const dailyMarketDataPrefetch = Promise.all(buyInstruments.map(async instrument => {
             const buyConfig = buyConfigByUid.get(instrument.uid) ?? config;
             const needsDailyCandles = buyConfig.enabledStrategies.includes('score-buy') || config.liquidityRiskEnabled;
             const needsDailyCloses = buyConfig.enabledStrategies.includes('trend-follow-buy');
@@ -132,6 +134,21 @@ export default class BuySignalEvaluatorService {
             dailyCandlesByUid.set(instrument.uid, dailyCandles);
             dailyClosesByUid.set(instrument.uid, dailyCloses);
         }));
+
+        const liquidityRiskPrefetch = config.liquidityRiskEnabled
+            ? Promise.all(buyInstruments.map(async instrument => {
+                try {
+                    orderBookByUid.set(
+                        instrument.uid,
+                        await marketData.getOrderBookMetrics(instrument.uid, instrument.lot ?? 1)
+                    );
+                } catch (error) {
+                    orderBookErrorByUid.set(instrument.uid, error);
+                }
+            }))
+            : Promise.resolve([]);
+
+        await Promise.all([dailyMarketDataPrefetch, liquidityRiskPrefetch]);
         const previews: BuySignalPreview[] = [];
 
         for (const instrument of buyInstruments) {
@@ -235,7 +252,9 @@ export default class BuySignalEvaluatorService {
                 sector: instrument.sector,
                 portfolioValueRub,
                 sectorValueRub: instrument.sector ? (sectorValueBySector.get(instrument.sector) ?? 0) : 0,
-                dailyCandles
+                dailyCandles,
+                orderBookMetrics: orderBookByUid.get(instrument.uid),
+                orderBookError: orderBookErrorByUid.get(instrument.uid)
             }, config);
             const allowed = risk.allowed && preBuyRisk.passed;
             let skipReason: string | undefined;
