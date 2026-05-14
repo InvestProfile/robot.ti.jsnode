@@ -1,7 +1,7 @@
 import http, { IncomingMessage, ServerResponse } from 'http';
 import { URL } from 'url';
 import path from 'path';
-import { chmod, chown, readFile, rename, stat, writeFile } from 'fs/promises';
+import { chmod, chown, mkdir, readFile, rename, stat, writeFile } from 'fs/promises';
 import { getEnv } from '../config/env.config';
 import { getRobotConfig, RobotConfig } from '../config/robot.config';
 import { getTradingRuntimeState } from '../modules/common.module';
@@ -44,7 +44,9 @@ import TradePnlService from '../services/trade-pnl.service';
 type AccountMode = 'trade' | 'observe';
 
 const PREVIEW_CACHE_TTL_MS = 30_000;
-const PREVIEW_CACHE_MAX_STALE_MS = 5 * 60_000;
+const PREVIEW_CACHE_MAX_STALE_MS = 30 * 60_000;
+const PREVIEW_CACHE_PATH = process.env.ROBOT_PREVIEW_CACHE_PATH
+    || path.resolve(process.cwd(), '.runtime', 'preview-cache.json');
 
 interface PreviewPayload {
     mode: 'dry-run' | 'live';
@@ -60,9 +62,58 @@ interface PreviewCacheEntry {
 }
 
 const previewPayloadCache = new Map<string, PreviewCacheEntry>();
+let previewDiskCacheLoaded = false;
 
 const invalidatePreviewCache = () => {
     previewPayloadCache.clear();
+};
+
+const loadPreviewCacheFromDisk = async () => {
+    if (previewDiskCacheLoaded) return;
+    previewDiskCacheLoaded = true;
+
+    try {
+        const content = await readFile(PREVIEW_CACHE_PATH, 'utf8');
+        const parsed = JSON.parse(content) as {
+            entries?: Record<string, { payload?: PreviewPayload; createdAt?: number }>;
+        };
+
+        for (const [key, entry] of Object.entries(parsed.entries ?? {})) {
+            if (!entry.payload || !Number.isFinite(entry.createdAt)) continue;
+
+            previewPayloadCache.set(key, {
+                payload: entry.payload,
+                createdAt: Number(entry.createdAt)
+            });
+        }
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            console.error('Preview cache load failed:', error instanceof Error ? error.message : error);
+        }
+    }
+};
+
+const persistPreviewCacheToDisk = async () => {
+    try {
+        const entries = Object.fromEntries(
+            [...previewPayloadCache.entries()]
+                .filter(([, entry]) => entry.payload)
+                .map(([key, entry]) => [key, {
+                    payload: entry.payload,
+                    createdAt: entry.createdAt
+                }])
+        );
+        const tmpPath = `${PREVIEW_CACHE_PATH}.tmp-${process.pid}-${Date.now()}`;
+
+        await mkdir(path.dirname(PREVIEW_CACHE_PATH), { recursive: true });
+        await writeFile(tmpPath, JSON.stringify({
+            updatedAt: new Date().toISOString(),
+            entries
+        }), { mode: 0o600 });
+        await rename(tmpPath, PREVIEW_CACHE_PATH);
+    } catch (error) {
+        console.error('Preview cache persist failed:', error instanceof Error ? error.message : error);
+    }
 };
 
 const parseBoolean = (value: string | undefined, defaultValue: boolean) => {
@@ -877,6 +928,7 @@ const refreshPreviewCache = (key: string, config: RobotConfig, brokerMode: strin
                 payload,
                 createdAt: Date.now()
             });
+            void persistPreviewCacheToDisk();
             return payload;
         })
         .catch(error => {
@@ -919,6 +971,8 @@ const buildPreviewPayload = async (config: RobotConfig, brokerMode: string): Pro
 };
 
 const getPreviewPayload = async (config: RobotConfig, url?: URL) => {
+    await loadPreviewCacheFromDisk();
+
     const brokerMode = url?.searchParams.get('broker') ?? 'allowed';
     const forceRefresh = ['1', 'true', 'yes'].includes((url?.searchParams.get('refresh') ?? '').toLowerCase());
     const key = getPreviewCacheKey(config, brokerMode);
@@ -954,6 +1008,7 @@ const getPreviewPayload = async (config: RobotConfig, url?: URL) => {
 
 const warmPreviewCache = async () => {
     try {
+        await loadPreviewCacheFromDisk();
         const config = await RuntimeConfigService.getEffectiveConfig(getRobotConfig());
         const brokerMode = 'allowed';
         const key = getPreviewCacheKey(config, brokerMode);
