@@ -1268,6 +1268,8 @@ function RiskBudget({ data }) {
 function SellControls({ data, onSellSettingsChange }) {
   const config = data.status?.config || {};
   const stopLossPercent = Number(config.stopLossPercent || 0);
+  const stopLossMaxPercent = Number(config.stopLossMaxPercent || 0);
+  const stopLossVolatilityMultiplier = Number(config.stopLossVolatilityMultiplier || 0);
   const trailingStopPercent = Number(config.trailingStopPercent || 0);
   const trailingStopMinProfitPercent = Number(config.trailingStopMinProfitPercent || 0);
   const sellHoldWinnerMinProfitPercent = Number(config.sellHoldWinnerMinProfitPercent || 0);
@@ -1288,7 +1290,7 @@ function SellControls({ data, onSellSettingsChange }) {
   return (
     <Card title="Пороги продаж" icon={AlertTriangle} help="Пороговые настройки выхода без перезапуска. Stop-loss режет убыток, trailing-stop защищает прибыль после движения вверх, hold-winner не дает продать победителя при маленькой просадке.">
       <div className="stats compact">
-        <Stat label="Stop-loss" value={`${money(stopLossPercent)}%`} tone="bad" />
+        <Stat label="Stop-loss" value={`${money(stopLossPercent)}%`} tone="bad" title={`Адаптивный порог: max(base ${money(stopLossPercent)}%, avg daily range * ${money(stopLossVolatilityMultiplier)}), но не выше ${stopLossMaxPercent > 0 ? `${money(stopLossMaxPercent)}%` : 'без лимита'}.`} />
         <Stat label="Trailing" value={`${money(trailingStopPercent)}%`} />
         <Stat label="Trail min profit" value={`${money(trailingStopMinProfitPercent)}%`} />
         <Stat label="Hold winner" value={`${money(sellHoldWinnerMinProfitPercent)}% / ${money(sellHoldWinnerMaxDrawdownPercent)}%`} />

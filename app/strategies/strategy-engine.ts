@@ -17,7 +17,7 @@ export default class StrategyEngine {
         const highestPrice = trailingStopSignal?.factors?.highestPrice;
 
         if (enabledStrategies.has('stop-loss')) {
-            const stopLossSignal = StopLossStrategy.evaluate(input, config);
+            const stopLossSignal = await StopLossStrategy.evaluate(input, config);
             if (stopLossSignal) return stopLossSignal;
         }
 
