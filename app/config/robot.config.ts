@@ -189,6 +189,14 @@ export interface RobotConfig {
     maxPositionSharePercent: number;
     minDiversificationPositions: number;
     diversificationFirst: boolean;
+    liquidityRiskEnabled: boolean;
+    liquidityRiskEnforced: boolean;
+    maxSpreadPercent: number;
+    minOrderbookAskRub: number;
+    minDailyTurnoverRub: number;
+    sectorRiskEnabled: boolean;
+    sectorRiskEnforced: boolean;
+    maxSectorSharePercent: number;
     signalCooldownMs: number;
     signalPriceChangePercent: number;
     buySignalJournalIntervalMs: number;
@@ -285,6 +293,14 @@ export const getRobotConfig = (): RobotConfig => {
         maxPositionSharePercent: Math.max(0, Math.min(100, parseNumber(env.ROBOT_MAX_POSITION_SHARE_PERCENT, 15))),
         minDiversificationPositions: Math.max(0, Math.trunc(parseNumber(env.ROBOT_MIN_DIVERSIFICATION_POSITIONS, 5))),
         diversificationFirst: parseBoolean(env.ROBOT_DIVERSIFICATION_FIRST, true),
+        liquidityRiskEnabled: parseBoolean(env.ROBOT_LIQUIDITY_RISK_ENABLED, true),
+        liquidityRiskEnforced: parseBoolean(env.ROBOT_LIQUIDITY_RISK_ENFORCED, false),
+        maxSpreadPercent: Math.max(0, parseNumber(env.ROBOT_MAX_SPREAD_PERCENT, 0.5)),
+        minOrderbookAskRub: Math.max(0, parseNumber(env.ROBOT_MIN_ORDERBOOK_ASK_RUB, 50_000)),
+        minDailyTurnoverRub: Math.max(0, parseNumber(env.ROBOT_MIN_DAILY_TURNOVER_RUB, 3_000_000)),
+        sectorRiskEnabled: parseBoolean(env.ROBOT_SECTOR_RISK_ENABLED, true),
+        sectorRiskEnforced: parseBoolean(env.ROBOT_SECTOR_RISK_ENFORCED, false),
+        maxSectorSharePercent: Math.max(0, Math.min(100, parseNumber(env.ROBOT_MAX_SECTOR_SHARE_PERCENT, 40))),
         signalCooldownMs: Math.max(0, parseNumber(env.ROBOT_SIGNAL_COOLDOWN_MS, 30 * 60 * 1000)),
         signalPriceChangePercent: Math.max(0, parseNumber(env.ROBOT_SIGNAL_PRICE_CHANGE_PERCENT, 1)),
         buySignalJournalIntervalMs: Math.max(0, parseNumber(env.ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS, 15 * 60 * 1000)),

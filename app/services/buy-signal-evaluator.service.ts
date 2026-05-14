@@ -12,6 +12,7 @@ import MarketRegimeService from './market-regime.service';
 import SocialConsensusService from './social-consensus.service';
 import BuyScoreAdjustmentService from './buy-score-adjustment.service';
 import DailyBuyListService from './daily-buy-list.service';
+import PreBuyRiskService, { PreBuyRiskResult } from './pre-buy-risk.service';
 
 type SharesResponse = Awaited<ReturnType<typeof InstrumentsService.getShares>>;
 type ShareInstrument = NonNullable<NonNullable<SharesResponse>['instruments']>[number];
@@ -41,6 +42,7 @@ export interface BuySignalPreview {
     projectedPositionSharePercent?: number;
     maxPositionValueRub?: number;
     portfolioPositionsCount?: number;
+    preBuyRisk?: PreBuyRiskResult;
 }
 
 export default class BuySignalEvaluatorService {
@@ -62,6 +64,7 @@ export default class BuySignalEvaluatorService {
         let dailyOrdersCount = await TradesService.countTodayTrades(accountId);
         let dailyOrdersRub = await TradesService.sumTodayBuyTradesRub(accountId);
         const positionValueByInstrumentUid = new Map<string, number>();
+        const sectorValueBySector = new Map<string, number>();
 
         for (const position of portfolio?.positions ?? []) {
             if (!position.instrumentUid) continue;
@@ -80,6 +83,11 @@ export default class BuySignalEvaluatorService {
                 position.instrumentUid,
                 (positionValueByInstrumentUid.get(position.instrumentUid) ?? 0) + positionValueRub
             );
+
+            const sector = instrumentByUid.get(position.instrumentUid)?.sector?.trim();
+            if (sector) {
+                sectorValueBySector.set(sector, (sectorValueBySector.get(sector) ?? 0) + positionValueRub);
+            }
         }
 
         const portfolioInstrumentIds = new Set(positionValueByInstrumentUid.keys());
@@ -140,7 +148,8 @@ export default class BuySignalEvaluatorService {
                 ...buyConfig,
                 buyTickers: effectiveBuyTickers
             };
-            const dailyCandles = buyConfig.enabledStrategies.includes('score-buy')
+            const needsDailyCandles = buyConfig.enabledStrategies.includes('score-buy') || config.liquidityRiskEnabled;
+            const dailyCandles = needsDailyCandles
                 ? await marketData.getDailyCandles(instrument.uid, buyConfig.buyTrendDays)
                 : undefined;
             const dailyCloses = buyConfig.enabledStrategies.includes('trend-follow-buy')
@@ -204,15 +213,30 @@ export default class BuySignalEvaluatorService {
                 signal: marketRegime.passed ? signal : undefined,
                 tradingStatus: tradingStatus?.tradingStatus
             }, config);
-            const skipReason = estimatedOrderRub > config.maxOrderRub
-                ? 'estimated lot is above max order RUB'
-                : estimatedOrderRub > remainingCashRub
-                    ? 'not enough cash for estimated lot'
-                    : scoreAnalysis && !scoreAnalysis.passed
-                        ? `score-buy blocked: ${scoreAnalysis.reason}`
-                        : !marketRegime.passed
-                            ? marketRegime.reason
-                        : undefined;
+            const preBuyRisk = await PreBuyRiskService.evaluate({
+                instrumentUid: instrument.uid,
+                ticker: instrument.ticker,
+                lot: instrument.lot ?? 1,
+                estimatedOrderRub: signal?.estimatedOrderRub ?? estimatedOrderRub,
+                sector: instrument.sector,
+                portfolioValueRub,
+                sectorValueRub: instrument.sector ? (sectorValueBySector.get(instrument.sector) ?? 0) : 0,
+                dailyCandles
+            }, config);
+            const allowed = risk.allowed && preBuyRisk.passed;
+            let skipReason: string | undefined;
+
+            if (estimatedOrderRub > config.maxOrderRub) {
+                skipReason = 'estimated lot is above max order RUB';
+            } else if (estimatedOrderRub > remainingCashRub) {
+                skipReason = 'not enough cash for estimated lot';
+            } else if (scoreAnalysis && !scoreAnalysis.passed) {
+                skipReason = `score-buy blocked: ${scoreAnalysis.reason}`;
+            } else if (!marketRegime.passed) {
+                skipReason = marketRegime.reason;
+            } else if (risk.allowed && !preBuyRisk.passed) {
+                skipReason = preBuyRisk.blockingReasons.join('; ');
+            }
             const preview: BuySignalPreview = {
                 accountId,
                 accountAlias,
@@ -223,8 +247,8 @@ export default class BuySignalEvaluatorService {
                 currentPrice: lastPrice,
                 estimatedOrderRub: signal?.estimatedOrderRub ?? estimatedOrderRub,
                 quantityLots: risk.quantity,
-                status: risk.allowed ? 'allowed' : 'blocked',
-                reason: risk.allowed ? risk.reason : skipReason ?? risk.reason,
+                status: allowed ? 'allowed' : 'blocked',
+                reason: allowed ? risk.reason : skipReason ?? risk.reason,
                 signal,
                 scoreAnalysis,
                 tradingStatus: tradingStatus?.tradingStatus,
@@ -237,12 +261,13 @@ export default class BuySignalEvaluatorService {
                 projectedPositionValueRub: risk.projectedPositionRub,
                 projectedPositionSharePercent: risk.projectedPositionSharePercent,
                 maxPositionValueRub: risk.maxPositionRub,
-                portfolioPositionsCount
+                portfolioPositionsCount,
+                preBuyRisk
             };
 
             previews.push(preview);
 
-            if (risk.allowed) {
+            if (allowed) {
                 dailyOrdersCount += 1;
                 dailyOrdersRub += risk.estimatedOrderRub ?? 0;
                 remainingCashRub -= risk.estimatedOrderRub ?? 0;

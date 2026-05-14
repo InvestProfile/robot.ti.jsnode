@@ -188,6 +188,46 @@ export default class MarketDataService {
         );
     }
 
+    static async getOrderBookMetrics(instrumentId: string, lot = 1, depth = 10) {
+        if (!envVariables.INVEST_TOKEN) {
+            throw new Error('INVEST_TOKEN is not defined.');
+        }
+
+        if (!instrumentId) return undefined;
+
+        const {marketData} = getSdk(envVariables.INVEST_TOKEN);
+        const orderBook = await TInvestApiCacheService.cached(
+            `market:orderbook:${instrumentId}:${depth}`,
+            10_000,
+            () => marketData.getOrderBook({
+                instrumentId,
+                depth
+            })
+        );
+        const bestBid = quotationToNumber(orderBook.bids?.[0]?.price);
+        const bestAsk = quotationToNumber(orderBook.asks?.[0]?.price);
+        const safeLot = Math.max(1, lot);
+        const sumRub = (orders: typeof orderBook.asks) => orders.reduce((sum, order) => {
+            const price = quotationToNumber(order.price);
+            const quantity = Number(order.quantity ?? 0);
+            if (!price || !Number.isFinite(quantity) || quantity <= 0) return sum;
+            return sum + price * quantity * safeLot;
+        }, 0);
+        const mid = bestBid && bestAsk ? (bestBid + bestAsk) / 2 : undefined;
+
+        return {
+            bestBid,
+            bestAsk,
+            spreadPercent: mid && mid > 0 && bestAsk !== undefined && bestBid !== undefined
+                ? (bestAsk - bestBid) / mid * 100
+                : undefined,
+            bidLiquidityRub: sumRub(orderBook.bids ?? []),
+            askLiquidityRub: sumRub(orderBook.asks ?? []),
+            depth: orderBook.depth,
+            orderbookTs: orderBook.orderbookTs
+        };
+    }
+
     static async getTechAnalysis(
         instrumentUid: string,
         indicatorType: GetTechAnalysisRequest_IndicatorType,

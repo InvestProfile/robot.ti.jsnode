@@ -12,6 +12,10 @@ const BLOCKER_WEIGHTS: Record<string, number> = {
     'already in portfolio': -8,
     'concentration limit': -7,
     'diversification first': -4,
+    'spread': -5,
+    'liquidity': -5,
+    'daily turnover': -4,
+    'sector concentration': -4,
     'trading status': -10,
     'lot too expensive': -6,
     'not enough cash': -5
@@ -24,6 +28,10 @@ const normalizeBlocker = (value?: string) => {
     if (text.includes('score below')) return 'score below threshold';
     if (text.includes('concentration')) return 'concentration limit';
     if (text.includes('diversification')) return 'diversification first';
+    if (text.includes('spread')) return 'spread';
+    if (text.includes('liquidity')) return 'liquidity';
+    if (text.includes('turnover')) return 'daily turnover';
+    if (text.includes('sector')) return 'sector concentration';
     if (text.includes('portfolio')) return 'already in portfolio';
     if (text.includes('trading status')) return 'trading status';
     if (text.includes('lot too expensive')) return 'lot too expensive';
@@ -43,6 +51,10 @@ const classify = (score: number, minScore: number, blocker: string, passed?: boo
     if (blocker === 'already in portfolio') return 'skip-owned';
     if (blocker === 'concentration limit') return 'skip-concentration';
     if (blocker === 'diversification first') return 'watch';
+    if (blocker === 'spread') return 'watch';
+    if (blocker === 'liquidity') return 'watch';
+    if (blocker === 'daily turnover') return 'watch';
+    if (blocker === 'sector concentration') return 'watch';
     if (blocker === 'trading status') return 'skip-status';
     if (blocker === 'lot too expensive') return 'skip-expensive';
     if (passed && score >= minScore) return 'buy-candidate';
