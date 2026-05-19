@@ -785,10 +785,26 @@ const getOrderSafetyPayload = async (url: URL) => {
     });
     const rows = trades.map(trade => trade.toJSON() as Record<string, unknown>);
     const openStatuses = new Set(['LOCAL_PENDING_SUBMIT', 'LOCAL_SUBMIT_UNKNOWN', 'EXECUTION_REPORT_STATUS_NEW', 'EXECUTION_REPORT_STATUS_PARTIALLYFILL']);
+    const finalFill = rows.filter(row => row.status === 'EXECUTION_REPORT_STATUS_FILL').length;
+    const rejected = rows.filter(row => (
+        row.status === 'EXECUTION_REPORT_STATUS_REJECTED'
+        || row.status === 'EXECUTION_REPORT_STATUS_CANCELLED'
+        || row.status === 'LOCAL_POST_REJECTED'
+        || row.status === 'LOCAL_VALIDATION_FAILED'
+    )).length;
     const unknown = rows.filter(row => row.status === 'LOCAL_SUBMIT_UNKNOWN').length;
     const pending = rows.filter(row => row.status === 'LOCAL_PENDING_SUBMIT' || row.status === 'EXECUTION_REPORT_STATUS_NEW').length;
     const partial = rows.filter(row => row.status === 'EXECUTION_REPORT_STATUS_PARTIALLYFILL').length;
-    const open = rows.filter(row => openStatuses.has(String(row.status ?? ''))).length;
+    const openRows = rows.filter(row => openStatuses.has(String(row.status ?? '')));
+    const open = openRows.length;
+    const market = rows.filter(row => row.orderType === 'ORDER_TYPE_MARKET').length;
+    const limitOrders = rows.filter(row => row.orderType === 'ORDER_TYPE_LIMIT').length;
+    const bestPrice = rows.filter(row => row.orderType === 'ORDER_TYPE_BESTPRICE').length;
+    const pendingLimit = openRows.filter(row => row.orderType === 'ORDER_TYPE_LIMIT').length;
+    const oldestOpenAt = openRows
+        .map(row => new Date(String(row.tradeDateTime || row.createdAt || '')).getTime())
+        .filter(timestamp => Number.isFinite(timestamp))
+        .sort((a, b) => a - b)[0];
 
     return {
         summary: {
@@ -796,6 +812,14 @@ const getOrderSafetyPayload = async (url: URL) => {
             pending,
             unknown,
             partial,
+            filled: finalFill,
+            rejected,
+            market,
+            limit: limitOrders,
+            bestPrice,
+            pendingLimit,
+            oldestOpenAt: oldestOpenAt ? new Date(oldestOpenAt).toISOString() : undefined,
+            oldestOpenAgeMs: oldestOpenAt ? Math.max(0, Date.now() - oldestOpenAt) : 0,
             checked: rows.length
         },
         orders: rows

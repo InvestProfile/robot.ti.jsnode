@@ -110,6 +110,17 @@ const time = (value) => {
   return date.toLocaleString('ru-RU');
 };
 
+const duration = (milliseconds) => {
+  const value = Number(milliseconds);
+  if (!Number.isFinite(value) || value <= 0) return EMPTY;
+  const minutes = Math.floor(value / 60000);
+  if (minutes < 1) return '<1 мин';
+  if (minutes < 60) return `${minutes} мин`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest ? `${hours} ч ${rest} мин` : `${hours} ч`;
+};
+
 const recTone = (recommendation) => {
   if (recommendation === 'buy') return 'good';
   if (recommendation === 'sell') return 'bad';
@@ -572,6 +583,7 @@ function Overview({ data, onMarketRegimeChange }) {
   const tradeLimit = getTradeLimit(data);
   const orderSafety = data.orderSafety?.summary || {};
   const liveActions = status?.config?.liveAllowedActions || [];
+  const orderType = status?.config?.orderType || EMPTY;
   const statusKnown = Boolean(status);
   const marketKnown = Boolean(data.market);
   const orderSafetyKnown = Boolean(data.orderSafety);
@@ -606,7 +618,7 @@ function Overview({ data, onMarketRegimeChange }) {
       label: 'Исполнение',
       status: orderSafetyKnown ? unknownOrders ? 'UNKNOWN' : openOrders ? 'OPEN' : dryRun ? 'DRY' : 'LIVE' : 'WAIT',
       tone: orderSafetyKnown ? stageTone(unknownOrders, openOrders || dryRun) : 'warn',
-      detail: `${openOrders} open orders, ${unknownOrders} unknown, actions: ${liveActions.join(', ') || EMPTY}`
+      detail: `${orderType} orders, ${openOrders} open, ${unknownOrders} unknown, actions: ${liveActions.join(', ') || EMPTY}`
     },
     {
       label: 'Результат',
@@ -672,6 +684,8 @@ function Overview({ data, onMarketRegimeChange }) {
       <Card title="Цепочка решения" icon={Activity} className="control-card" help="Причинно-следственная цепочка: сигнал появился, рынок пропустил или заблокировал, риск-лимиты разрешили или нет, потом исполнение и результат.">
         <Pipeline steps={pipelineSteps} />
       </Card>
+
+      <ExecutionOverview data={data} className="wide" />
 
       <Card title="Рыночный фильтр" icon={Activity} help="Текущий расчет рынка. Current score - фактическая доля здоровых базовых бумаг. Required score - порог, который можно менять отдельно в блоке настроек.">
         <div className="readiness">
@@ -1841,6 +1855,7 @@ function OrderSafety({ data, loading }) {
         <Stat label="Pending" value={summary.pending ?? 0} tone={summary.pending ? 'warn' : 'good'} />
         <Stat label="Unknown" value={summary.unknown ?? 0} tone={summary.unknown ? 'bad' : 'good'} />
         <Stat label="Partial" value={summary.partial ?? 0} tone={summary.partial ? 'warn' : 'good'} />
+        <Stat label="Limit wait" value={summary.pendingLimit ?? 0} tone={summary.pendingLimit ? 'warn' : 'good'} />
       </div>
       <Table
         className="order-safety-table"
@@ -1848,6 +1863,7 @@ function OrderSafety({ data, loading }) {
           { key: 'createdAt', label: 'Время', width: '150px', render: (row) => time(row.tradeDateTime || row.createdAt) },
           { key: 'ticker', label: 'Тикер', width: '100px', render: (row) => <><strong>{row.ticker || row.figi || EMPTY}</strong><div className="muted">{row.name}</div></> },
           { key: 'direction', label: 'Side', width: '80px', render: (row) => <Pill tone={String(row.direction) === '1' ? 'good' : 'bad'}>{String(row.direction) === '1' ? 'buy' : String(row.direction) === '2' ? 'sell' : display(row.direction)}</Pill> },
+          { key: 'orderType', label: 'Type', width: '115px', render: (row) => <TextCell>{String(row.orderType || EMPTY).replace('ORDER_TYPE_', '').toLowerCase()}</TextCell> },
           { key: 'status', label: 'Status', width: '175px', render: (row) => <Pill tone={orderStatusTone(row.status)}>{display(row.status)}</Pill> },
           { key: 'lotsRequested', label: 'Req', width: '70px', className: 'right', render: (row) => money(row.lotsRequested) },
           { key: 'lotsExecuted', label: 'Exec', width: '70px', className: 'right', render: (row) => money(row.lotsExecuted) },
@@ -1858,6 +1874,29 @@ function OrderSafety({ data, loading }) {
         empty="Заявок пока нет"
         loading={loading}
       />
+    </Card>
+  );
+}
+
+function ExecutionOverview({ data, loading, className }) {
+  const config = data.status?.config || {};
+  const summary = data.orderSafety?.summary || {};
+  const orderType = config.orderType || EMPTY;
+  const openAge = duration(summary.oldestOpenAgeMs);
+
+  return (
+    <Card title="Исполнение" icon={ShieldCheck} className={className} help="Execution layer: какой тип заявок включен, есть ли зависшие limit/pending/unknown заявки, и насколько чисто брокер подтверждает исполнения. Signal accepted не равно trade executed.">
+      <StageStrip
+        items={[
+          { label: 'Тип заявок', value: orderType, tone: orderType === 'limit' ? 'warn' : 'good', detail: orderType === 'limit' ? 'ждем fill по цене сигнала' : 'исполнение по рынку' },
+          { label: 'Open', value: summary.open ?? 0, tone: summary.open ? 'warn' : 'good', detail: openAge !== EMPTY ? `старейшая ${openAge}` : 'нет открытых' },
+          { label: 'Pending limit', value: summary.pendingLimit ?? 0, tone: summary.pendingLimit ? 'warn' : 'good', detail: 'limit-заявки ждут исполнения' },
+          { label: 'Unknown', value: summary.unknown ?? 0, tone: summary.unknown ? 'bad' : 'good', detail: summary.unknown ? 'повторы заблокированы' : 'нет неизвестных' },
+          { label: 'Market / Limit', value: `${summary.market || 0} / ${summary.limit || 0}`, detail: `${summary.checked || 0} последних заявок` },
+          { label: 'Filled / Rejected', value: `${summary.filled || 0} / ${summary.rejected || 0}`, tone: summary.rejected ? 'warn' : 'good', detail: 'по последней выборке' }
+        ]}
+      />
+      {loading ? <div className="muted">Обновляю исполнение...</div> : null}
     </Card>
   );
 }
@@ -2015,6 +2054,8 @@ function Trades({ data, loadingKeys }) {
       <TradeReview rows={filteredRows} loading={loadingKeys.trades || loadingKeys.robotPositions || loadingKeys.decisions} className="wide">
         <TradeFilters rows={rows} filters={filters} onChange={setFilters} />
       </TradeReview>
+
+      <ExecutionOverview data={data} loading={loadingKeys.orderSafety} className="wide" />
 
       <Card title="Round-trip P/L" icon={LineChart} className="wide" help="Закрытые пары buy -> sell по FIFO. Это не новая торговая логика, а backend-бухгалтерия поверх broker records: сколько робот заработал или потерял на завершенных входах. Сейчас это gross P/L без отдельного вычета комиссий, если комиссии не пришли отдельными записями.">
         <Table
