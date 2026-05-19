@@ -1844,12 +1844,22 @@ function TradeReview({ rows, loading, children, className }) {
   );
 }
 
-function OrderSafety({ data, loading }) {
+function OrderSafety({ data, loading, onCancelStaleLimits }) {
   const summary = data.orderSafety?.summary || {};
   const orders = data.orderSafety?.orders || [];
 
   return (
     <Card title="Заявки / Order Safety" icon={ShieldCheck} help="Контроль неизвестных и открытых заявок. UNKNOWN значит: запрос мог уйти брокеру, но ответ потерялся; робот не будет повторять такую заявку, пока reconciliation не выяснит статус.">
+      <div className="card-actions">
+        <button
+          className="mini-button danger"
+          disabled={loading || !summary.staleLimit || !onCancelStaleLimits}
+          onClick={() => onCancelStaleLimits?.()}
+          title="Ручная отмена stale limit-заявок у брокера. Работает только через защищенный admin endpoint и требует подтверждения."
+        >
+          Cancel stale limits
+        </button>
+      </div>
       <div className="stats compact">
         <Stat label="Open" value={summary.open ?? 0} tone={summary.open ? 'warn' : 'good'} />
         <Stat label="Pending" value={summary.pending ?? 0} tone={summary.pending ? 'warn' : 'good'} />
@@ -1992,7 +2002,7 @@ function OpenLots({ rows, loading }) {
   );
 }
 
-function Trades({ data, loadingKeys }) {
+function Trades({ data, loadingKeys, onCancelStaleLimits }) {
   const [filters, setFilters] = useState({ side: 'all', status: 'all', ledger: 'all', ticker: '', pnl: 'all', sort: 'newest' });
   const rows = buildTradeRows(data);
   const robotEvents = data.robotPositions?.events || [];
@@ -2143,12 +2153,12 @@ function Trades({ data, loadingKeys }) {
         />
       </Card>
 
-      <OrderSafety data={data} loading={loadingKeys.orderSafety} />
+      <OrderSafety data={data} loading={loadingKeys.orderSafety} onCancelStaleLimits={onCancelStaleLimits} />
     </div>
   );
 }
 
-function Logs({ data, loadingKeys }) {
+function Logs({ data, loadingKeys, onCancelStaleLimits }) {
   const [filters, setFilters] = useState({ status: 'all', signal: 'all', ticker: '', pnl: 'all', sort: 'newest' });
   const decisions = (data.decisions?.decisions || []).map(toDecisionView);
   const trades = data.trades?.trades || [];
@@ -2200,7 +2210,7 @@ function Logs({ data, loadingKeys }) {
           loading={loadingKeys.decisions}
         />
       </Card>
-      <OrderSafety data={data} loading={loadingKeys.orderSafety} />
+      <OrderSafety data={data} loading={loadingKeys.orderSafety} onCancelStaleLimits={onCancelStaleLimits} />
     </div>
   );
 }
@@ -2352,6 +2362,35 @@ function App() {
 
     await reload();
   };
+  const cancelStaleLimitOrders = async () => {
+    setActionError('');
+    const confirmation = window.prompt('Чтобы отменить stale limit-заявки у брокера, введи CANCEL');
+    if (confirmation !== 'CANCEL') {
+      setActionError('Stale limit cancel was not confirmed');
+      return;
+    }
+
+    const response = await fetch('/api/admin/cancel-stale-limit-orders', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-robot-admin-action': 'cancel-stale-limit-orders'
+      },
+      body: JSON.stringify({
+        dryRun: false,
+        confirm: 'CANCEL_STALE_LIMITS'
+      })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      setActionError(payload.error || `HTTP ${response.status}`);
+      return;
+    }
+
+    window.alert(`Stale limit cancel: ${payload.cancelled || 0} cancelled, ${payload.failed || 0} failed`);
+    await reload();
+  };
 
   const content = {
     overview: <Overview data={data} loadingKeys={loadingKeys} onMarketRegimeChange={updateMarketRegime} />,
@@ -2361,8 +2400,8 @@ function App() {
     evidence: <Evidence data={data} loadingKeys={loadingKeys} />,
     accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} onLiveSellToggle={updateLiveSell} onRiskSettingsChange={updateRiskSettings} onSellSettingsChange={updateSellSettings} />,
     sell: <Sell data={data} loadingKeys={loadingKeys} />,
-    trades: <Trades data={data} loadingKeys={loadingKeys} />,
-    logs: <Logs data={data} loadingKeys={loadingKeys} />
+    trades: <Trades data={data} loadingKeys={loadingKeys} onCancelStaleLimits={cancelStaleLimitOrders} />,
+    logs: <Logs data={data} loadingKeys={loadingKeys} onCancelStaleLimits={cancelStaleLimitOrders} />
   }[active.id];
 
   return (

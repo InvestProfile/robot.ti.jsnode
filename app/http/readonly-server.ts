@@ -2,6 +2,7 @@ import http, { IncomingMessage, ServerResponse } from 'http';
 import { URL } from 'url';
 import path from 'path';
 import { chmod, chown, mkdir, readFile, rename, stat, writeFile } from 'fs/promises';
+import { OrderIdType } from 'tinkoff-sdk-grpc-js/dist/generated/orders';
 import { getEnv } from '../config/env.config';
 import { getRobotConfig, RobotConfig } from '../config/robot.config';
 import { getTradingRuntimeState } from '../modules/common.module';
@@ -887,6 +888,148 @@ const getOrderSafetyPayload = async (url: URL, config: RobotConfig) => {
     };
 };
 
+const getStaleLimitCancelCandidates = async (config: RobotConfig, limit = 300) => {
+    const payload = await getOrderSafetyPayload(
+        new URL(`http://localhost/api/order-safety?limit=${Math.min(Math.max(limit, 1), 300)}`),
+        config
+    );
+
+    return {
+        payload,
+        candidates: payload.orders.filter(row => row.staleLimitReason) as Array<Record<string, unknown>>
+    };
+};
+
+const cancelStaleLimitCandidate = async (row: Record<string, unknown>) => {
+    const accountId = String(row.accountId || '');
+    const brokerOrderId = String(row.orderId || '');
+    const clientOrderId = String(row.clientOrderId || '');
+    const attempts: Array<{ orderId: string; orderIdType?: OrderIdType; source: string }> = [];
+
+    if (brokerOrderId && brokerOrderId !== clientOrderId) {
+        attempts.push({
+            orderId: brokerOrderId,
+            orderIdType: OrderIdType.ORDER_ID_TYPE_EXCHANGE,
+            source: 'broker-order-id'
+        });
+    }
+
+    if (clientOrderId) {
+        attempts.push({
+            orderId: clientOrderId,
+            orderIdType: OrderIdType.ORDER_ID_TYPE_REQUEST,
+            source: 'client-order-id'
+        });
+    }
+
+    if (!attempts.length && brokerOrderId) {
+        attempts.push({
+            orderId: brokerOrderId,
+            source: 'stored-order-id'
+        });
+    }
+
+    if (!accountId || !attempts.length) {
+        throw new Error('stale limit order has no cancellable account/order id');
+    }
+
+    const errors = [];
+    for (const attempt of attempts) {
+        try {
+            const response = await OrdersService.cancelOrder(accountId, attempt.orderId, attempt.orderIdType);
+            return {
+                ok: true,
+                accountId,
+                orderId: attempt.orderId,
+                source: attempt.source,
+                response
+            };
+        } catch (error) {
+            errors.push({
+                source: attempt.source,
+                orderId: attempt.orderId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
+    }
+
+    throw new Error(errors.map(error => `${error.source}: ${error.error}`).join('; '));
+};
+
+const handleCancelStaleLimitOrders = async (req: IncomingMessage, res: ServerResponse) => {
+    if (req.headers['x-robot-admin-action'] !== 'cancel-stale-limit-orders') {
+        json(res, 403, { ok: false, error: 'missing x-robot-admin-action header' });
+        return;
+    }
+
+    try {
+        const body = await readJsonBody(req, 4096);
+        const baseConfig = getRobotConfig();
+        const config = await RuntimeConfigService.getEffectiveConfig(baseConfig);
+        const limit = Number(body.limit ?? 300);
+        const dryRun = body.dryRun !== false;
+        const { candidates } = await getStaleLimitCancelCandidates(config, Number.isFinite(limit) ? limit : 300);
+
+        if (dryRun) {
+            json(res, 200, {
+                ok: true,
+                dryRun: true,
+                candidates: candidates.map(row => ({
+                    id: row.id,
+                    accountId: row.accountId,
+                    ticker: row.ticker,
+                    orderId: row.orderId,
+                    clientOrderId: row.clientOrderId,
+                    staleLimitReason: row.staleLimitReason,
+                    orderAgeMs: row.orderAgeMs,
+                    priceDriftPercent: row.priceDriftPercent
+                }))
+            });
+            return;
+        }
+
+        if (body.confirm !== 'CANCEL_STALE_LIMITS') {
+            json(res, 400, { ok: false, error: 'confirmation CANCEL_STALE_LIMITS is required' });
+            return;
+        }
+
+        if (config.dryRun) {
+            json(res, 400, { ok: false, error: 'real broker cancel is disabled in dry-run mode' });
+            return;
+        }
+
+        const results = [];
+        for (const candidate of candidates) {
+            try {
+                results.push({
+                    id: candidate.id,
+                    ticker: candidate.ticker,
+                    ...(await cancelStaleLimitCandidate(candidate))
+                });
+            } catch (error) {
+                results.push({
+                    ok: false,
+                    id: candidate.id,
+                    ticker: candidate.ticker,
+                    accountId: candidate.accountId,
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            }
+        }
+
+        json(res, 200, {
+            ok: true,
+            dryRun: false,
+            attempted: candidates.length,
+            cancelled: results.filter(result => result.ok).length,
+            failed: results.filter(result => !result.ok).length,
+            results
+        });
+    } catch (error) {
+        json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+};
+
 const getSnapshotsPayload = async (url: URL) => {
     const requestedLimit = Number(url.searchParams.get('limit') ?? 50);
     const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 50, 1), 500);
@@ -1346,6 +1489,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (req.method === 'POST' && url.pathname === '/api/admin/sell-settings') {
         await handleSellSettingsUpdate(req, res);
+        return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/admin/cancel-stale-limit-orders') {
+        await handleCancelStaleLimitOrders(req, res);
         return;
     }
 

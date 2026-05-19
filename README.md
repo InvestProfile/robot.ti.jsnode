@@ -166,8 +166,11 @@ ROBOT_BUY_MIN_MOMENTUM_PERCENT=0
 ROBOT_BUY_MIN_SCORE=70
 ROBOT_BUY_SCORE_PROFILES=
 ROBOT_MAX_ORDER_RUB=1000
-ROBOT_MAX_DAILY_ORDERS=3
-ROBOT_MAX_DAILY_RUB=2000
+ROBOT_MAX_DAILY_ORDERS=10
+ROBOT_MAX_DAILY_RUB=10000
+ROBOT_MAX_RUNTIME_ORDER_RUB=5000
+ROBOT_MAX_RUNTIME_DAILY_ORDERS=40
+ROBOT_MAX_RUNTIME_DAILY_RUB=50000
 ROBOT_SIGNAL_COOLDOWN_MS=1800000
 ROBOT_SIGNAL_PRICE_CHANGE_PERCENT=1
 ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS=900000
@@ -283,6 +286,7 @@ Buy-side risk limits:
 - `ROBOT_MAX_ORDER_RUB` caps a single estimated order amount;
 - `ROBOT_MAX_DAILY_ORDERS` caps accepted buy orders per account per day;
 - `ROBOT_MAX_DAILY_RUB` caps accepted buy order amount per account per day;
+- `ROBOT_MAX_RUNTIME_*` caps how far the dashboard/API can raise the live runtime limits without editing `.env`;
 - the robot refuses buy signals when there is not enough available RUB cash.
 
 Decision logging is de-duplicated through `signal_states`. Repeated decisions

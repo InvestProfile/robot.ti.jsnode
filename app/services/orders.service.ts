@@ -126,6 +126,19 @@ export default class OrdersService {
         }
     }
 
+    static async cancelOrder(accountId: string, orderId: string, orderIdType?: OrderIdType) {
+        if (!envVariables.INVEST_TOKEN) throw new Error('INVEST_TOKEN is not defined.');
+        if (!accountId) throw new Error('accountId is required for order cancel');
+        if (!orderId) throw new Error('orderId is required for order cancel');
+
+        const {orders} = getSdk(envVariables.INVEST_TOKEN);
+        return await TInvestApiCacheService.withRetry(() => orders.cancelOrder({
+            accountId,
+            orderId,
+            orderIdType
+        }));
+    }
+
     static async getMaxLots(accountId: string, instrumentId: string, price?: Price) {
         if (envVariables.INVEST_TOKEN) {
             const {orders} = getSdk(envVariables.INVEST_TOKEN);

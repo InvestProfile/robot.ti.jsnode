@@ -148,6 +148,18 @@ main {
   background: #163126;
 }
 
+.mini-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: -4px 0 10px;
+}
+
 .mini-button.active {
   border-color: #63a7ff;
   color: #d8ebff;
