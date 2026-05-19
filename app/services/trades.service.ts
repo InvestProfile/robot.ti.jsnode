@@ -5,6 +5,7 @@ import { Op } from 'sequelize';
 import {
     isFinalOrderStatus,
     LOCAL_PENDING_ORDER_STATUS,
+    LOCAL_REJECTED_ORDER_STATUS,
     LOCAL_UNKNOWN_ORDER_STATUS
 } from '../utils/order-status';
 
@@ -188,6 +189,17 @@ export default class TradesService {
         const message = error instanceof Error ? error.message : String(error);
         await trade.update({
             status: LOCAL_UNKNOWN_ORDER_STATUS,
+            orderError: message
+        });
+
+        return trade;
+    }
+
+    static async markOrderRejected(trade: TradesModel, error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        await trade.update({
+            status: LOCAL_REJECTED_ORDER_STATUS,
+            lotsExecuted: 0,
             orderError: message
         });
 

@@ -92,6 +92,14 @@ const getOrderMetadata = (orderResult: unknown) => {
 
 const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
+const isPostOrderRejectedError = (error: unknown) => {
+    const message = getErrorMessage(error);
+    return message.includes('INVALID_ARGUMENT')
+        || message.includes('FAILED_PRECONDITION')
+        || message.includes('PERMISSION_DENIED')
+        || message.includes('UNAUTHENTICATED');
+};
+
 const moneyPartsToNumber = (units: unknown, nano: unknown) => {
     const parsedUnits = Number(units ?? 0);
     const parsedNano = Number(nano ?? 0);
@@ -112,6 +120,21 @@ const validateLiveOrderAllowed = (config: RobotConfig, side: OrderSide) => {
 const getSubmittedDecisionStatus = (orderSubmission: { pendingTrade?: { getDataValue?: (key: string) => unknown } }) => {
     const brokerStatus = orderSubmission.pendingTrade?.getDataValue?.('status');
     return isRejectedOrderStatus(brokerStatus ? String(brokerStatus) : undefined) ? 'order-rejected' : 'order-posted';
+};
+
+const getSubmittedDecisionReason = (
+    baseReason: string,
+    orderSubmission: {
+        pendingTrade?: { getDataValue?: (key: string) => unknown };
+        reconciled?: boolean;
+        error?: unknown;
+    }
+) => {
+    if (orderSubmission.reconciled) return `${baseReason}; order reconciled after postOrder error`;
+    if (orderSubmission.error && getSubmittedDecisionStatus(orderSubmission) === 'order-rejected') {
+        return `${baseReason}; order rejected by broker/API: ${getErrorMessage(orderSubmission.error)}`;
+    }
+    return baseReason;
 };
 
 const submitTrackedOrder = async (input: {
@@ -200,6 +223,19 @@ const submitTrackedOrder = async (input: {
             unknown: false
         };
     } catch (error) {
+        if (isPostOrderRejectedError(error)) {
+            await TradesService.markOrderRejected(pendingTrade, error);
+            return {
+                orderResult: undefined,
+                pendingTrade,
+                clientOrderId,
+                unknown: false,
+                failedBeforeSubmit: false,
+                rejected: true,
+                error
+            };
+        }
+
         try {
             const reconciled = await OrderReconciliationService.reconcileTrade(pendingTrade);
             if (reconciled) {
@@ -399,9 +435,7 @@ const executeBuySignals = async (
             name: preview.name,
             status: getSubmittedDecisionStatus(orderSubmission),
             signalSource: preview.signal?.source,
-            reason: orderSubmission.reconciled
-                ? `${preview.reason}; order reconciled after postOrder error`
-                : preview.reason,
+            reason: getSubmittedDecisionReason(preview.reason, orderSubmission),
             currentPrice: preview.currentPrice,
             quantityLots: preview.quantityLots,
             estimatedOrderRub: preview.estimatedOrderRub
@@ -687,9 +721,7 @@ export const executeTrades = async (
             name: instrument?.name,
             status: getSubmittedDecisionStatus(orderSubmission),
             signalSource: signal?.source,
-            reason: orderSubmission.reconciled
-                ? `${risk.reason}; ${sellPolicy.reason}; order reconciled after postOrder error`
-                : `${risk.reason}; ${sellPolicy.reason}`,
+            reason: getSubmittedDecisionReason(`${risk.reason}; ${sellPolicy.reason}`, orderSubmission),
             averagePrice,
             currentPrice,
             profitPercent: risk.profitPercent,
