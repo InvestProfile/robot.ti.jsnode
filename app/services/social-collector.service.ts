@@ -2,6 +2,7 @@ import { getEnv } from '../config/env.config';
 import SocialProfileModel from '../models/social-profile.model';
 import SocialProfileScoreService from './social-profile-score.service';
 import SocialSignalService from './social-signal.service';
+import { Op } from 'sequelize';
 
 interface ConfiguredProfile {
     source: string;
@@ -141,9 +142,15 @@ const extractProfileStatsFromHtml = (html: string, profileUid: string) => {
     };
 };
 
+let socialProfileEnvWarningPrinted = false;
+
 export default class SocialCollectorService {
     static getConfig() {
         const env = getEnv();
+        if (env.ROBOT_SOCIAL_PROFILE_URLS?.trim() && !socialProfileEnvWarningPrinted) {
+            console.warn('ROBOT_SOCIAL_PROFILE_URLS is deprecated. Manage Pulse profiles in the web dashboard instead.');
+            socialProfileEnvWarningPrinted = true;
+        }
 
         return {
             profiles: parseProfileUrls(env.ROBOT_SOCIAL_PROFILE_URLS),
@@ -322,9 +329,49 @@ export default class SocialCollectorService {
         };
     }
 
+    static async getActiveProfiles() {
+        const config = this.getConfig();
+        const dbProfiles = await SocialProfileModel.findAll({
+            where: {
+                status: { [Op.ne]: 'disabled' }
+            },
+            order: [['updatedAt', 'DESC']],
+            limit: 500
+        }).catch(async () => {
+            await SocialProfileModel.sync({ alter: true });
+            return SocialProfileModel.findAll({
+                where: {
+                    status: { [Op.ne]: 'disabled' }
+                },
+                order: [['updatedAt', 'DESC']],
+                limit: 500
+            });
+        });
+
+        if (dbProfiles.length > 0) {
+            return dbProfiles.map(profile => ({
+                source: profile.source,
+                profileKey: profile.profileKey,
+                profileUid: profile.profileUid ?? undefined,
+                profileUrl: profile.profileUrl,
+                displayName: profile.displayName ?? profile.profileKey,
+                confidence: profile.effectiveConfidence ?? profile.confidence ?? undefined,
+                activity: Math.max(1, Math.trunc(profile.activity ?? 1)),
+                description: profile.description ?? undefined
+            }));
+        }
+
+        if (config.profiles.length > 0) {
+            await this.syncProfiles();
+            return config.profiles;
+        }
+
+        return [];
+    }
+
     static async collectOnce() {
         const config = this.getConfig();
-        const sync = await this.syncProfiles();
+        const activeProfiles = await this.getActiveProfiles();
         const profiles = await SocialProfileModel.findAll({
             order: [['updatedAt', 'DESC']],
             limit: 500
@@ -332,7 +379,7 @@ export default class SocialCollectorService {
         let checked = 0;
         let errors = 0;
 
-        const activeQueue = getActivityQueue(config.profiles);
+        const activeQueue = getActivityQueue(activeProfiles);
 
         for (const configuredProfile of activeQueue) {
             const profile = profiles.find(item => item.profileKey === configuredProfile.profileKey);
@@ -369,7 +416,7 @@ export default class SocialCollectorService {
             ok: errors === 0,
             generatedAt: new Date().toISOString(),
             config: {
-                configuredProfiles: config.profiles.length,
+                configuredProfiles: activeProfiles.length,
                 minReturnPercent: config.minReturnPercent,
                 intervalMs: config.intervalMs,
                 hasAuthCookie: config.hasAuthCookie,
@@ -379,7 +426,12 @@ export default class SocialCollectorService {
                 instrumentLimit: config.instrumentLimit,
                 operationLimit: config.operationLimit
             },
-            sync,
+            sync: {
+                configured: activeProfiles.length,
+                created: 0,
+                updated: 0,
+                source: 'database'
+            },
             checked,
             errors,
             profileScores,
@@ -391,13 +443,14 @@ export default class SocialCollectorService {
     static async status() {
         const config = this.getConfig();
         await SocialProfileScoreService.refresh();
+        const configuredProfiles = await this.getActiveProfiles();
         const profiles = await SocialProfileModel.findAll({
             order: [['updatedAt', 'DESC']],
             limit: 500
         });
         const signals = await SocialSignalService.summary();
         const staleCutoff = Date.now() - config.intervalMs * 2;
-        const configuredKeys = new Set(config.profiles.map(profile => profile.profileKey));
+        const configuredKeys = new Set(configuredProfiles.map(profile => profile.profileKey));
         const activeProfiles = profiles.filter(profile => configuredKeys.has(profile.profileKey));
         const stale = activeProfiles.filter(profile => !profile.lastCheckedAt || new Date(profile.lastCheckedAt).getTime() < staleCutoff).length;
 
@@ -405,7 +458,7 @@ export default class SocialCollectorService {
             ok: activeProfiles.length > 0 && stale === 0,
             generatedAt: new Date().toISOString(),
             config: {
-                configuredProfiles: config.profiles.length,
+                configuredProfiles: configuredProfiles.length,
                 minReturnPercent: config.minReturnPercent,
                 intervalMs: config.intervalMs,
                 hasAuthCookie: config.hasAuthCookie,

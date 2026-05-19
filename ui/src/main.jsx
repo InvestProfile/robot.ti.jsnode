@@ -33,6 +33,7 @@ const endpoints = {
   socialSignals: '/api/social-signals?limit=80',
   socialCollector: '/api/social-collector',
   socialConsensus: '/api/social-consensus',
+  socialProfiles: '/api/social-profiles',
   socialEvidence: '/api/social-evidence?limit=80',
   sellBrain: '/api/sell-brain',
   buyScan: '/api/buy-scan',
@@ -51,6 +52,7 @@ const endpointGroups = {
   overview: ['market', 'orderSafety'],
   buy: ['dailyBuyList', 'preview', 'buyRecommendations', 'buyScan'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
+  socialProfiles: ['socialProfiles'],
   evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
   sell: ['sellBrain', 'positions', 'robotPositions'],
@@ -64,6 +66,7 @@ const tabs = [
   { id: 'sell', label: 'Продажи', icon: AlertTriangle },
   { id: 'trades', label: 'Сделки', icon: ArrowLeftRight },
   { id: 'social', label: 'Пульс', icon: Users },
+  { id: 'socialProfiles', label: 'Профили', icon: ShieldCheck },
   { id: 'evidence', label: 'Лаборатория', icon: BarChart3 },
   { id: 'accounts', label: 'Счета', icon: Database },
   { id: 'logs', label: 'Журнал', icon: Eye }
@@ -1006,6 +1009,161 @@ function Social({ data, loadingKeys }) {
   );
 }
 
+const profileStatusTone = (status) => {
+  if (status === 'ready') return 'good';
+  if (status === 'disabled') return 'neutral';
+  if (status === 'error') return 'bad';
+  return 'warn';
+};
+
+const profilePayloadFromForm = (form) => ({
+  profileUrl: form.profileUrl?.trim(),
+  profileUid: form.profileUid?.trim() || undefined,
+  displayName: form.displayName?.trim() || undefined,
+  confidence: form.confidence === '' ? undefined : Number(form.confidence),
+  activity: form.activity === '' ? undefined : Number(form.activity),
+  description: form.description?.trim() || undefined
+});
+
+const validateProfileForm = (form) => {
+  const errors = [];
+  if (!form.profileUrl?.trim()) errors.push('URL профиля обязателен');
+  if (form.confidence !== '' && (!Number.isFinite(Number(form.confidence)) || Number(form.confidence) < 0 || Number(form.confidence) > 100)) {
+    errors.push('Confidence должен быть от 0 до 100');
+  }
+  if (form.activity !== '' && (!Number.isFinite(Number(form.activity)) || Number(form.activity) < 1 || Number(form.activity) !== Math.trunc(Number(form.activity)))) {
+    errors.push('Activity должен быть целым числом от 1');
+  }
+  return errors;
+};
+
+function AddProfileForm({ onSaved }) {
+  const [form, setForm] = useState({ profileUrl: '', profileUid: '', displayName: '', confidence: '', activity: '1', description: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const errors = validateProfileForm(form);
+
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+  const submit = async (event) => {
+    event.preventDefault();
+    if (errors.length) {
+      setError(errors.join('; '));
+      return;
+    }
+
+    setBusy(true);
+    setError('');
+    const response = await fetch('/api/social-profiles', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(profilePayloadFromForm(form))
+    });
+    const payload = await response.json().catch(() => ({}));
+    setBusy(false);
+
+    if (!response.ok) {
+      setError(payload.error || `HTTP ${response.status}`);
+      return;
+    }
+
+    setForm({ profileUrl: '', profileUid: '', displayName: '', confidence: '', activity: '1', description: '' });
+    await onSaved();
+  };
+
+  return (
+    <form className="profile-form" onSubmit={submit}>
+      <div className="filters">
+        <label><span>URL профиля</span><input value={form.profileUrl} onChange={(event) => update('profileUrl', event.target.value)} placeholder="https://www.tbank.ru/invest/social/profile/..." /></label>
+        <label><span>UID</span><input value={form.profileUid} onChange={(event) => update('profileUid', event.target.value)} placeholder="если известен" /></label>
+        <label><span>Имя</span><input value={form.displayName} onChange={(event) => update('displayName', event.target.value)} placeholder="как показывать" /></label>
+        <label><span>Confidence</span><input type="number" min="0" max="100" value={form.confidence} onChange={(event) => update('confidence', event.target.value)} placeholder="0-100" /></label>
+        <label><span>Activity</span><input type="number" min="1" step="1" value={form.activity} onChange={(event) => update('activity', event.target.value)} /></label>
+      </div>
+      <div className="profile-form-row">
+        <input value={form.description} onChange={(event) => update('description', event.target.value)} placeholder="Комментарий: почему следим за автором" />
+        <button className="mini-button" disabled={busy || errors.length > 0}>{busy ? 'Добавляю...' : 'Добавить профиль'}</button>
+      </div>
+      {error || errors.length ? <p className="form-error">{error || errors.join('; ')}</p> : null}
+    </form>
+  );
+}
+
+function SocialProfiles({ data, loadingKeys, reload }) {
+  const [actionError, setActionError] = useState('');
+  const profiles = data.socialProfiles?.profiles || [];
+  const summary = data.socialProfiles?.summary || {};
+
+  const mutateProfile = async (profile, action) => {
+    setActionError('');
+
+    if (action === 'delete' && !window.confirm(`Удалить профиль ${profile.displayName || profile.profileKey}? Сигналы останутся в истории.`)) {
+      return;
+    }
+
+    const url = action === 'toggle'
+      ? `/api/social-profiles/${encodeURIComponent(profile.profileKey)}/toggle`
+      : `/api/social-profiles/${encodeURIComponent(profile.profileKey)}`;
+    const method = action === 'delete' ? 'DELETE' : 'POST';
+    const response = await fetch(url, { method });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      setActionError(payload.error || `HTTP ${response.status}`);
+      return;
+    }
+
+    await reload();
+  };
+
+  return (
+    <div className="grid">
+      <Card title="Управление профилями Пульса" icon={Users} className="wide" help="Профили хранятся в базе. Изменения не требуют рестарта: social collector подхватит активные профили на следующем цикле. Disabled профили не собираются.">
+        <StageStrip
+          items={[
+            { label: 'Всего', value: summary.total ?? profiles.length, detail: 'профилей в базе' },
+            { label: 'Активные', value: summary.active ?? profiles.filter((row) => row.status !== 'disabled').length, tone: summary.active ? 'good' : 'warn', detail: 'collector будет смотреть' },
+            { label: 'Disabled', value: summary.disabled ?? profiles.filter((row) => row.status === 'disabled').length, tone: summary.disabled ? 'warn' : 'good', detail: 'временно выключены' },
+            { label: 'Ошибки', value: summary.error ?? profiles.filter((row) => row.status === 'error').length, tone: summary.error ? 'bad' : 'good', detail: 'нужна проверка cookie/UID' }
+          ]}
+        />
+        {actionError ? <p className="form-error">{actionError}</p> : null}
+      </Card>
+
+      <Card title="Добавить автора" icon={Signal} className="wide" help="Достаточно URL. UID полезен для прямого API Пульса; если UID не указан, collector поставит pending-auth и подскажет, что нужно дозаполнить.">
+        <AddProfileForm onSaved={reload} />
+      </Card>
+
+      <Card title="Профили" icon={ShieldCheck} className="wide" help="Confidence - твоя ручная оценка автора. Activity - вес/частота в очереди сбора. Effective - итоговый вес после автооценки.">
+        <Table
+          className="profile-table"
+          rowClassName={(row) => row.status === 'disabled' ? 'row-muted' : undefined}
+          columns={[
+            { key: 'displayName', label: 'Профиль', width: '220px', render: (row) => <><strong>{row.displayName || row.profileKey}</strong><div className="muted">{row.profileKey}</div></> },
+            { key: 'status', label: 'Status', width: '120px', render: (row) => <Pill tone={profileStatusTone(row.status)}>{row.status}</Pill> },
+            { key: 'confidence', label: 'Manual', width: '90px', className: 'right', render: (row) => money(row.confidence) },
+            { key: 'autoConfidence', label: 'Auto', width: '90px', className: 'right', render: (row) => money(row.autoConfidence) },
+            { key: 'effectiveConfidence', label: 'Effective', width: '100px', className: 'right', render: (row) => money(row.effectiveConfidence) },
+            { key: 'activity', label: 'Activity', width: '85px', className: 'right', render: (row) => money(row.activity) },
+            { key: 'lastReturnPercent', label: 'Return', width: '100px', className: 'right', render: (row) => percent(row.lastReturnPercent) },
+            { key: 'recentSignalsCount', label: 'Signals', width: '90px', className: 'right', render: (row) => money(row.recentSignalsCount) },
+            { key: 'lastCheckedAt', label: 'Checked', width: '145px', render: (row) => time(row.lastCheckedAt) },
+            { key: 'lastError', label: 'Комментарий', className: 'reason', render: (row) => <Reason>{row.lastError || row.description || row.profileUrl}</Reason> },
+            { key: 'actions', label: 'Action', width: '180px', render: (row) => (
+              <div className="action-buttons">
+                <button className="mini-button" onClick={() => mutateProfile(row, 'toggle')}>{row.status === 'disabled' ? 'Enable' : 'Disable'}</button>
+                <button className="mini-button danger" onClick={() => mutateProfile(row, 'delete')}>Delete</button>
+              </div>
+            ) }
+          ]}
+          rows={profiles}
+          empty="Профилей пока нет"
+          loading={loadingKeys.socialProfiles}
+        />
+      </Card>
+    </div>
+  );
+}
+
 function Evidence({ data, loadingKeys }) {
   const socialSummary = data.socialEvidence?.summary || {};
   const scenarios = data.marketLab?.scenarios || [];
@@ -1746,6 +1904,50 @@ function PnlDiagnostics({ rows, loading }) {
   );
 }
 
+function UnmatchedSells({ rows, loading }) {
+  return (
+    <Card title="Продажи без пары" icon={AlertTriangle} className="wide" help="Sell-сделки, для которых в выбранном окне broker trades не нашлась robot buy-сделка. Обычно это значит: buy был раньше лимита выгрузки, позиция была ручной, либо нужно расширить reconciliation.">
+      <Table
+        columns={[
+          { key: 'exitAt', label: 'Выход', width: '150px', render: (row) => time(row.exitAt) },
+          { key: 'ticker', label: 'Тикер', width: '110px', render: (row) => <><strong>{row.ticker || EMPTY}</strong><div className="muted">{row.name}</div></> },
+          { key: 'accountAlias', label: 'Счет', width: '130px', render: (row) => <TextCell>{row.accountAlias || row.accountId}</TextCell> },
+          { key: 'lots', label: 'Лоты', width: '70px', className: 'right', render: (row) => money(row.lots) },
+          { key: 'exitPrice', label: 'Цена', width: '90px', className: 'right', render: (row) => money(row.exitPrice) },
+          { key: 'exitAmount', label: 'Сумма', width: '100px', className: 'right', render: (row) => money(row.exitAmount) },
+          { key: 'exitSignalSource', label: 'Сигнал', width: '130px', render: (row) => <TextCell>{row.exitSignalSource || EMPTY}</TextCell> },
+          { key: 'reason', label: 'Причина', className: 'reason', render: (row) => <Reason>{row.reason || row.exitDecisionReason || EMPTY}</Reason> }
+        ]}
+        rows={rows || []}
+        empty="Продаж без пары нет"
+        loading={loading}
+      />
+    </Card>
+  );
+}
+
+function OpenLots({ rows, loading }) {
+  return (
+    <Card title="Открытые robot-лоты" icon={Bot} className="wide" help="Buy-остатки по FIFO, которые еще не закрылись sell-сделками в trade accounting. Это не весь брокерский портфель, а только сделки робота в выбранном окне учета.">
+      <Table
+        columns={[
+          { key: 'entryAt', label: 'Вход', width: '150px', render: (row) => time(row.entryAt) },
+          { key: 'ticker', label: 'Тикер', width: '110px', render: (row) => <><strong>{row.ticker || EMPTY}</strong><div className="muted">{row.name}</div></> },
+          { key: 'accountAlias', label: 'Счет', width: '130px', render: (row) => <TextCell>{row.accountAlias || row.accountId}</TextCell> },
+          { key: 'lots', label: 'Лоты', width: '70px', className: 'right', render: (row) => money(row.lots) },
+          { key: 'entryPrice', label: 'Цена входа', width: '105px', className: 'right', render: (row) => money(row.entryPrice) },
+          { key: 'entryAmount', label: 'Сумма', width: '100px', className: 'right', render: (row) => money(row.entryAmount) },
+          { key: 'entrySignalSource', label: 'Сигнал', width: '130px', render: (row) => <TextCell>{row.entrySignalSource || EMPTY}</TextCell> },
+          { key: 'entryDecisionReason', label: 'Причина входа', className: 'reason', render: (row) => <Reason>{row.entryDecisionReason || EMPTY}</Reason> }
+        ]}
+        rows={rows || []}
+        empty="Открытых robot-лотов нет"
+        loading={loading}
+      />
+    </Card>
+  );
+}
+
 function Trades({ data, loadingKeys }) {
   const [filters, setFilters] = useState({ side: 'all', status: 'all', ledger: 'all', ticker: '', pnl: 'all', sort: 'newest' });
   const rows = buildTradeRows(data);
@@ -1757,6 +1959,8 @@ function Trades({ data, loadingKeys }) {
   const tradePnlBreakdowns = data.tradePnl?.breakdowns || {};
   const tradePnlDiagnostics = data.tradePnl?.diagnostics || [];
   const roundTrips = data.tradePnl?.roundTrips || [];
+  const unmatchedSells = data.tradePnl?.unmatchedSells || [];
+  const openLots = data.tradePnl?.openLots || [];
   const roundTripMatchesPnl = (row) => {
     const pnl = Number(row.pnlRub);
     if (filters.pnl === 'profit') return Number.isFinite(pnl) && pnl > 0;
@@ -1801,7 +2005,9 @@ function Trades({ data, loadingKeys }) {
             { label: 'Buy / Sell', value: `${buyCount} / ${sellCount}`, tone: sellCount ? 'warn' : 'good', detail: 'стороны сделок' },
             { label: 'Ledger', value: `${rows.length - brokerOnly} / ${rows.length}`, tone: brokerOnly ? 'warn' : 'good', detail: brokerOnly ? `${brokerOnly} только broker` : 'все связаны' },
             { label: 'Фильтр', value: filteredRows.length, detail: 'строк сейчас видно' },
-            { label: 'Round-trip P/L', value: `${money(realizedPnlRub)} RUB`, tone: realizedPnlRub >= 0 ? 'good' : 'bad', detail: `${closedRoundTrips} закрытых пар, ${tradePnlSummary.accounting || 'gross'}` }
+            { label: 'Round-trip P/L', value: `${money(realizedPnlRub)} RUB`, tone: realizedPnlRub >= 0 ? 'good' : 'bad', detail: `${closedRoundTrips} закрытых пар, ${tradePnlSummary.accounting || 'gross'}` },
+            { label: 'Matching', value: percent(tradePnlSummary.matchingQuality), tone: tradePnlSummary.unmatchedSells ? 'warn' : 'good', detail: `${tradePnlSummary.unmatchedSells || 0} sell без пары` },
+            { label: 'Open robot lots', value: money(tradePnlSummary.openLots || 0), detail: `${tradePnlSummary.openPositions || 0} позиций` }
           ]}
         />
       </Card>
@@ -1869,6 +2075,10 @@ function Trades({ data, loadingKeys }) {
       />
 
       <PnlDiagnostics rows={tradePnlDiagnostics} loading={loadingKeys.tradePnl} />
+
+      <UnmatchedSells rows={unmatchedSells} loading={loadingKeys.tradePnl} />
+
+      <OpenLots rows={openLots} loading={loadingKeys.tradePnl} />
 
       <Card title="Ledger робота" icon={Bot} className="wide" help="Внутренние события robot-owned ledger: из них робот понимает, какие лоты купил сам и какие может продавать.">
         <Table
@@ -2101,6 +2311,7 @@ function App() {
     overview: <Overview data={data} loadingKeys={loadingKeys} onMarketRegimeChange={updateMarketRegime} />,
     buy: <Buy data={data} loadingKeys={loadingKeys} />,
     social: <Social data={data} loadingKeys={loadingKeys} />,
+    socialProfiles: <SocialProfiles data={data} loadingKeys={loadingKeys} reload={reload} />,
     evidence: <Evidence data={data} loadingKeys={loadingKeys} />,
     accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} onLiveSellToggle={updateLiveSell} onRiskSettingsChange={updateRiskSettings} onSellSettingsChange={updateSellSettings} />,
     sell: <Sell data={data} loadingKeys={loadingKeys} />,

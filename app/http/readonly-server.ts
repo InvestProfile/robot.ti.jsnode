@@ -40,6 +40,7 @@ import RobotPositionLedgerService from '../services/robot-position-ledger.servic
 import MarketRegimeLabService from '../services/market-regime-lab.service';
 import DailyBuyListService from '../services/daily-buy-list.service';
 import TradePnlService from '../services/trade-pnl.service';
+import ProfileManagementService from '../services/profile-management.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -1019,6 +1020,209 @@ const warmPreviewCache = async () => {
     }
 };
 
+const handleGetSocialProfiles = async (req: IncomingMessage, res: ServerResponse) => {
+    try {
+        const profiles = await ProfileManagementService.listProfiles();
+        
+        // Calculate summary statistics
+        const total = profiles.length;
+        const active = profiles.filter(p => p.status !== 'disabled').length;
+        const disabled = profiles.filter(p => p.status === 'disabled').length;
+        const error = profiles.filter(p => p.status === 'error').length;
+        
+        json(res, 200, {
+            ok: true,
+            profiles: profiles.map(p => p.toJSON()),
+            summary: {
+                total,
+                active,
+                disabled,
+                error
+            }
+        });
+    } catch (error) {
+        console.error('Get social profiles error:', error);
+        json(res, 503, {
+            ok: false,
+            error: 'Database temporarily unavailable, please try again'
+        });
+    }
+};
+
+const handleCreateSocialProfile = async (req: IncomingMessage, res: ServerResponse) => {
+    if (!String(req.headers['content-type'] ?? '').includes('application/json')) {
+        json(res, 415, { ok: false, error: 'content-type must be application/json' });
+        return;
+    }
+
+    try {
+        const payload = await readJsonBody(req);
+        
+        // Validate required fields
+        if (!payload.profileUrl || typeof payload.profileUrl !== 'string') {
+            json(res, 400, {
+                ok: false,
+                error: 'Validation failed: Profile URL is required'
+            });
+            return;
+        }
+
+        // Create profile
+        const profile = await ProfileManagementService.createProfile({
+            profileUrl: payload.profileUrl,
+            profileUid: payload.profileUid,
+            displayName: payload.displayName,
+            confidence: payload.confidence,
+            activity: payload.activity,
+            description: payload.description
+        });
+
+        json(res, 200, {
+            ok: true,
+            profile: profile.toJSON()
+        });
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        // Handle duplicate profile error
+        if (errorMessage.includes('already exists')) {
+            json(res, 409, {
+                ok: false,
+                error: errorMessage
+            });
+            return;
+        }
+        
+        // Handle validation errors
+        if (errorMessage.includes('Validation failed')) {
+            json(res, 400, {
+                ok: false,
+                error: errorMessage
+            });
+            return;
+        }
+        
+        // Handle database errors
+        console.error('Create social profile error:', error);
+        json(res, 503, {
+            ok: false,
+            error: 'Database temporarily unavailable, please try again'
+        });
+    }
+};
+
+const handleUpdateSocialProfile = async (req: IncomingMessage, res: ServerResponse, profileKey: string) => {
+    if (!String(req.headers['content-type'] ?? '').includes('application/json')) {
+        json(res, 415, { ok: false, error: 'content-type must be application/json' });
+        return;
+    }
+
+    try {
+        const payload = await readJsonBody(req);
+        
+        // Update profile
+        const profile = await ProfileManagementService.updateProfile(profileKey, {
+            displayName: payload.displayName,
+            confidence: payload.confidence,
+            activity: payload.activity,
+            description: payload.description,
+            status: payload.status
+        });
+
+        json(res, 200, {
+            ok: true,
+            profile: profile.toJSON()
+        });
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        // Handle not found error
+        if (errorMessage.includes('not found')) {
+            json(res, 404, {
+                ok: false,
+                error: errorMessage
+            });
+            return;
+        }
+        
+        // Handle validation errors
+        if (errorMessage.includes('Validation failed')) {
+            json(res, 400, {
+                ok: false,
+                error: errorMessage
+            });
+            return;
+        }
+        
+        // Handle database errors
+        console.error('Update social profile error:', error);
+        json(res, 503, {
+            ok: false,
+            error: 'Database temporarily unavailable, please try again'
+        });
+    }
+};
+
+const handleToggleSocialProfile = async (req: IncomingMessage, res: ServerResponse, profileKey: string) => {
+    try {
+        const result = await ProfileManagementService.toggleProfile(profileKey);
+
+        json(res, 200, {
+            ok: true,
+            profile: result.profile.toJSON(),
+            previousStatus: result.previousStatus,
+            newStatus: result.newStatus
+        });
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        // Handle not found error
+        if (errorMessage.includes('not found')) {
+            json(res, 404, {
+                ok: false,
+                error: errorMessage
+            });
+            return;
+        }
+        
+        // Handle database errors
+        console.error('Toggle social profile error:', error);
+        json(res, 503, {
+            ok: false,
+            error: 'Database temporarily unavailable, please try again'
+        });
+    }
+};
+
+const handleDeleteSocialProfile = async (req: IncomingMessage, res: ServerResponse, profileKey: string) => {
+    try {
+        const deleted = await ProfileManagementService.deleteProfile(profileKey);
+
+        json(res, 200, {
+            ok: true,
+            deleted
+        });
+    } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        
+        // Handle not found error
+        if (errorMessage.includes('not found')) {
+            json(res, 404, {
+                ok: false,
+                error: errorMessage
+            });
+            return;
+        }
+        
+        // Handle database errors
+        console.error('Delete social profile error:', error);
+        json(res, 503, {
+            ok: false,
+            error: 'Database temporarily unavailable, please try again'
+        });
+    }
+};
+
 const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedAt: string) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
 
@@ -1057,6 +1261,40 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
     if (req.method === 'POST' && url.pathname === '/api/admin/sell-settings') {
         await handleSellSettingsUpdate(req, res);
         return;
+    }
+
+    // Social profile management endpoints
+    if (url.pathname === '/api/social-profiles') {
+        if (req.method === 'GET') {
+            await handleGetSocialProfiles(req, res);
+            return;
+        }
+        if (req.method === 'POST') {
+            await handleCreateSocialProfile(req, res);
+            return;
+        }
+    }
+
+    // Social profile management endpoints with profileKey parameter
+    const socialProfileMatch = url.pathname.match(/^\/api\/social-profiles\/([^/]+)(\/toggle)?$/);
+    if (socialProfileMatch) {
+        const profileKey = decodeURIComponent(socialProfileMatch[1]);
+        const isToggle = socialProfileMatch[2] === '/toggle';
+
+        if (isToggle && req.method === 'POST') {
+            await handleToggleSocialProfile(req, res, profileKey);
+            return;
+        }
+
+        if (!isToggle && req.method === 'PUT') {
+            await handleUpdateSocialProfile(req, res, profileKey);
+            return;
+        }
+
+        if (!isToggle && req.method === 'DELETE') {
+            await handleDeleteSocialProfile(req, res, profileKey);
+            return;
+        }
     }
 
     if (req.method !== 'GET') {

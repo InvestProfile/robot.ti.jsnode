@@ -1,7 +1,7 @@
 import { Model, DataTypes } from 'sequelize';
 import sequelize from '../config/database';
 
-export type SocialProfileStatus = 'configured' | 'pending-auth' | 'ready' | 'below-threshold' | 'error';
+export type SocialProfileStatus = 'configured' | 'pending-auth' | 'ready' | 'below-threshold' | 'error' | 'disabled';
 
 export class SocialProfileModel extends Model {
     public id!: number;
@@ -31,6 +31,8 @@ export class SocialProfileModel extends Model {
     public lastCheckedAt!: Date | null;
     public lastError!: string | null;
     public rawPayload!: object | null;
+    public createdAt!: Date;
+    public updatedAt!: Date;
 }
 
 SocialProfileModel.init({

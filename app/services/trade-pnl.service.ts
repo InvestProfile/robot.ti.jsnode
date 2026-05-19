@@ -20,6 +20,20 @@ interface OpenBuy {
     unitAmount: number;
 }
 
+interface OpenLot {
+    accountId: string;
+    accountAlias?: string;
+    ticker?: unknown;
+    name?: unknown;
+    lots: number;
+    entryAt: string;
+    entryAmount: number;
+    entryPrice: number;
+    entrySignalSource?: unknown;
+    entryDecisionReason?: unknown;
+    entryTradeId?: unknown;
+}
+
 interface DecisionMatch {
     id?: unknown;
     status?: unknown;
@@ -305,6 +319,29 @@ const summarizeDiagnostics = (diagnostics: Record<string, unknown>[]) => {
     return summarize(expanded, row => sourceLabel(row.diagnosis));
 };
 
+const flattenOpenLots = (openBuys: Map<string, OpenBuy[]>, config: RobotConfig): OpenLot[] => [...openBuys.values()]
+    .flat()
+    .filter(buy => buy.remainingLots > 0)
+    .map(buy => {
+        const accountId = String(buy.row.accountId || '');
+        const entryAmount = buy.unitAmount * buy.remainingLots;
+
+        return {
+            accountId,
+            accountAlias: config.accountAliases[accountId],
+            ticker: buy.row.ticker,
+            name: buy.row.name,
+            lots: buy.remainingLots,
+            entryAt: tradeTime(buy.row),
+            entryAmount,
+            entryPrice: buy.unitAmount,
+            entrySignalSource: buy.row.signalSource,
+            entryDecisionReason: buy.row.decisionReason,
+            entryTradeId: buy.row.id
+        };
+    })
+    .sort((a, b) => new Date(b.entryAt).getTime() - new Date(a.entryAt).getTime());
+
 export default class TradePnlService {
     static async getRoundTripPnl(config: RobotConfig, limit = 500) {
         const safeLimit = Math.min(Math.max(Number.isFinite(limit) ? limit : 500, 1), 2_000);
@@ -460,11 +497,16 @@ export default class TradePnlService {
             });
         }
 
+        const openLots = flattenOpenLots(openBuys, config);
         const closedRoundTrips = roundTrips.filter(row => Number.isFinite(Number(row.pnlRub)));
+        const unmatchedSells = roundTrips.filter(row => row.status === 'unmatched');
         const realizedPnlRub = closedRoundTrips.reduce((sum, row) => sum + Number(row.pnlRub), 0);
         const wins = closedRoundTrips.filter(row => Number(row.pnlRub) > 0).length;
         const losses = closedRoundTrips.filter(row => Number(row.pnlRub) < 0).length;
         const diagnostics = closedRoundTrips.map(diagnoseRoundTrip);
+        const matchingQuality = roundTrips.length > 0
+            ? closedRoundTrips.length / roundTrips.length * 100
+            : undefined;
 
         return {
             generatedAt: new Date().toISOString(),
@@ -472,15 +514,24 @@ export default class TradePnlService {
                 scannedTrades: rows.length,
                 ignoredTrades,
                 closed: closedRoundTrips.length,
-                unmatchedSells: roundTrips.length - closedRoundTrips.length,
+                unmatchedSells: unmatchedSells.length,
+                openLots: openLots.reduce((sum, row) => sum + row.lots, 0),
+                openPositions: new Set(openLots.map(row => `${row.accountId}:${row.ticker}`)).size,
+                matchingQuality,
                 realizedPnlRub,
                 wins,
                 losses,
                 winRate: closedRoundTrips.length > 0 ? wins / closedRoundTrips.length * 100 : undefined,
                 averagePnlRub: closedRoundTrips.length > 0 ? realizedPnlRub / closedRoundTrips.length : undefined,
-                accounting: 'gross'
+                accounting: 'gross',
+                note: unmatchedSells.length > 0
+                    ? 'Unmatched sells usually mean the matching window did not include the original buy, or the sell came from a non-robot/manual position.'
+                    : undefined
             },
             roundTrips: roundTrips.reverse(),
+            closedRoundTrips: closedRoundTrips.slice().reverse(),
+            unmatchedSells: unmatchedSells.slice().reverse(),
+            openLots,
             breakdowns: {
                 byDate: summarize(closedRoundTrips, row => dateLabel(row.exitAt)),
                 byEntrySignal: summarize(closedRoundTrips, row => sourceLabel(row.entrySignalSource)),

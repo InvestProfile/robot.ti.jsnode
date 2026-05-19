@@ -624,6 +624,49 @@ td {
   border-color: #2d80ed;
 }
 
+.profile-form {
+  padding-bottom: 12px;
+}
+
+.profile-form-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  padding: 10px 14px 0;
+}
+
+.profile-form-row input {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #283746;
+  border-radius: 7px;
+  color: #edf2f7;
+  background: #111820;
+  padding: 6px 9px;
+  outline: none;
+}
+
+.form-error {
+  margin: 10px 14px 0;
+  color: #ff7f86;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.row-muted {
+  opacity: 0.55;
+}
+
+.profile-table {
+  min-width: 1180px;
+}
+
 .decision-table {
   min-width: 1060px;
 }
