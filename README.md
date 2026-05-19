@@ -146,6 +146,7 @@ ROBOT_ACCOUNT_ALIASES=2054310628:торговый счет,2002465405:долго
 ROBOT_PROTECTED_ACCOUNT_IDS=2002465405,2006532697,2091363693,2045881687,2051251635,2201800992,2011287614
 ROBOT_DRY_RUN=true
 ROBOT_LIVE_ALLOWED_ACTIONS=buy
+ROBOT_ORDER_TYPE=market
 ROBOT_TRADING_PAUSED=false
 ROBOT_MAX_CONSECUTIVE_TICK_ERRORS=3
 ROBOT_SNAPSHOT_INTERVAL_MS=900000
@@ -224,6 +225,10 @@ ROBOT_LIVE_CONFIRMATION=I_UNDERSTAND_THIS_TRADES_REAL_MONEY
 Do not enable live mode until dry-run decisions in `trade_decisions` look correct.
 By default, live trading is buy-only through `ROBOT_LIVE_ALLOWED_ACTIONS=buy`.
 Selling requires explicitly setting `ROBOT_LIVE_ALLOWED_ACTIONS=buy,sell`.
+By default, orders are posted as market orders through `ROBOT_ORDER_TYPE=market`.
+Set `ROBOT_ORDER_TYPE=limit` to post limit orders at the robot's current signal
+price. Limit mode can reduce surprise execution prices, but an order may remain
+unfilled and will be reconciled by the normal open-order safety loop.
 
 Set `ROBOT_TRADING_PAUSED=true` to keep the robot running in observe/analysis
 mode while blocking real order placement. If repeated tick errors reach

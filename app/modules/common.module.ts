@@ -168,6 +168,7 @@ const submitTrackedOrder = async (input: {
             },
             input.figi,
             input.instrumentUid,
+            input.config.orderType,
             clientOrderId
         );
 

@@ -2,7 +2,7 @@ version: '3.1'
 
 services:
   robot:
-    image: node:20.0.0-slim
+    image: node:22-slim
     container_name: robot_ti_jsnode
     restart: always
     working_dir: /code
@@ -15,7 +15,7 @@ services:
       - robot_ti_node_modules:/code/node_modules
 
   social_collector:
-    image: node:20.0.0-slim
+    image: node:22-slim
     container_name: robot_ti_social_collector
     restart: always
     working_dir: /code

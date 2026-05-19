@@ -5,10 +5,12 @@ const DEFAULT_STRATEGIES = ['stop-loss', 'trailing-stop', 'hold-winner', 'profit
 const TRAILING_BASELINES = ['observed', 'history_30d', 'history_90d'] as const;
 const LIVE_ACTIONS = ['buy', 'sell'] as const;
 const SCAN_UNIVERSES = ['manual', 'auto'] as const;
+const ORDER_TYPES = ['market', 'limit'] as const;
 
 export type TrailingBaseline = typeof TRAILING_BASELINES[number];
 export type LiveAction = typeof LIVE_ACTIONS[number];
 export type ScanUniverse = typeof SCAN_UNIVERSES[number];
+export type RobotOrderType = typeof ORDER_TYPES[number];
 
 export interface BuyScoreProfile {
     buyTrendDays: number;
@@ -116,6 +118,17 @@ const parseScanUniverse = (value: string | undefined): ScanUniverse => {
     throw new Error(`Unsupported ROBOT_SCAN_UNIVERSE=${value}. Use: ${SCAN_UNIVERSES.join(', ')}`);
 };
 
+const parseOrderType = (value: string | undefined): RobotOrderType => {
+    if (!value) return 'market';
+
+    const normalized = value.trim().toLowerCase();
+    if (ORDER_TYPES.includes(normalized as RobotOrderType)) {
+        return normalized as RobotOrderType;
+    }
+
+    throw new Error(`Unsupported ROBOT_ORDER_TYPE=${value}. Use: ${ORDER_TYPES.join(', ')}`);
+};
+
 const parseBuyScoreProfiles = (value: string | undefined) => {
     if (!value) return {};
 
@@ -153,6 +166,7 @@ export interface RobotConfig {
     dryRun: boolean;
     liveConfirmationRequired: boolean;
     liveAllowedActions: LiveAction[];
+    orderType: RobotOrderType;
     tradingPaused: boolean;
     maxConsecutiveTickErrors: number;
     snapshotIntervalMs: number;
@@ -257,6 +271,7 @@ export const getRobotConfig = (): RobotConfig => {
         dryRun,
         liveConfirmationRequired: !dryRun,
         liveAllowedActions: parseLiveActions(env.ROBOT_LIVE_ALLOWED_ACTIONS),
+        orderType: parseOrderType(env.ROBOT_ORDER_TYPE),
         tradingPaused: parseBoolean(env.ROBOT_TRADING_PAUSED, false),
         maxConsecutiveTickErrors: Math.max(1, Math.trunc(parseNumber(env.ROBOT_MAX_CONSECUTIVE_TICK_ERRORS, 3))),
         snapshotIntervalMs: Math.max(0, parseNumber(env.ROBOT_SNAPSHOT_INTERVAL_MS, 15 * 60 * 1000)),

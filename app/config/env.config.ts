@@ -17,6 +17,7 @@ interface EnvConfig {
     ROBOT_DRY_RUN: string | undefined;
     ROBOT_LIVE_CONFIRMATION: string | undefined;
     ROBOT_LIVE_ALLOWED_ACTIONS: string | undefined;
+    ROBOT_ORDER_TYPE: string | undefined;
     ROBOT_TRADING_PAUSED: string | undefined;
     ROBOT_MAX_CONSECUTIVE_TICK_ERRORS: string | undefined;
     ROBOT_SNAPSHOT_INTERVAL_MS: string | undefined;
@@ -119,6 +120,7 @@ export const getEnv = (): EnvConfig => {
         ROBOT_DRY_RUN: process.env.ROBOT_DRY_RUN,
         ROBOT_LIVE_CONFIRMATION: process.env.ROBOT_LIVE_CONFIRMATION,
         ROBOT_LIVE_ALLOWED_ACTIONS: process.env.ROBOT_LIVE_ALLOWED_ACTIONS,
+        ROBOT_ORDER_TYPE: process.env.ROBOT_ORDER_TYPE,
         ROBOT_TRADING_PAUSED: process.env.ROBOT_TRADING_PAUSED,
         ROBOT_MAX_CONSECUTIVE_TICK_ERRORS: process.env.ROBOT_MAX_CONSECUTIVE_TICK_ERRORS,
         ROBOT_SNAPSHOT_INTERVAL_MS: process.env.ROBOT_SNAPSHOT_INTERVAL_MS,
