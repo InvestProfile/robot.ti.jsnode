@@ -608,6 +608,7 @@ const safeConfig = (config: RobotConfig) => ({
     dryRun: config.dryRun,
     liveConfirmationRequired: config.liveConfirmationRequired,
     liveAllowedActions: config.liveAllowedActions,
+    orderType: config.orderType,
     tradingPaused: config.tradingPaused,
     maxConsecutiveTickErrors: config.maxConsecutiveTickErrors,
     intervalMs: config.intervalMs,
