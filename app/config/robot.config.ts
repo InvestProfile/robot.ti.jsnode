@@ -167,6 +167,8 @@ export interface RobotConfig {
     liveConfirmationRequired: boolean;
     liveAllowedActions: LiveAction[];
     orderType: RobotOrderType;
+    staleLimitOrderMs: number;
+    staleLimitPriceDriftPercent: number;
     tradingPaused: boolean;
     maxConsecutiveTickErrors: number;
     snapshotIntervalMs: number;
@@ -272,6 +274,8 @@ export const getRobotConfig = (): RobotConfig => {
         liveConfirmationRequired: !dryRun,
         liveAllowedActions: parseLiveActions(env.ROBOT_LIVE_ALLOWED_ACTIONS),
         orderType: parseOrderType(env.ROBOT_ORDER_TYPE),
+        staleLimitOrderMs: Math.max(0, parseNumber(env.ROBOT_STALE_LIMIT_ORDER_MS, 5 * 60_000)),
+        staleLimitPriceDriftPercent: Math.max(0, parseNumber(env.ROBOT_STALE_LIMIT_PRICE_DRIFT_PERCENT, 0.5)),
         tradingPaused: parseBoolean(env.ROBOT_TRADING_PAUSED, false),
         maxConsecutiveTickErrors: Math.max(1, Math.trunc(parseNumber(env.ROBOT_MAX_CONSECUTIVE_TICK_ERRORS, 3))),
         snapshotIntervalMs: Math.max(0, parseNumber(env.ROBOT_SNAPSHOT_INTERVAL_MS, 15 * 60 * 1000)),

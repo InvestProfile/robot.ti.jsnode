@@ -147,6 +147,8 @@ ROBOT_PROTECTED_ACCOUNT_IDS=2002465405,2006532697,2091363693,2045881687,20512516
 ROBOT_DRY_RUN=true
 ROBOT_LIVE_ALLOWED_ACTIONS=buy
 ROBOT_ORDER_TYPE=market
+ROBOT_STALE_LIMIT_ORDER_MS=300000
+ROBOT_STALE_LIMIT_PRICE_DRIFT_PERCENT=0.5
 ROBOT_TRADING_PAUSED=false
 ROBOT_MAX_CONSECUTIVE_TICK_ERRORS=3
 ROBOT_SNAPSHOT_INTERVAL_MS=900000
@@ -229,6 +231,9 @@ By default, orders are posted as market orders through `ROBOT_ORDER_TYPE=market`
 Set `ROBOT_ORDER_TYPE=limit` to post limit orders at the robot's current signal
 price. Limit mode can reduce surprise execution prices, but an order may remain
 unfilled and will be reconciled by the normal open-order safety loop.
+`ROBOT_STALE_LIMIT_ORDER_MS` and `ROBOT_STALE_LIMIT_PRICE_DRIFT_PERCENT` control
+read-only diagnostics for stale limit orders in `/api/order-safety`. They do not
+cancel orders by themselves.
 
 Set `ROBOT_TRADING_PAUSED=true` to keep the robot running in observe/analysis
 mode while blocking real order placement. If repeated tick errors reach

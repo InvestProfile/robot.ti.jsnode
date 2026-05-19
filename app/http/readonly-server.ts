@@ -41,6 +41,7 @@ import MarketRegimeLabService from '../services/market-regime-lab.service';
 import DailyBuyListService from '../services/daily-buy-list.service';
 import TradePnlService from '../services/trade-pnl.service';
 import ProfileManagementService from '../services/profile-management.service';
+import MarketDataService from '../services/marketData.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -609,6 +610,8 @@ const safeConfig = (config: RobotConfig) => ({
     liveConfirmationRequired: config.liveConfirmationRequired,
     liveAllowedActions: config.liveAllowedActions,
     orderType: config.orderType,
+    staleLimitOrderMs: config.staleLimitOrderMs,
+    staleLimitPriceDriftPercent: config.staleLimitPriceDriftPercent,
     tradingPaused: config.tradingPaused,
     maxConsecutiveTickErrors: config.maxConsecutiveTickErrors,
     intervalMs: config.intervalMs,
@@ -776,7 +779,20 @@ const getTradePnlPayload = async (url: URL, config: RobotConfig) => {
     return await TradePnlService.getRoundTripPnl(config, requestedLimit);
 };
 
-const getOrderSafetyPayload = async (url: URL) => {
+const orderPriceFromRow = (row: Record<string, unknown>) => {
+    const executed = quotationToNumber({
+        units: Number(row.executedPriceUnits ?? 0),
+        nano: Number(row.executedPriceNano ?? 0)
+    });
+    if (executed !== undefined && executed > 0) return executed;
+
+    return quotationToNumber({
+        units: Number(row.price_units ?? 0),
+        nano: Number(row.price_nano ?? 0)
+    });
+};
+
+const getOrderSafetyPayload = async (url: URL, config: RobotConfig) => {
     const requestedLimit = Number(url.searchParams.get('limit') ?? 80);
     const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 80, 1), 300);
     const trades = await TradesModel.findAll({
@@ -801,6 +817,46 @@ const getOrderSafetyPayload = async (url: URL) => {
     const limitOrders = rows.filter(row => row.orderType === 'ORDER_TYPE_LIMIT').length;
     const bestPrice = rows.filter(row => row.orderType === 'ORDER_TYPE_BESTPRICE').length;
     const pendingLimit = openRows.filter(row => row.orderType === 'ORDER_TYPE_LIMIT').length;
+    const lastPrices = await MarketDataService.getLastPrices(
+        openRows
+            .map(row => String(row.instrumentId || row.instrumentUid || row.uid || ''))
+            .filter(Boolean)
+    );
+    const now = Date.now();
+    const enrichedRows = rows.map(row => {
+        const openedAt = new Date(String(row.tradeDateTime || row.createdAt || '')).getTime();
+        const ageMs = Number.isFinite(openedAt) ? Math.max(0, now - openedAt) : 0;
+        const instrumentId = String(row.instrumentId || row.instrumentUid || row.uid || '');
+        const lastPrice = instrumentId ? lastPrices.get(instrumentId) : undefined;
+        const orderPrice = orderPriceFromRow(row);
+        const priceDriftPercent = orderPrice && lastPrice
+            ? Math.abs(lastPrice - orderPrice) / orderPrice * 100
+            : undefined;
+        const isOpen = openStatuses.has(String(row.status ?? ''));
+        const isLimit = row.orderType === 'ORDER_TYPE_LIMIT';
+        const staleByAge = isOpen && isLimit && config.staleLimitOrderMs > 0 && ageMs >= config.staleLimitOrderMs;
+        const staleByPrice = isOpen
+            && isLimit
+            && config.staleLimitPriceDriftPercent > 0
+            && priceDriftPercent !== undefined
+            && priceDriftPercent >= config.staleLimitPriceDriftPercent;
+
+        return {
+            ...row,
+            orderAgeMs: ageMs,
+            orderPrice,
+            lastPrice,
+            priceDriftPercent,
+            staleLimitReason: staleByAge && staleByPrice
+                ? 'age-and-price-drift'
+                : staleByAge
+                    ? 'age'
+                    : staleByPrice
+                        ? 'price-drift'
+                        : undefined
+        };
+    });
+    const staleLimit = enrichedRows.filter(row => row.staleLimitReason).length;
     const oldestOpenAt = openRows
         .map(row => new Date(String(row.tradeDateTime || row.createdAt || '')).getTime())
         .filter(timestamp => Number.isFinite(timestamp))
@@ -818,11 +874,16 @@ const getOrderSafetyPayload = async (url: URL) => {
             limit: limitOrders,
             bestPrice,
             pendingLimit,
+            staleLimit,
             oldestOpenAt: oldestOpenAt ? new Date(oldestOpenAt).toISOString() : undefined,
             oldestOpenAgeMs: oldestOpenAt ? Math.max(0, Date.now() - oldestOpenAt) : 0,
-            checked: rows.length
+            checked: rows.length,
+            stalePolicy: {
+                maxAgeMs: config.staleLimitOrderMs,
+                maxPriceDriftPercent: config.staleLimitPriceDriftPercent
+            }
         },
-        orders: rows
+        orders: enrichedRows
     };
 };
 
@@ -1368,7 +1429,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
     }
 
     if (url.pathname === '/api/order-safety') {
-        json(res, 200, await getOrderSafetyPayload(url));
+        json(res, 200, await getOrderSafetyPayload(url, config));
         return;
     }
 

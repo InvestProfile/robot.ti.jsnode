@@ -1856,6 +1856,7 @@ function OrderSafety({ data, loading }) {
         <Stat label="Unknown" value={summary.unknown ?? 0} tone={summary.unknown ? 'bad' : 'good'} />
         <Stat label="Partial" value={summary.partial ?? 0} tone={summary.partial ? 'warn' : 'good'} />
         <Stat label="Limit wait" value={summary.pendingLimit ?? 0} tone={summary.pendingLimit ? 'warn' : 'good'} />
+        <Stat label="Stale" value={summary.staleLimit ?? 0} tone={summary.staleLimit ? 'bad' : 'good'} />
       </div>
       <Table
         className="order-safety-table"
@@ -1865,6 +1866,9 @@ function OrderSafety({ data, loading }) {
           { key: 'direction', label: 'Side', width: '80px', render: (row) => <Pill tone={String(row.direction) === '1' ? 'good' : 'bad'}>{String(row.direction) === '1' ? 'buy' : String(row.direction) === '2' ? 'sell' : display(row.direction)}</Pill> },
           { key: 'orderType', label: 'Type', width: '115px', render: (row) => <TextCell>{String(row.orderType || EMPTY).replace('ORDER_TYPE_', '').toLowerCase()}</TextCell> },
           { key: 'status', label: 'Status', width: '175px', render: (row) => <Pill tone={orderStatusTone(row.status)}>{display(row.status)}</Pill> },
+          { key: 'staleLimitReason', label: 'Stale', width: '115px', render: (row) => row.staleLimitReason ? <Pill tone="bad">{row.staleLimitReason}</Pill> : <Pill tone="good">ok</Pill> },
+          { key: 'orderAgeMs', label: 'Age', width: '85px', className: 'right', render: (row) => duration(row.orderAgeMs) },
+          { key: 'priceDriftPercent', label: 'Drift', width: '85px', className: 'right', render: (row) => percent(row.priceDriftPercent) },
           { key: 'lotsRequested', label: 'Req', width: '70px', className: 'right', render: (row) => money(row.lotsRequested) },
           { key: 'lotsExecuted', label: 'Exec', width: '70px', className: 'right', render: (row) => money(row.lotsExecuted) },
           { key: 'clientOrderId', label: 'Client id', width: '190px', render: (row) => <TextCell>{row.clientOrderId || row.orderId}</TextCell> },
@@ -1891,6 +1895,7 @@ function ExecutionOverview({ data, loading, className }) {
           { label: 'Тип заявок', value: orderType, tone: orderType === 'limit' ? 'warn' : 'good', detail: orderType === 'limit' ? 'ждем fill по цене сигнала' : 'исполнение по рынку' },
           { label: 'Open', value: summary.open ?? 0, tone: summary.open ? 'warn' : 'good', detail: openAge !== EMPTY ? `старейшая ${openAge}` : 'нет открытых' },
           { label: 'Pending limit', value: summary.pendingLimit ?? 0, tone: summary.pendingLimit ? 'warn' : 'good', detail: 'limit-заявки ждут исполнения' },
+          { label: 'Stale limit', value: summary.staleLimit ?? 0, tone: summary.staleLimit ? 'bad' : 'good', detail: summary.stalePolicy ? `${duration(summary.stalePolicy.maxAgeMs)} / ${percent(summary.stalePolicy.maxPriceDriftPercent)}` : 'policy loading' },
           { label: 'Unknown', value: summary.unknown ?? 0, tone: summary.unknown ? 'bad' : 'good', detail: summary.unknown ? 'повторы заблокированы' : 'нет неизвестных' },
           { label: 'Market / Limit', value: `${summary.market || 0} / ${summary.limit || 0}`, detail: `${summary.checked || 0} последних заявок` },
           { label: 'Filled / Rejected', value: `${summary.filled || 0} / ${summary.rejected || 0}`, tone: summary.rejected ? 'warn' : 'good', detail: 'по последней выборке' }
