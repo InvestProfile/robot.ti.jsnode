@@ -1,10 +1,13 @@
 import { RobotConfig } from '../config/robot.config';
+import { Op } from 'sequelize';
+import { TradeDecisionModel } from '../models/trade-decision.model';
 import { DailyCandle } from '../strategies/trade-signal';
 import MarketDataService from './marketData.service';
 
 type OrderBookMetrics = NonNullable<Awaited<ReturnType<typeof MarketDataService.getOrderBookMetrics>>>;
 
 interface PreBuyRiskInput {
+    accountId: string;
     instrumentUid: string;
     ticker?: string;
     lot: number;
@@ -59,6 +62,31 @@ const getAvgDailyTurnoverRub = (candles: DailyCandle[] | undefined, lot: number)
 };
 
 export default class PreBuyRiskService {
+    private static getStartOfToday() {
+        const startOfDay = new Date();
+        startOfDay.setHours(0, 0, 0, 0);
+        return startOfDay;
+    }
+
+    static async hasStopLossToday(accountId: string, ticker?: string) {
+        const normalizedTicker = ticker?.trim().toUpperCase();
+        if (!accountId || !normalizedTicker) return false;
+
+        const count = await TradeDecisionModel.count({
+            where: {
+                accountId,
+                ticker: normalizedTicker,
+                signalSource: 'stop-loss',
+                status: 'order-posted',
+                createdAt: {
+                    [Op.gte]: this.getStartOfToday()
+                }
+            } as any
+        });
+
+        return count > 0;
+    }
+
     static async evaluate(input: PreBuyRiskInput, config: RobotConfig): Promise<PreBuyRiskResult> {
         const checks: PreBuyRiskCheck[] = [];
         const warnings: string[] = [];
@@ -79,6 +107,15 @@ export default class PreBuyRiskService {
                 warnings.push(check.reason);
             }
         };
+
+        if (await this.hasStopLossToday(input.accountId, input.ticker)) {
+            addCheck({
+                key: 'same-day-stop-loss-reentry',
+                status: 'block',
+                reason: `same-day re-entry blocked after stop-loss for ${input.ticker}`,
+                enforced: true
+            });
+        }
 
         let spreadPercent: number | undefined;
         let askLiquidityRub: number | undefined;

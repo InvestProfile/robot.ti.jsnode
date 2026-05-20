@@ -245,6 +245,7 @@ export default class BuySignalEvaluatorService {
                 tradingStatus: tradingStatus?.tradingStatus
             }, config);
             const preBuyRisk = await PreBuyRiskService.evaluate({
+                accountId,
                 instrumentUid: instrument.uid,
                 ticker: instrument.ticker,
                 lot: instrument.lot ?? 1,
