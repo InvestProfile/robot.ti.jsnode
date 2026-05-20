@@ -1,11 +1,7 @@
 import { Op } from 'sequelize';
 import { TradesModel } from '../models/trades.model';
 import TradesService from './trades.service';
-
-const BLOCKED_STATUSES = new Set([
-    'EXECUTION_REPORT_STATUS_REJECTED',
-    'EXECUTION_REPORT_STATUS_CANCELLED'
-]);
+import { isRejectedOrderStatus } from '../utils/order-status';
 
 const sameInstrument = (data: Record<string, unknown>, figi?: string, instrumentUid?: string) =>
     Boolean(
@@ -64,7 +60,7 @@ export default class SellPolicyService {
             if (!sameInstrument(data, figi, instrumentUid)) continue;
 
             const status = data.status ? String(data.status) : undefined;
-            if (status && BLOCKED_STATUSES.has(status)) continue;
+            if (isRejectedOrderStatus(status)) continue;
 
             const lots = lotsFromTrade(data);
             if (lots > 0) {

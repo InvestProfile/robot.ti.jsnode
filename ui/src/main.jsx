@@ -155,6 +155,21 @@ const adjustmentTone = (value) => {
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+const uniqueValues = (rows, getter) => [...new Set(rows.map(getter).filter(Boolean))].sort();
+
+const sortByNumber = (rows, getter, direction = 'desc') => {
+  const missing = direction === 'desc' ? -Infinity : Infinity;
+  return [...rows].sort((a, b) => {
+    const left = Number(getter(a));
+    const right = Number(getter(b));
+    const normalizedLeft = Number.isFinite(left) ? left : missing;
+    const normalizedRight = Number.isFinite(right) ? right : missing;
+    return direction === 'desc' ? normalizedRight - normalizedLeft : normalizedLeft - normalizedRight;
+  });
+};
+
+const normalizeSearch = (value) => String(value || '').trim().toUpperCase();
+
 const ScoreBreakdown = ({ analysis }) => {
   const factors = analysis?.factors || {};
   const items = [
@@ -359,6 +374,12 @@ const Table = ({ columns, rows, empty = 'Нет данных', loading = false, 
         )}
       </tbody>
     </table>
+  </div>
+);
+
+const FilterSummary = ({ visible, total, label = 'строк' }) => (
+  <div className="filter-summary">
+    <span>{visible} / {total} {label}</span>
   </div>
 );
 
@@ -574,6 +595,71 @@ function MarketLab({ data, loading }) {
   );
 }
 
+function BuyPreviewFilters({ rows, filters, onChange }) {
+  const blockers = uniqueValues(rows, (row) => row.status === 'allowed' ? null : classifyBlocker(row.reason));
+
+  return (
+    <div className="filters buy-preview-filters">
+      <label>
+        <span>Исполнение</span>
+        <select value={filters.status} onChange={(event) => onChange({ ...filters, status: event.target.value })}>
+          <option value="all">Все</option>
+          <option value="allowed">READY</option>
+          <option value="blocked">BLOCKED</option>
+        </select>
+      </label>
+      <label>
+        <span>Стопор</span>
+        <select value={filters.blocker} onChange={(event) => onChange({ ...filters, blocker: event.target.value })}>
+          <option value="all">Любой</option>
+          {blockers.map((blocker) => <option key={blocker} value={blocker}>{blocker}</option>)}
+        </select>
+      </label>
+      <label>
+        <span>Тикер</span>
+        <input value={filters.ticker} onChange={(event) => onChange({ ...filters, ticker: normalizeSearch(event.target.value) })} placeholder="SBER" />
+      </label>
+      <label>
+        <span>Score</span>
+        <select value={filters.score} onChange={(event) => onChange({ ...filters, score: event.target.value })}>
+          <option value="all">Любой</option>
+          <option value="pass">70+</option>
+          <option value="near">60-69</option>
+          <option value="low">&lt;60</option>
+        </select>
+      </label>
+      <label>
+        <span>Сортировка</span>
+        <select value={filters.sort} onChange={(event) => onChange({ ...filters, sort: event.target.value })}>
+          <option value="score-desc">Score выше</option>
+          <option value="score-asc">Score ниже</option>
+          <option value="amount-desc">Сумма выше</option>
+          <option value="amount-asc">Сумма ниже</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
+const filterBuyPreviews = (rows, filters) => {
+  const filtered = rows.filter((row) => {
+    const score = Number(row.scoreAnalysis?.score ?? row.score);
+    if (filters.status === 'allowed' && row.status !== 'allowed') return false;
+    if (filters.status === 'blocked' && row.status === 'allowed') return false;
+    if (filters.blocker !== 'all' && classifyBlocker(row.reason) !== filters.blocker) return false;
+    if (filters.ticker && !normalizeSearch(`${row.ticker || ''} ${row.name || ''} ${row.figi || ''}`).includes(filters.ticker)) return false;
+    if (filters.score === 'pass' && !(Number.isFinite(score) && score >= 70)) return false;
+    if (filters.score === 'near' && !(Number.isFinite(score) && score >= 60 && score < 70)) return false;
+    if (filters.score === 'low' && !(Number.isFinite(score) && score < 60)) return false;
+    return true;
+  });
+
+  if (filters.sort === 'score-asc') return sortByNumber(filtered, (row) => row.scoreAnalysis?.score ?? row.score, 'asc');
+  if (filters.sort === 'amount-desc') return sortByNumber(filtered, (row) => row.estimatedOrderRub, 'desc');
+  if (filters.sort === 'amount-asc') return sortByNumber(filtered, (row) => row.estimatedOrderRub, 'asc');
+  return sortByNumber(filtered, (row) => row.scoreAnalysis?.score ?? row.score, 'desc');
+};
+
 function Overview({ data, onMarketRegimeChange }) {
   const blockers = getReadiness(data);
   const status = data.status;
@@ -719,16 +805,20 @@ function Overview({ data, onMarketRegimeChange }) {
 }
 
 function Buy({ data, loadingKeys }) {
+  const [filters, setFilters] = useState({ status: 'all', blocker: 'all', ticker: '', score: 'all', sort: 'score-desc' });
   const dailyBuyList = data.dailyBuyList || {};
   const dailyItems = dailyBuyList.items || [];
   const dailyExcluded = dailyBuyList.excluded || [];
   const previews = data.preview?.previews || [];
+  const filteredPreviews = filterBuyPreviews(previews, filters);
   const allowedPreviews = previews.filter((row) => row.status === 'allowed');
   const blockedPreviews = previews.filter((row) => row.status !== 'allowed');
+  const filteredAllowed = filteredPreviews.filter((row) => row.status === 'allowed');
+  const filteredBlocked = filteredPreviews.filter((row) => row.status !== 'allowed');
   const buyRecommendations = data.buyRecommendations?.items || [];
   const buyScan = data.buyScan?.items || [];
   const tradeLimit = getTradeLimit(data);
-  const blockerSummary = summarizeBlockers(blockedPreviews) || buyRecommendations[0]?.reason || EMPTY;
+  const blockerSummary = summarizeBlockers(filteredBlocked) || summarizeBlockers(blockedPreviews) || buyRecommendations[0]?.reason || EMPTY;
 
   return (
     <div className="grid">
@@ -738,6 +828,7 @@ function Buy({ data, loadingKeys }) {
             { label: 'Сканер рынка', value: dailyBuyList.universe?.scanned ?? EMPTY, detail: 'бумаг просмотрено' },
             { label: 'Кандидаты дня', value: dailyItems.length, detail: dailyItems.map((item) => item.ticker).join(', ') || 'список пуст' },
             { label: 'Предпросмотр', value: allowedPreviews.length, tone: allowedPreviews.length ? 'good' : 'warn', detail: `${blockedPreviews.length} заблокировано до заявки` },
+            { label: 'В фильтре', value: `${filteredAllowed.length} / ${filteredPreviews.length}`, tone: filteredAllowed.length ? 'good' : filteredPreviews.length ? 'warn' : 'neutral', detail: 'READY / всего показано' },
             { label: 'Лимиты', value: tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : EMPTY, tone: tradeLimit && Number(tradeLimit.ordersLeft) <= 0 ? 'bad' : 'good', detail: 'заявки / бюджет сегодня' },
             { label: 'Исполнение', value: blockedPreviews.length ? 'BLOCKED' : allowedPreviews.length ? 'READY' : 'WAIT', tone: blockedPreviews.length ? 'bad' : allowedPreviews.length ? 'good' : 'warn', detail: blockerSummary }
           ]}
@@ -745,6 +836,8 @@ function Buy({ data, loadingKeys }) {
       </Card>
 
       <Card title="Боевой предпросмотр" icon={ShieldCheck} className="wide" help="Самый практический блок покупок: качество кандидата отдельно, решение исполнения отдельно. Высокий score не означает покупку, если рынок закрыт, лимит исчерпан или позиция стала бы слишком большой.">
+        <BuyPreviewFilters rows={previews} filters={filters} onChange={setFilters} />
+        <FilterSummary visible={filteredPreviews.length} total={previews.length} label="кандидатов" />
         <Table
           className="buy-preview-table"
           columns={[
@@ -757,7 +850,8 @@ function Buy({ data, loadingKeys }) {
             { key: 'brokerQuote', label: 'Брокер', width: '105px', className: 'right', render: (row) => row.brokerQuote ? money(row.brokerQuote.totalOrderAmount) : '-' },
             { key: 'reason', label: 'Причина', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
-          rows={previews}
+          rows={filteredPreviews}
+          empty="Нет кандидатов под выбранные фильтры"
           loading={loadingKeys.preview}
         />
       </Card>
@@ -839,7 +933,73 @@ function Buy({ data, loadingKeys }) {
   );
 }
 
+function SellCandidateFilters({ rows, filters, onChange }) {
+  const sources = uniqueValues(rows, (row) => row.source);
+
+  return (
+    <div className="filters sell-filters">
+      <label>
+        <span>Статус</span>
+        <select value={filters.status} onChange={(event) => onChange({ ...filters, status: event.target.value })}>
+          <option value="all">Все</option>
+          <option value="allowed">Можно продать</option>
+          <option value="blocked">Блок/hold</option>
+        </select>
+      </label>
+      <label>
+        <span>Сигнал</span>
+        <select value={filters.source} onChange={(event) => onChange({ ...filters, source: event.target.value })}>
+          <option value="all">Все</option>
+          {sources.map((source) => <option key={source} value={source}>{source}</option>)}
+        </select>
+      </label>
+      <label>
+        <span>Тикер</span>
+        <input value={filters.ticker} onChange={(event) => onChange({ ...filters, ticker: normalizeSearch(event.target.value) })} placeholder="SBER" />
+      </label>
+      <label>
+        <span>Robot P/L</span>
+        <select value={filters.pnl} onChange={(event) => onChange({ ...filters, pnl: event.target.value })}>
+          <option value="all">Любой</option>
+          <option value="profit">Плюс</option>
+          <option value="loss">Минус</option>
+          <option value="empty">Нет</option>
+        </select>
+      </label>
+      <label>
+        <span>Сортировка</span>
+        <select value={filters.sort} onChange={(event) => onChange({ ...filters, sort: event.target.value })}>
+          <option value="pnl-asc">P/L ниже</option>
+          <option value="pnl-desc">P/L выше</option>
+          <option value="lots-desc">Лотов больше</option>
+          <option value="ticker-asc">Тикер A-Z</option>
+        </select>
+      </label>
+    </div>
+  );
+}
+
+const filterSellCandidates = (rows, filters) => {
+  const filtered = rows.filter((row) => {
+    const pnl = Number(row.robotProfitPercent ?? row.profitPercent);
+    if (filters.status === 'allowed' && row.status !== 'allowed') return false;
+    if (filters.status === 'blocked' && row.status === 'allowed') return false;
+    if (filters.source !== 'all' && row.source !== filters.source) return false;
+    if (filters.ticker && !normalizeSearch(`${row.ticker || ''} ${row.name || ''} ${row.figi || ''}`).includes(filters.ticker)) return false;
+    if (filters.pnl === 'profit' && !(Number.isFinite(pnl) && pnl > 0)) return false;
+    if (filters.pnl === 'loss' && !(Number.isFinite(pnl) && pnl < 0)) return false;
+    if (filters.pnl === 'empty' && Number.isFinite(pnl)) return false;
+    return true;
+  });
+
+  if (filters.sort === 'pnl-desc') return sortByNumber(filtered, (row) => row.robotProfitPercent ?? row.profitPercent, 'desc');
+  if (filters.sort === 'lots-desc') return sortByNumber(filtered, (row) => row.orderLots ?? row.robotOwnedLots, 'desc');
+  if (filters.sort === 'ticker-asc') return [...filtered].sort((a, b) => String(a.ticker || '').localeCompare(String(b.ticker || '')));
+  return sortByNumber(filtered, (row) => row.robotProfitPercent ?? row.profitPercent, 'asc');
+};
+
 function Sell({ data, loadingKeys }) {
+  const [filters, setFilters] = useState({ status: 'all', source: 'all', ticker: '', pnl: 'all', sort: 'pnl-asc' });
   const liveActions = data.status?.config?.liveAllowedActions || [];
   const sellArmed = liveActions.includes('sell');
   const items = data.sellBrain?.items || [];
@@ -847,8 +1007,11 @@ function Sell({ data, loadingKeys }) {
   const robotPositions = robotLedger.items || [];
   const robotEvents = robotLedger.events || [];
   const liveCandidates = items.filter((row) => row.accountMode === 'trade' && row.action === 'sell');
+  const filteredLiveCandidates = filterSellCandidates(liveCandidates, filters);
   const executable = liveCandidates.filter((row) => row.status === 'allowed' && Number(row.orderLots || 0) > 0);
+  const filteredExecutable = filteredLiveCandidates.filter((row) => row.status === 'allowed' && Number(row.orderLots || 0) > 0);
   const policyBlocked = liveCandidates.filter((row) => row.status !== 'allowed');
+  const filteredPolicyBlocked = filteredLiveCandidates.filter((row) => row.status !== 'allowed');
   const observeSignals = items.filter((row) => row.accountMode === 'observe' && row.action === 'sell');
   const sellEvents = robotEvents.filter((row) => row.direction === 'sell');
   const lastSell = sellEvents[0];
@@ -873,6 +1036,7 @@ function Sell({ data, loadingKeys }) {
             { label: 'Сигналы', value: liveCandidates.length, detail: `${observeSignals.length} observe-сигналов отдельно` },
             { label: 'Robot-owned', value: robotLedger.summary?.positions ?? 0, tone: Number(robotLedger.summary?.positions || 0) ? 'good' : 'warn', detail: 'позиций в ledger робота' },
             { label: 'Можно продать', value: executable.length, tone: executable.length ? 'bad' : 'good', detail: `${policyBlocked.length} заблокировано политикой` },
+            { label: 'В фильтре', value: `${filteredExecutable.length} / ${filteredLiveCandidates.length}`, tone: filteredExecutable.length ? 'bad' : 'good', detail: `${filteredPolicyBlocked.length} блок/hold сейчас` },
             { label: 'Live-продажа', value: sellArmed ? 'ON' : 'OFF', tone: sellArmed ? 'bad' : 'good', detail: liveActions.join(', ') || EMPTY },
             { label: 'Последняя продажа', value: lastSell?.ticker || EMPTY, tone: lastSell ? 'warn' : 'neutral', detail: lastSell ? `${time(lastSell.at)} · ${money(lastSell.price)} RUB` : 'продаж в ledger пока нет' }
           ]}
@@ -890,10 +1054,12 @@ function Sell({ data, loadingKeys }) {
           <Stat label="Лоты робота" value={money(executable.reduce((sum, row) => sum + Number(row.orderLots || 0), 0))} />
           <Stat label="Live-действия" value={liveActions.join(', ') || '-'} tone={sellArmed ? 'bad' : 'good'} />
         </div>
+        <SellCandidateFilters rows={liveCandidates} filters={filters} onChange={setFilters} />
+        <FilterSummary visible={filteredLiveCandidates.length} total={liveCandidates.length} label="sell-сигналов" />
         <Table
           columns={sellColumns}
-          rows={liveCandidates}
-          empty="No robot-owned sell candidates"
+          rows={filteredLiveCandidates}
+          empty="Нет sell-сигналов под выбранные фильтры"
           loading={loadingKeys.sellBrain}
         />
       </Card>
@@ -1522,23 +1688,29 @@ function Accounts({ data, loadingKeys, onModeChange, onLiveSellToggle, onRiskSet
         />
       </Card>
 
-      <Card title="Live действия" icon={ShieldCheck} help="Боевые действия робота. Buy уже включен. Sell можно включить отдельно, но он все равно продаст только robot-owned лоты, которые сам ранее купил и записал в журнал.">
-        <div className="readiness">
-          <Pill tone={sellArmed ? 'bad' : 'good'}>{sellArmed ? 'SELL ARMED' : 'SELL OFF'}</Pill>
-          <span>{liveActions.join(', ') || '-'}</span>
+      <div className="account-control-layout wide">
+        <div className="account-control-stack">
+          <Card title="Live действия" icon={ShieldCheck} help="Боевые действия робота. Buy уже включен. Sell можно включить отдельно, но он все равно продаст только robot-owned лоты, которые сам ранее купил и записал в журнал.">
+            <div className="readiness">
+              <Pill tone={sellArmed ? 'bad' : 'good'}>{sellArmed ? 'SELL ARMED' : 'SELL OFF'}</Pill>
+              <span>{liveActions.join(', ') || '-'}</span>
+            </div>
+            <div className="card-actions">
+              <button
+                className={cls('mini-button', sellArmed ? '' : 'danger')}
+                onClick={() => onLiveSellToggle(!sellArmed)}
+                title={sellArmed ? 'Выключить реальные продажи' : 'Включить реальные продажи только для robot-owned лотов'}
+              >
+                {sellArmed ? 'Disarm sell' : 'Arm sell'}
+              </button>
+            </div>
+          </Card>
+          <SellControls data={data} onSellSettingsChange={onSellSettingsChange} />
         </div>
-        <div className="card-actions">
-          <button
-            className={cls('mini-button', sellArmed ? '' : 'danger')}
-            onClick={() => onLiveSellToggle(!sellArmed)}
-            title={sellArmed ? 'Выключить реальные продажи' : 'Включить реальные продажи только для robot-owned лотов'}
-          >
-            {sellArmed ? 'Disarm sell' : 'Arm sell'}
-          </button>
+        <div className="account-control-stack">
+          <RiskControls data={data} onRiskSettingsChange={onRiskSettingsChange} />
         </div>
-      </Card>
-      <RiskControls data={data} onRiskSettingsChange={onRiskSettingsChange} />
-      <SellControls data={data} onSellSettingsChange={onSellSettingsChange} />
+      </div>
       <RiskBudget data={data} />
       <Card title="Счета" icon={Database} className="wide" help="Кнопка меняет режим счета без перезапуска робота. Protected-счет можно перевести в trade только после отдельного подтверждения номером счета.">
         <Table
@@ -1713,6 +1885,22 @@ const roundTripStatusLabel = (status) => {
   return display(status);
 };
 
+const accountingIgnoredStatuses = new Set([
+  'LOCAL_PENDING_SUBMIT',
+  'LOCAL_SUBMIT_UNKNOWN',
+  'EXECUTION_REPORT_STATUS_NEW',
+  'EXECUTION_REPORT_STATUS_REJECTED',
+  'EXECUTION_REPORT_STATUS_CANCELLED',
+  'LOCAL_POST_REJECTED',
+  'LOCAL_VALIDATION_FAILED'
+]);
+
+const tradeLedgerStatus = (trade, event) => {
+  if (event) return 'в ledger';
+  if (accountingIgnoredStatuses.has(String(trade.status || ''))) return 'не в accounting';
+  return 'только broker';
+};
+
 const buildTradeRows = (data) => {
   const trades = data.trades?.trades || [];
   const events = data.robotPositions?.events || [];
@@ -1747,7 +1935,7 @@ const buildTradeRows = (data) => {
     return {
       ...trade,
       side: sideFromDirection(trade.direction),
-      ledgerStatus: event ? 'в ledger' : 'только broker',
+      ledgerStatus: tradeLedgerStatus(trade, event),
       decisionReason: matchedReason || decision?.reason,
       signalSource: matchedSignal || decision?.signalSource,
       roundTripLeg: roundTripMatch?.leg,
@@ -1787,6 +1975,7 @@ function TradeFilters({ rows, filters, onChange }) {
           <option value="all">Любой</option>
           <option value="в ledger">В ledger</option>
           <option value="только broker">Только broker</option>
+          <option value="не в accounting">Не в accounting</option>
         </select>
       </label>
       <label>
@@ -2009,6 +2198,7 @@ function Trades({ data, loadingKeys, onCancelStaleLimits }) {
   const buyCount = rows.filter((row) => row.side === 'buy').length;
   const sellCount = rows.filter((row) => row.side === 'sell').length;
   const brokerOnly = rows.filter((row) => row.ledgerStatus === 'только broker').length;
+  const ledgerCount = rows.filter((row) => row.ledgerStatus === 'в ledger').length;
   const tradePnlSummary = data.tradePnl?.summary || {};
   const tradePnlBreakdowns = data.tradePnl?.breakdowns || {};
   const tradePnlDiagnostics = data.tradePnl?.diagnostics || [];
@@ -2057,7 +2247,7 @@ function Trades({ data, loadingKeys, onCancelStaleLimits }) {
           items={[
             { label: 'Всего записей', value: rows.length, detail: 'broker trade records' },
             { label: 'Buy / Sell', value: `${buyCount} / ${sellCount}`, tone: sellCount ? 'warn' : 'good', detail: 'стороны сделок' },
-            { label: 'Ledger', value: `${rows.length - brokerOnly} / ${rows.length}`, tone: brokerOnly ? 'warn' : 'good', detail: brokerOnly ? `${brokerOnly} только broker` : 'все связаны' },
+            { label: 'Ledger', value: `${ledgerCount} / ${rows.length}`, tone: brokerOnly ? 'warn' : 'good', detail: brokerOnly ? `${brokerOnly} только broker` : 'нет broker-only' },
             { label: 'Фильтр', value: filteredRows.length, detail: 'строк сейчас видно' },
             { label: 'Round-trip P/L', value: `${money(realizedPnlRub)} RUB`, tone: realizedPnlRub >= 0 ? 'good' : 'bad', detail: `${closedRoundTrips} закрытых пар, ${tradePnlSummary.accounting || 'gross'}` },
             { label: 'Matching', value: percent(tradePnlSummary.matchingQuality), tone: tradePnlSummary.unmatchedSells ? 'warn' : 'good', detail: `${tradePnlSummary.unmatchedSells || 0} sell без пары` },

@@ -204,6 +204,36 @@ main {
   grid-column: 1 / -1;
 }
 
+.account-control-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.55fr) minmax(560px, 1.45fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.account-control-layout.wide {
+  grid-column: 1 / -1;
+}
+
+.account-control-stack {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.account-control-layout .stats.compact {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.account-control-layout .stat strong {
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.account-control-layout .control-row {
+  padding-bottom: 8px;
+}
+
 .panel-head {
   display: flex;
   justify-content: space-between;
@@ -379,7 +409,7 @@ main {
 
 .stage-strip {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 10px;
   padding: 12px 14px 14px;
 }
@@ -634,6 +664,21 @@ td {
 .filters input:focus,
 .filters select:focus {
   border-color: #2d80ed;
+}
+
+.buy-preview-filters,
+.sell-filters,
+.trade-filters {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.filter-summary {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 14px 2px;
+  color: #93a1b2;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .profile-form {
@@ -938,6 +983,10 @@ td {
 
   .grid,
   .overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .account-control-layout {
     grid-template-columns: 1fr;
   }
 

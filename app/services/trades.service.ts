@@ -4,6 +4,8 @@ import { TradesModel } from '../models/trades.model';
 import { Op } from 'sequelize';
 import {
     isFinalOrderStatus,
+    isIgnoredAccountingOrderStatus,
+    isRejectedOrderStatus,
     LOCAL_PENDING_ORDER_STATUS,
     LOCAL_REJECTED_ORDER_STATUS,
     LOCAL_UNKNOWN_ORDER_STATUS
@@ -212,7 +214,7 @@ export default class TradesService {
         const startOfDay = new Date();
         startOfDay.setHours(0, 0, 0, 0);
 
-        return await TradesModel.count({
+        const trades = await TradesModel.findAll({
             where: {
                 accountId,
                 createdAt: {
@@ -220,6 +222,13 @@ export default class TradesService {
                 }
             } as any
         });
+
+        return trades.filter(trade => {
+            const data = trade.get({ plain: true }) as Record<string, unknown>;
+            const status = data.status ? String(data.status) : undefined;
+
+            return status !== LOCAL_UNKNOWN_ORDER_STATUS && !isRejectedOrderStatus(status);
+        }).length;
     }
 
     static async sumTodayBuyTradesRub(accountId: string | undefined) {
@@ -231,7 +240,6 @@ export default class TradesService {
         const trades = await TradesModel.findAll({
             where: {
                 accountId,
-                direction: '1',
                 createdAt: {
                     [Op.gte]: startOfDay
                 }
@@ -240,6 +248,9 @@ export default class TradesService {
 
         return trades.reduce((sum, trade) => {
             const data = trade.get({ plain: true }) as Record<string, unknown>;
+            if (String(data.direction || '') !== '1') return sum;
+            if (isIgnoredAccountingOrderStatus(data.status ? String(data.status) : undefined)) return sum;
+
             const amount = this.amountFromTrade(data);
 
             return amount !== undefined ? sum + amount : sum;
@@ -273,7 +284,10 @@ export default class TradesService {
             const clientOrderId = data.clientOrderId ? String(data.clientOrderId) : undefined;
             const status = data.status ? String(data.status) : undefined;
 
-            return sameInstrument && Boolean(orderId || clientOrderId) && !isFinalOrderStatus(status);
+            return sameInstrument
+                && Boolean(orderId || clientOrderId)
+                && !isFinalOrderStatus(status)
+                && !isRejectedOrderStatus(status);
         });
     }
 }

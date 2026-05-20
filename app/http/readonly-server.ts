@@ -43,6 +43,7 @@ import DailyBuyListService from '../services/daily-buy-list.service';
 import TradePnlService from '../services/trade-pnl.service';
 import ProfileManagementService from '../services/profile-management.service';
 import MarketDataService from '../services/marketData.service';
+import { isOpenOrderStatus, isRejectedOrderStatus } from '../utils/order-status';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -801,18 +802,12 @@ const getOrderSafetyPayload = async (url: URL, config: RobotConfig) => {
         limit
     });
     const rows = trades.map(trade => trade.toJSON() as Record<string, unknown>);
-    const openStatuses = new Set(['LOCAL_PENDING_SUBMIT', 'LOCAL_SUBMIT_UNKNOWN', 'EXECUTION_REPORT_STATUS_NEW', 'EXECUTION_REPORT_STATUS_PARTIALLYFILL']);
     const finalFill = rows.filter(row => row.status === 'EXECUTION_REPORT_STATUS_FILL').length;
-    const rejected = rows.filter(row => (
-        row.status === 'EXECUTION_REPORT_STATUS_REJECTED'
-        || row.status === 'EXECUTION_REPORT_STATUS_CANCELLED'
-        || row.status === 'LOCAL_POST_REJECTED'
-        || row.status === 'LOCAL_VALIDATION_FAILED'
-    )).length;
+    const rejected = rows.filter(row => isRejectedOrderStatus(row.status ? String(row.status) : undefined)).length;
     const unknown = rows.filter(row => row.status === 'LOCAL_SUBMIT_UNKNOWN').length;
     const pending = rows.filter(row => row.status === 'LOCAL_PENDING_SUBMIT' || row.status === 'EXECUTION_REPORT_STATUS_NEW').length;
     const partial = rows.filter(row => row.status === 'EXECUTION_REPORT_STATUS_PARTIALLYFILL').length;
-    const openRows = rows.filter(row => openStatuses.has(String(row.status ?? '')));
+    const openRows = rows.filter(row => isOpenOrderStatus(row.status ? String(row.status) : undefined));
     const open = openRows.length;
     const market = rows.filter(row => row.orderType === 'ORDER_TYPE_MARKET').length;
     const limitOrders = rows.filter(row => row.orderType === 'ORDER_TYPE_LIMIT').length;
@@ -833,7 +828,7 @@ const getOrderSafetyPayload = async (url: URL, config: RobotConfig) => {
         const priceDriftPercent = orderPrice && lastPrice
             ? Math.abs(lastPrice - orderPrice) / orderPrice * 100
             : undefined;
-        const isOpen = openStatuses.has(String(row.status ?? ''));
+        const isOpen = isOpenOrderStatus(row.status ? String(row.status) : undefined);
         const isLimit = row.orderType === 'ORDER_TYPE_LIMIT';
         const staleByAge = isOpen && isLimit && config.staleLimitOrderMs > 0 && ageMs >= config.staleLimitOrderMs;
         const staleByPrice = isOpen

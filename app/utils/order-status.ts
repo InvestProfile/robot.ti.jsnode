@@ -20,6 +20,13 @@ const REJECTED_STATUSES = new Set([
     'LOCAL_VALIDATION_FAILED'
 ]);
 
+const OPEN_STATUSES = new Set([
+    'LOCAL_PENDING_SUBMIT',
+    'LOCAL_SUBMIT_UNKNOWN',
+    'EXECUTION_REPORT_STATUS_NEW',
+    'EXECUTION_REPORT_STATUS_PARTIALLYFILL'
+]);
+
 export const LOCAL_PENDING_ORDER_STATUS = 'LOCAL_PENDING_SUBMIT';
 export const LOCAL_UNKNOWN_ORDER_STATUS = 'LOCAL_SUBMIT_UNKNOWN';
 export const LOCAL_REJECTED_ORDER_STATUS = 'LOCAL_POST_REJECTED';
@@ -52,4 +59,14 @@ export const isFinalOrderStatus = (status: string | undefined | null) => {
 export const isRejectedOrderStatus = (status: string | undefined | null) => {
     if (!status) return false;
     return REJECTED_STATUSES.has(status);
+};
+
+export const isOpenOrderStatus = (status: string | undefined | null) => {
+    if (!status) return false;
+    return OPEN_STATUSES.has(status);
+};
+
+export const isIgnoredAccountingOrderStatus = (status: string | undefined | null) => {
+    if (!status) return false;
+    return OPEN_STATUSES.has(status) || REJECTED_STATUSES.has(status);
 };

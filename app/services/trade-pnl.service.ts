@@ -3,16 +3,10 @@ import { RobotConfig } from '../config/robot.config';
 import { TradeDecisionModel } from '../models/trade-decision.model';
 import { TradesModel } from '../models/trades.model';
 import TradesService from './trades.service';
+import { isIgnoredAccountingOrderStatus } from '../utils/order-status';
 
 const BUY_DIRECTION = '1';
 const SELL_DIRECTION = '2';
-const IGNORED_STATUSES = new Set([
-    'LOCAL_PENDING_SUBMIT',
-    'LOCAL_SUBMIT_UNKNOWN',
-    'EXECUTION_REPORT_STATUS_NEW',
-    'EXECUTION_REPORT_STATUS_REJECTED',
-    'EXECUTION_REPORT_STATUS_CANCELLED'
-]);
 
 interface OpenBuy {
     row: Record<string, unknown>;
@@ -61,7 +55,7 @@ const lotsFromTrade = (row: Record<string, unknown>) => {
     if (executed > 0) return executed;
 
     const status = row.status ? String(row.status) : undefined;
-    if (status && IGNORED_STATUSES.has(status)) return 0;
+    if (isIgnoredAccountingOrderStatus(status)) return 0;
 
     const requested = toNumber(row.lotsRequested);
     if (requested > 0) return requested;
@@ -374,7 +368,7 @@ export default class TradePnlService {
 
         for (const row of rows) {
             const status = row.status ? String(row.status) : undefined;
-            if (status && IGNORED_STATUSES.has(status)) {
+            if (isIgnoredAccountingOrderStatus(status)) {
                 ignoredTrades += 1;
                 continue;
             }

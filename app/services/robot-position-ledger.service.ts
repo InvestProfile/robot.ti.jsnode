@@ -5,13 +5,10 @@ import OperationsService from './operations.service';
 import InstrumentsService from './instruments.service';
 import { quotationToNumber } from '../utils/money';
 import TradesService from './trades.service';
+import { isRejectedOrderStatus } from '../utils/order-status';
 
 const BUY_DIRECTION = '1';
 const SELL_DIRECTION = '2';
-const BLOCKED_STATUSES = new Set([
-    'EXECUTION_REPORT_STATUS_REJECTED',
-    'EXECUTION_REPORT_STATUS_CANCELLED'
-]);
 
 const toNumber = (value: unknown) => {
     const number = Number(value ?? 0);
@@ -92,7 +89,7 @@ export default class RobotPositionLedgerService {
         for (const trade of trades) {
             const data = trade.get({ plain: true }) as Record<string, unknown>;
             const status = data.status ? String(data.status) : undefined;
-            if (status && BLOCKED_STATUSES.has(status)) continue;
+            if (isRejectedOrderStatus(status)) continue;
 
             const accountId = String(data.accountId || '');
             const instrumentKey = getInstrumentKey(data);
