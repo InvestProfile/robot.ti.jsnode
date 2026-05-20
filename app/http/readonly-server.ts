@@ -41,6 +41,7 @@ import RobotPositionLedgerService from '../services/robot-position-ledger.servic
 import MarketRegimeLabService from '../services/market-regime-lab.service';
 import DailyBuyListService from '../services/daily-buy-list.service';
 import TradePnlService from '../services/trade-pnl.service';
+import TradeBudgetService from '../services/trade-budget.service';
 import ProfileManagementService from '../services/profile-management.service';
 import MarketDataService from '../services/marketData.service';
 import { isOpenOrderStatus, isRejectedOrderStatus } from '../utils/order-status';
@@ -1051,11 +1052,6 @@ const getLimitsPayload = async (config: RobotConfig) => {
         ]);
         const totalRub = quotationToNumber(portfolio?.totalAmountPortfolio);
         const cashRub = quotationToNumber(portfolio?.totalAmountCurrencies);
-        const dailyExposureRub = Math.min(config.maxDailyRub, config.maxDailyOrders * config.maxOrderRub);
-        const stopLossRiskRub = dailyExposureRub * Math.max(0, config.stopLossPercent) / 100;
-        const baseTrailingGivebackRub = dailyExposureRub * Math.max(0, config.trailingStopPercent) / 100;
-        const percentOfPortfolio = (value: number | undefined) =>
-            totalRub && totalRub > 0 && value !== undefined ? value / totalRub * 100 : undefined;
 
         limits.push({
             accountId,
@@ -1069,23 +1065,7 @@ const getLimitsPayload = async (config: RobotConfig) => {
             rubLeft: Math.max(0, config.maxDailyRub - rubUsed),
             cashRub,
             totalRub,
-            budget: {
-                maxOrderRub: config.maxOrderRub,
-                dailyExposureRub,
-                stopLossPercent: config.stopLossPercent,
-                stopLossRiskRub,
-                baseTrailingGivebackRub,
-                maxOrderPortfolioPercent: percentOfPortfolio(config.maxOrderRub),
-                maxPositionSharePercent: config.maxPositionSharePercent,
-                maxPositionRub: totalRub && totalRub > 0
-                    ? totalRub * Math.max(0, config.maxPositionSharePercent) / 100
-                    : undefined,
-                minDiversificationPositions: config.minDiversificationPositions,
-                diversificationFirst: config.diversificationFirst,
-                dailyExposurePortfolioPercent: percentOfPortfolio(dailyExposureRub),
-                stopLossRiskPortfolioPercent: percentOfPortfolio(stopLossRiskRub),
-                cashUsagePercent: cashRub && cashRub > 0 ? dailyExposureRub / cashRub * 100 : undefined
-            }
+            budget: TradeBudgetService.buildAccountBudget(config, { totalRub, cashRub })
         });
     }
 

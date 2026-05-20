@@ -1,0 +1,59 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import TradeBudgetService from './trade-budget.service';
+import { RobotConfig } from '../config/robot.config';
+
+const baseConfig = {
+    maxOrderRub: 5_000,
+    maxDailyOrders: 30,
+    maxDailyRub: 50_000,
+    maxPositionSharePercent: 20,
+    minDiversificationPositions: 5,
+    diversificationFirst: true,
+    stopLossPercent: 3,
+    trailingStopPercent: 2
+} as RobotConfig;
+
+describe('TradeBudgetService', () => {
+    it('blocks buy when daily RUB budget would be exceeded', () => {
+        const result = TradeBudgetService.evaluateBuy({
+            availableCashRub: 100_000,
+            dailyOrdersCount: 2,
+            dailyOrdersRub: 49_000,
+            estimatedOrderRub: 2_000
+        }, baseConfig);
+
+        assert.equal(result.allowed, false);
+        assert.equal(result.reason, 'daily RUB limit reached');
+    });
+
+    it('blocks buy when projected ticker position exceeds portfolio share limit', () => {
+        const result = TradeBudgetService.evaluateBuy({
+            availableCashRub: 100_000,
+            dailyOrdersCount: 2,
+            dailyOrdersRub: 10_000,
+            estimatedOrderRub: 5_000,
+            portfolioValueRub: 20_000,
+            positionValueRub: 0
+        }, baseConfig);
+
+        assert.equal(result.allowed, false);
+        assert.match(result.reason, /position concentration limit/);
+        assert.equal(result.maxPositionRub, 4_000);
+        assert.equal(result.projectedPositionSharePercent, 25);
+    });
+
+    it('builds one account budget payload from the same risk inputs', () => {
+        const budget = TradeBudgetService.buildAccountBudget(baseConfig, {
+            totalRub: 20_000,
+            cashRub: 10_000
+        });
+
+        assert.equal(budget.dailyExposureRub, 50_000);
+        assert.equal(budget.stopLossRiskRub, 1_500);
+        assert.equal(budget.baseTrailingGivebackRub, 1_000);
+        assert.equal(budget.maxPositionRub, 4_000);
+        assert.equal(budget.dailyExposurePortfolioPercent, 250);
+        assert.equal(budget.cashUsagePercent, 500);
+    });
+});
