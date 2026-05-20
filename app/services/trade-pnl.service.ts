@@ -4,6 +4,8 @@ import { TradeDecisionModel } from '../models/trade-decision.model';
 import { TradesModel } from '../models/trades.model';
 import TradesService from './trades.service';
 import { isIgnoredAccountingOrderStatus } from '../utils/order-status';
+import OperationsService from './operations.service';
+import { quotationToNumber } from '../utils/money';
 
 const BUY_DIRECTION = '1';
 const SELL_DIRECTION = '2';
@@ -12,6 +14,7 @@ interface OpenBuy {
     row: Record<string, unknown>;
     remainingLots: number;
     unitAmount: number;
+    unitCommission: number;
 }
 
 interface OpenLot {
@@ -22,6 +25,7 @@ interface OpenLot {
     lots: number;
     entryAt: string;
     entryAmount: number;
+    entryCommissionRub: number;
     entryPrice: number;
     entrySignalSource?: unknown;
     entryDecisionReason?: unknown;
@@ -225,6 +229,83 @@ const decisionTimeWindow = (rows: Record<string, unknown>[]) => {
     };
 };
 
+const commissionTimeWindow = (rows: Record<string, unknown>[]) => {
+    const timestamps = rows
+        .map(tradeTimestamp)
+        .filter(timestamp => Number.isFinite(timestamp) && timestamp > 0);
+
+    if (timestamps.length === 0) return undefined;
+
+    return {
+        from: new Date(Math.min(...timestamps) - 24 * 60 * 60 * 1000),
+        to: new Date(Math.max(...timestamps) + 24 * 60 * 60 * 1000)
+    };
+};
+
+const moneyValueToRub = (value: unknown) => {
+    const amount = quotationToNumber(value as { units?: number; nano?: number } | undefined);
+    return amount !== undefined && Number.isFinite(amount) ? Math.abs(amount) : 0;
+};
+
+const getOrderKeys = (row: Record<string, unknown>) => [
+    row.orderId,
+    row.clientOrderId
+]
+    .map(value => value === undefined || value === null ? '' : String(value))
+    .filter(Boolean);
+
+const buildCommissionByOrderId = async (
+    accountIds: string[],
+    rows: Record<string, unknown>[]
+) => {
+    const accountingRows = rows.filter(row => !isIgnoredAccountingOrderStatus(row.status ? String(row.status) : undefined));
+    const rowsWithOrderKeys = accountingRows.filter(row => getOrderKeys(row).length > 0);
+    const reportAccountIds = [...new Set(rowsWithOrderKeys
+        .map(row => row.accountId ? String(row.accountId) : '')
+        .filter(accountId => accountId && accountIds.includes(accountId)))];
+    const window = commissionTimeWindow(rowsWithOrderKeys);
+    const commissionByOrderId = new Map<string, number>();
+    if (!window || reportAccountIds.length === 0) return commissionByOrderId;
+
+    await Promise.all(reportAccountIds.map(async accountId => {
+        try {
+            const reportRows = await OperationsService.getBrokerReportRows(accountId, window.from, window.to);
+
+            for (const reportRow of reportRows) {
+                const data = reportRow as Record<string, unknown>;
+                const orderId = data.orderId ? String(data.orderId) : undefined;
+                if (!orderId) continue;
+
+                const commissionRub = moneyValueToRub(data.brokerCommission)
+                    + moneyValueToRub(data.exchangeCommission)
+                    + moneyValueToRub(data.exchangeClearingCommission);
+                if (commissionRub <= 0) continue;
+
+                commissionByOrderId.set(orderId, (commissionByOrderId.get(orderId) ?? 0) + commissionRub);
+            }
+        } catch (error) {
+            console.warn('Trade P/L commission fetch failed:', {
+                accountId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
+    }));
+
+    return commissionByOrderId;
+};
+
+const commissionForTrade = (
+    row: Record<string, unknown>,
+    commissionByOrderId: Map<string, number>
+) => {
+    for (const key of getOrderKeys(row)) {
+        const commission = commissionByOrderId.get(key);
+        if (commission !== undefined) return commission;
+    }
+
+    return 0;
+};
+
 const summarize = <T extends Record<string, unknown>>(rows: T[], key: (row: T) => string) => {
     const groups = new Map<string, {
         key: string;
@@ -265,7 +346,7 @@ const summarize = <T extends Record<string, unknown>>(rows: T[], key: (row: T) =
 };
 
 const diagnoseRoundTrip = (row: Record<string, unknown>) => {
-    const pnlRub = Number(row.pnlRub);
+    const pnlRub = Number(row.netPnlRub ?? row.pnlRub);
     const entrySignal = sourceLabel(row.entrySignalSource);
     const exitSignal = sourceLabel(row.exitSignalSource);
     const entryScore = parseScore(row.entryDecisionReason);
@@ -274,20 +355,24 @@ const diagnoseRoundTrip = (row: Record<string, unknown>) => {
     const diagnoses = [];
 
     if (Number.isFinite(pnlRub)) {
-        diagnoses.push(pnlRub >= 0 ? 'gross-profit' : 'gross-loss');
+        diagnoses.push(pnlRub >= 0 ? 'net-profit' : 'net-loss');
     }
 
     if (entrySignal === 'unknown') diagnoses.push('missing-entry-signal');
     if (exitSignal === 'unknown') diagnoses.push('missing-exit-signal');
     if (kind !== 'unknown') diagnoses.push(`exit:${kind}`);
-    diagnoses.push('execution:gross-only');
+    diagnoses.push(Number(row.commissionRub ?? 0) > 0 ? 'execution:net' : 'execution:gross-only');
 
     return {
         id: row.id,
         ticker: row.ticker,
         name: row.name,
         pnlRub: row.pnlRub,
+        grossPnlRub: row.grossPnlRub,
+        commissionRub: row.commissionRub,
+        netPnlRub: row.netPnlRub,
         pnlPercent: row.pnlPercent,
+        netPnlPercent: row.netPnlPercent,
         entrySignalSource: row.entrySignalSource,
         exitSignalSource: row.exitSignalSource,
         entryScore,
@@ -296,8 +381,10 @@ const diagnoseRoundTrip = (row: Record<string, unknown>) => {
         entryAt: row.entryAt,
         exitAt: row.exitAt,
         diagnoses,
-        executionAccounting: 'gross-only',
-        note: 'No separate commission/slippage fields are available in this report yet.'
+        executionAccounting: Number(row.commissionRub ?? 0) > 0 ? 'net' : 'gross',
+        note: Number(row.commissionRub ?? 0) > 0
+            ? 'Net P/L subtracts broker, exchange, and clearing commissions matched by broker report orderId.'
+            : 'No matched commission was found for this round-trip.'
     };
 };
 
@@ -319,6 +406,7 @@ const flattenOpenLots = (openBuys: Map<string, OpenBuy[]>, config: RobotConfig):
     .map(buy => {
         const accountId = String(buy.row.accountId || '');
         const entryAmount = buy.unitAmount * buy.remainingLots;
+        const entryCommissionRub = buy.unitCommission * buy.remainingLots;
 
         return {
             accountId,
@@ -328,6 +416,7 @@ const flattenOpenLots = (openBuys: Map<string, OpenBuy[]>, config: RobotConfig):
             lots: buy.remainingLots,
             entryAt: tradeTime(buy.row),
             entryAmount,
+            entryCommissionRub,
             entryPrice: buy.unitAmount,
             entrySignalSource: buy.row.signalSource,
             entryDecisionReason: buy.row.decisionReason,
@@ -362,6 +451,7 @@ export default class TradePnlService {
             limit: 20_000
         });
         const decisionIndex = buildDecisionIndex(decisions.map(decision => decision.get({ plain: true }) as Record<string, unknown>));
+        const commissionByOrderId = await buildCommissionByOrderId(config.accountIds, rows);
         const openBuys = new Map<string, OpenBuy[]>();
         const roundTrips = [];
         let ignoredTrades = 0;
@@ -376,6 +466,7 @@ export default class TradePnlService {
             const direction = directionFromTrade(row);
             const lots = lotsFromTrade(row);
             const amount = tradeAmount(row, lots);
+            const tradeCommissionRub = commissionForTrade(row, commissionByOrderId);
             const key = queueKeyFromTrade(row);
 
             if (!key || lots <= 0 || amount === undefined || amount <= 0) {
@@ -395,7 +486,8 @@ export default class TradePnlService {
                         decisionAt: entryDecision?.createdAt
                     },
                     remainingLots: lots,
-                    unitAmount: amount / lots
+                    unitAmount: amount / lots,
+                    unitCommission: tradeCommissionRub / lots
                 });
                 openBuys.set(key, queue);
                 continue;
@@ -409,6 +501,7 @@ export default class TradePnlService {
             let remainingSellLots = lots;
             let matchedLots = 0;
             let entryAmount = 0;
+            let entryCommissionRub = 0;
             const entries: Record<string, unknown>[] = [];
             const queue = openBuys.get(key) ?? [];
 
@@ -417,6 +510,7 @@ export default class TradePnlService {
                 const matched = Math.min(remainingSellLots, buy.remainingLots);
                 matchedLots += matched;
                 entryAmount += buy.unitAmount * matched;
+                entryCommissionRub += buy.unitCommission * matched;
                 entries.push(buy.row);
                 buy.remainingLots -= matched;
                 remainingSellLots -= matched;
@@ -443,6 +537,9 @@ export default class TradePnlService {
                     exitPrice,
                     entryAmount: undefined,
                     exitAmount: amount,
+                    grossPnlRub: undefined,
+                    commissionRub: tradeCommissionRub,
+                    netPnlRub: undefined,
                     pnlRub: undefined,
                     pnlPercent: undefined,
                     status: 'unmatched',
@@ -458,8 +555,12 @@ export default class TradePnlService {
             }
 
             const matchedExitAmount = amount * (matchedLots / lots);
-            const pnlRub = matchedExitAmount - entryAmount;
-            const pnlPercent = entryAmount > 0 ? pnlRub / entryAmount * 100 : undefined;
+            const grossPnlRub = matchedExitAmount - entryAmount;
+            const exitCommissionRub = tradeCommissionRub * (matchedLots / lots);
+            const commissionRub = entryCommissionRub + exitCommissionRub;
+            const netPnlRub = grossPnlRub - commissionRub;
+            const pnlPercent = entryAmount > 0 ? grossPnlRub / entryAmount * 100 : undefined;
+            const netPnlPercent = entryAmount > 0 ? netPnlRub / entryAmount * 100 : undefined;
 
             roundTrips.push({
                 id: `round-${row.id}`,
@@ -476,8 +577,12 @@ export default class TradePnlService {
                 exitPrice: matchedExitAmount / matchedLots,
                 entryAmount,
                 exitAmount: matchedExitAmount,
-                pnlRub,
+                grossPnlRub,
+                commissionRub,
+                netPnlRub,
+                pnlRub: grossPnlRub,
                 pnlPercent,
+                netPnlPercent,
                 status: remainingSellLots > 0 ? 'partial' : 'closed',
                 reason: entries.length > 1 ? `Matched ${entries.length} buy trades by FIFO.` : 'Matched buy -> sell by FIFO.',
                 entrySignalSource: entries[0]?.signalSource,
@@ -494,9 +599,11 @@ export default class TradePnlService {
         const openLots = flattenOpenLots(openBuys, config);
         const closedRoundTrips = roundTrips.filter(row => Number.isFinite(Number(row.pnlRub)));
         const unmatchedSells = roundTrips.filter(row => row.status === 'unmatched');
-        const realizedPnlRub = closedRoundTrips.reduce((sum, row) => sum + Number(row.pnlRub), 0);
-        const wins = closedRoundTrips.filter(row => Number(row.pnlRub) > 0).length;
-        const losses = closedRoundTrips.filter(row => Number(row.pnlRub) < 0).length;
+        const realizedGrossPnlRub = closedRoundTrips.reduce((sum, row) => sum + Number(row.grossPnlRub ?? row.pnlRub), 0);
+        const commissionRub = closedRoundTrips.reduce((sum, row) => sum + Number(row.commissionRub ?? 0), 0);
+        const realizedNetPnlRub = closedRoundTrips.reduce((sum, row) => sum + Number(row.netPnlRub ?? row.pnlRub), 0);
+        const wins = closedRoundTrips.filter(row => Number(row.netPnlRub ?? row.pnlRub) > 0).length;
+        const losses = closedRoundTrips.filter(row => Number(row.netPnlRub ?? row.pnlRub) < 0).length;
         const diagnostics = closedRoundTrips.map(diagnoseRoundTrip);
         const matchingQuality = roundTrips.length > 0
             ? closedRoundTrips.length / roundTrips.length * 100
@@ -512,12 +619,17 @@ export default class TradePnlService {
                 openLots: openLots.reduce((sum, row) => sum + row.lots, 0),
                 openPositions: new Set(openLots.map(row => `${row.accountId}:${row.ticker}`)).size,
                 matchingQuality,
-                realizedPnlRub,
+                realizedPnlRub: realizedGrossPnlRub,
+                realizedGrossPnlRub,
+                commissionRub,
+                realizedNetPnlRub,
                 wins,
                 losses,
                 winRate: closedRoundTrips.length > 0 ? wins / closedRoundTrips.length * 100 : undefined,
-                averagePnlRub: closedRoundTrips.length > 0 ? realizedPnlRub / closedRoundTrips.length : undefined,
-                accounting: 'gross',
+                averagePnlRub: closedRoundTrips.length > 0 ? realizedNetPnlRub / closedRoundTrips.length : undefined,
+                averageGrossPnlRub: closedRoundTrips.length > 0 ? realizedGrossPnlRub / closedRoundTrips.length : undefined,
+                averageNetPnlRub: closedRoundTrips.length > 0 ? realizedNetPnlRub / closedRoundTrips.length : undefined,
+                accounting: commissionByOrderId.size > 0 ? 'net' : 'gross',
                 note: unmatchedSells.length > 0
                     ? 'Unmatched sells usually mean the matching window did not include the original buy, or the sell came from a non-robot/manual position.'
                     : undefined

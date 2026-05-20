@@ -1940,7 +1940,11 @@ const buildTradeRows = (data) => {
       signalSource: matchedSignal || decision?.signalSource,
       roundTripLeg: roundTripMatch?.leg,
       roundTripPnlRub: roundTrip?.pnlRub,
+      roundTripGrossPnlRub: roundTrip?.grossPnlRub,
+      roundTripCommissionRub: roundTrip?.commissionRub,
+      roundTripNetPnlRub: roundTrip?.netPnlRub,
       roundTripPnlPercent: roundTrip?.pnlPercent,
+      roundTripNetPnlPercent: roundTrip?.netPnlPercent,
       roundTripStatus: roundTrip?.status,
       tradePrice: moneyParts(trade.executedPriceUnits ?? trade.price_units, trade.executedPriceNano ?? trade.price_nano),
       tradeAmount: moneyParts(trade.totalAmountUnits, trade.totalAmountNano),
@@ -2219,10 +2223,15 @@ function Trades({ data, loadingKeys, onCancelStaleLimits }) {
     return true;
   }), filters.sort);
   const allRoundTripsVisible = !filters.ticker && filters.side !== 'buy' && filters.pnl === 'all';
-  const realizedPnlRub = allRoundTripsVisible && Number.isFinite(Number(tradePnlSummary.realizedPnlRub))
-    ? Number(tradePnlSummary.realizedPnlRub)
-    : filteredRoundTrips.reduce((sum, row) => Number.isFinite(Number(row.pnlRub)) ? sum + Number(row.pnlRub) : sum, 0);
-  const closedRoundTrips = filteredRoundTrips.filter((row) => Number.isFinite(Number(row.pnlRub))).length;
+  const realizedGrossPnlRub = allRoundTripsVisible && Number.isFinite(Number(tradePnlSummary.realizedGrossPnlRub ?? tradePnlSummary.realizedPnlRub))
+    ? Number(tradePnlSummary.realizedGrossPnlRub ?? tradePnlSummary.realizedPnlRub)
+    : filteredRoundTrips.reduce((sum, row) => Number.isFinite(Number(row.grossPnlRub ?? row.pnlRub)) ? sum + Number(row.grossPnlRub ?? row.pnlRub) : sum, 0);
+  const realizedNetPnlRub = allRoundTripsVisible && Number.isFinite(Number(tradePnlSummary.realizedNetPnlRub ?? tradePnlSummary.realizedPnlRub))
+    ? Number(tradePnlSummary.realizedNetPnlRub ?? tradePnlSummary.realizedPnlRub)
+    : filteredRoundTrips.reduce((sum, row) => Number.isFinite(Number(row.netPnlRub ?? row.pnlRub)) ? sum + Number(row.netPnlRub ?? row.pnlRub) : sum, 0);
+  const commissionRub = allRoundTripsVisible && Number.isFinite(Number(tradePnlSummary.commissionRub))
+    ? Number(tradePnlSummary.commissionRub)
+    : filteredRoundTrips.reduce((sum, row) => Number.isFinite(Number(row.commissionRub)) ? sum + Number(row.commissionRub) : sum, 0);
   const filteredRows = sortTrades(rows.filter((row) => {
     const pnl = Number(row.roundTripPnlRub);
     if (filters.side !== 'all' && row.side !== filters.side) return false;
@@ -2249,7 +2258,7 @@ function Trades({ data, loadingKeys, onCancelStaleLimits }) {
             { label: 'Buy / Sell', value: `${buyCount} / ${sellCount}`, tone: sellCount ? 'warn' : 'good', detail: 'стороны сделок' },
             { label: 'Ledger', value: `${ledgerCount} / ${rows.length}`, tone: brokerOnly ? 'warn' : 'good', detail: brokerOnly ? `${brokerOnly} только broker` : 'нет broker-only' },
             { label: 'Фильтр', value: filteredRows.length, detail: 'строк сейчас видно' },
-            { label: 'Round-trip P/L', value: `${money(realizedPnlRub)} RUB`, tone: realizedPnlRub >= 0 ? 'good' : 'bad', detail: `${closedRoundTrips} закрытых пар, ${tradePnlSummary.accounting || 'gross'}` },
+            { label: 'Round-trip P/L', value: `${money(realizedNetPnlRub)} RUB`, tone: realizedNetPnlRub >= 0 ? 'good' : 'bad', detail: `gross ${money(realizedGrossPnlRub)}, fees ${money(commissionRub)}` },
             { label: 'Matching', value: percent(tradePnlSummary.matchingQuality), tone: tradePnlSummary.unmatchedSells ? 'warn' : 'good', detail: `${tradePnlSummary.unmatchedSells || 0} sell без пары` },
             { label: 'Open robot lots', value: money(tradePnlSummary.openLots || 0), detail: `${tradePnlSummary.openPositions || 0} позиций` }
           ]}
@@ -2262,7 +2271,7 @@ function Trades({ data, loadingKeys, onCancelStaleLimits }) {
 
       <ExecutionOverview data={data} loading={loadingKeys.orderSafety} className="wide" />
 
-      <Card title="Round-trip P/L" icon={LineChart} className="wide" help="Закрытые пары buy -> sell по FIFO. Это не новая торговая логика, а backend-бухгалтерия поверх broker records: сколько робот заработал или потерял на завершенных входах. Сейчас это gross P/L без отдельного вычета комиссий, если комиссии не пришли отдельными записями.">
+      <Card title="Round-trip P/L" icon={LineChart} className="wide" help="Закрытые пары buy -> sell по FIFO. Net P/L вычитает комиссии брокера, биржи и клиринга, если они найдены в broker report по orderId.">
         <Table
           columns={[
             { key: 'entryAt', label: 'Вход', width: '150px', render: (row) => time(row.entryAt) },
@@ -2274,8 +2283,10 @@ function Trades({ data, loadingKeys, onCancelStaleLimits }) {
             { key: 'lots', label: 'Лоты', width: '70px', className: 'right', render: (row) => money(row.lots) },
             { key: 'entryPrice', label: 'Вход', width: '90px', className: 'right', render: (row) => money(row.entryPrice) },
             { key: 'exitPrice', label: 'Выход', width: '90px', className: 'right', render: (row) => money(row.exitPrice) },
-            { key: 'pnlRub', label: 'P/L RUB', width: '105px', className: 'right', render: (row) => <span className={Number(row.pnlRub) >= 0 ? 'good' : 'bad'}>{money(row.pnlRub)}</span> },
-            { key: 'pnlPercent', label: 'P/L %', width: '90px', className: 'right', render: (row) => percent(row.pnlPercent) },
+            { key: 'grossPnlRub', label: 'Gross', width: '95px', className: 'right', render: (row) => <span className={Number(row.grossPnlRub ?? row.pnlRub) >= 0 ? 'good' : 'bad'}>{money(row.grossPnlRub ?? row.pnlRub)}</span> },
+            { key: 'commissionRub', label: 'Fees', width: '80px', className: 'right', render: (row) => money(row.commissionRub) },
+            { key: 'netPnlRub', label: 'Net', width: '95px', className: 'right', render: (row) => <span className={Number(row.netPnlRub ?? row.pnlRub) >= 0 ? 'good' : 'bad'}>{money(row.netPnlRub ?? row.pnlRub)}</span> },
+            { key: 'netPnlPercent', label: 'Net %', width: '90px', className: 'right', render: (row) => percent(row.netPnlPercent ?? row.pnlPercent) },
             { key: 'entryDecisionReason', label: 'Причина входа', className: 'reason', render: (row) => <Reason>{row.entryDecisionReason || EMPTY}</Reason> },
             { key: 'exitDecisionReason', label: 'Причина выхода', className: 'reason', render: (row) => <Reason>{row.exitDecisionReason || row.reason}</Reason> }
           ]}

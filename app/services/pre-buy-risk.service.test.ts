@@ -29,13 +29,29 @@ afterEach(() => {
 
 describe('PreBuyRiskService', () => {
     it('blocks same-day re-entry after posted stop-loss for the same ticker', async () => {
-        (TradeDecisionModel.count as unknown) = async () => 1;
+        (TradeDecisionModel.count as unknown) = async (_options: unknown) => {
+            const where = (_options as { where?: Record<string, unknown> }).where ?? {};
+            return where.signalSource === 'stop-loss' ? 1 : 0;
+        };
 
         const result = await PreBuyRiskService.evaluate(baseInput, config);
 
         assert.strictEqual(result.passed, false);
         assert.ok(result.blockingReasons.some(reason => reason.includes('same-day re-entry blocked after stop-loss')));
         assert.ok(result.checks.some(check => check.key === 'same-day-stop-loss-reentry' && check.status === 'block'));
+    });
+
+    it('blocks same-day re-entry after rejected buy order for the same ticker', async () => {
+        (TradeDecisionModel.count as unknown) = async (_options: unknown) => {
+            const where = (_options as { where?: Record<string, unknown> }).where ?? {};
+            return where.status === 'order-rejected' ? 1 : 0;
+        };
+
+        const result = await PreBuyRiskService.evaluate(baseInput, config);
+
+        assert.strictEqual(result.passed, false);
+        assert.ok(result.blockingReasons.some(reason => reason.includes('same-day re-entry blocked after rejected buy order')));
+        assert.ok(result.checks.some(check => check.key === 'same-day-buy-rejected-reentry' && check.status === 'block'));
     });
 
     it('allows buy risk evaluation when no same-day stop-loss exists', async () => {

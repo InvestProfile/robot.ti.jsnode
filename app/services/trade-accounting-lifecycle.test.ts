@@ -1,4 +1,4 @@
-import { afterEach, describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert';
 import { TradesModel } from '../models/trades.model';
 import { TradeDecisionModel } from '../models/trade-decision.model';
@@ -15,6 +15,7 @@ const originalTradesFindAll = TradesModel.findAll;
 const originalDecisionFindAll = TradeDecisionModel.findAll;
 const originalGetShares = InstrumentsService.getShares;
 const originalGetPortfolio = OperationsService.getPortfolio;
+const originalGetBrokerReportRows = OperationsService.getBrokerReportRows;
 
 const config = {
     accountIds: ['acc-1'],
@@ -30,11 +31,16 @@ const setTrades = (rows: PlainTrade[]) => {
     (TradesModel.findAll as unknown) = async () => rows.map(asModel);
 };
 
+beforeEach(() => {
+    (OperationsService.getBrokerReportRows as unknown) = async () => [];
+});
+
 afterEach(() => {
     (TradesModel.findAll as unknown) = originalTradesFindAll;
     (TradeDecisionModel.findAll as unknown) = originalDecisionFindAll;
     (InstrumentsService.getShares as unknown) = originalGetShares;
     (OperationsService.getPortfolio as unknown) = originalGetPortfolio;
+    (OperationsService.getBrokerReportRows as unknown) = originalGetBrokerReportRows;
 });
 
 describe('trade accounting lifecycle safety', () => {
@@ -133,6 +139,60 @@ describe('trade accounting lifecycle safety', () => {
         assert.strictEqual(pnl.summary.ignoredTrades, 2);
         assert.strictEqual(pnl.summary.realizedPnlRub, 20);
         assert.deepStrictEqual(pnl.openLots, []);
+    });
+
+    it('subtracts broker report commissions from round-trip net P/L', async () => {
+        setTrades([
+            {
+                id: 2,
+                accountId: 'acc-1',
+                ticker: 'GOOD',
+                direction: '2',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                orderId: 'sell-order',
+                lotsExecuted: 1,
+                executedPriceUnits: 120,
+                totalAmountUnits: 120,
+                tradeDateTime: '2026-05-20T10:00:00.000Z'
+            },
+            {
+                id: 1,
+                accountId: 'acc-1',
+                ticker: 'GOOD',
+                direction: '1',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                orderId: 'buy-order',
+                lotsExecuted: 1,
+                executedPriceUnits: 100,
+                totalAmountUnits: 100,
+                tradeDateTime: '2026-05-20T09:00:00.000Z'
+            }
+        ]);
+        (TradeDecisionModel.findAll as unknown) = async () => [];
+        (OperationsService.getBrokerReportRows as unknown) = async () => [
+            {
+                orderId: 'buy-order',
+                brokerCommission: { units: -1, nano: 0 },
+                exchangeCommission: { units: 0, nano: -250000000 },
+                exchangeClearingCommission: { units: 0, nano: 0 }
+            },
+            {
+                orderId: 'sell-order',
+                brokerCommission: { units: -2, nano: 0 },
+                exchangeCommission: { units: 0, nano: 0 },
+                exchangeClearingCommission: { units: 0, nano: -500000000 }
+            }
+        ];
+
+        const pnl = await TradePnlService.getRoundTripPnl(config, 50);
+
+        assert.strictEqual(pnl.summary.realizedGrossPnlRub, 20);
+        assert.strictEqual(pnl.summary.commissionRub, 3.75);
+        assert.strictEqual(pnl.summary.realizedNetPnlRub, 16.25);
+        assert.strictEqual(pnl.summary.accounting, 'net');
+        assert.strictEqual(pnl.closedRoundTrips[0].grossPnlRub, 20);
+        assert.strictEqual(pnl.closedRoundTrips[0].commissionRub, 3.75);
+        assert.strictEqual(pnl.closedRoundTrips[0].netPnlRub, 16.25);
     });
 
     it('keeps rejected and unknown orders out of robot ledger positions and events', async () => {

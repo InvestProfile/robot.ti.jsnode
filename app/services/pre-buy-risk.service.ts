@@ -61,6 +61,8 @@ const getAvgDailyTurnoverRub = (candles: DailyCandle[] | undefined, lot: number)
     return average(values);
 };
 
+const BUY_SIGNAL_SOURCES = ['score-buy', 'watchlist-buy', 'trend-follow-buy'];
+
 export default class PreBuyRiskService {
     private static getStartOfToday() {
         const startOfDay = new Date();
@@ -78,6 +80,25 @@ export default class PreBuyRiskService {
                 ticker: normalizedTicker,
                 signalSource: 'stop-loss',
                 status: 'order-posted',
+                createdAt: {
+                    [Op.gte]: this.getStartOfToday()
+                }
+            } as any
+        });
+
+        return count > 0;
+    }
+
+    static async hasRejectedBuyToday(accountId: string, ticker?: string) {
+        const normalizedTicker = ticker?.trim().toUpperCase();
+        if (!accountId || !normalizedTicker) return false;
+
+        const count = await TradeDecisionModel.count({
+            where: {
+                accountId,
+                ticker: normalizedTicker,
+                signalSource: { [Op.in]: BUY_SIGNAL_SOURCES },
+                status: 'order-rejected',
                 createdAt: {
                     [Op.gte]: this.getStartOfToday()
                 }
@@ -113,6 +134,15 @@ export default class PreBuyRiskService {
                 key: 'same-day-stop-loss-reentry',
                 status: 'block',
                 reason: `same-day re-entry blocked after stop-loss for ${input.ticker}`,
+                enforced: true
+            });
+        }
+
+        if (await this.hasRejectedBuyToday(input.accountId, input.ticker)) {
+            addCheck({
+                key: 'same-day-buy-rejected-reentry',
+                status: 'block',
+                reason: `same-day re-entry blocked after rejected buy order for ${input.ticker}`,
                 enforced: true
             });
         }
