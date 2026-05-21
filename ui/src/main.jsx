@@ -459,6 +459,52 @@ const getTradeLimit = (data) => {
   return limits.find((limit) => limit.mode === 'trade') || limits[0];
 };
 
+const getBuyReadiness = ({ tradeLimit, previews, dailyItems }) => {
+  const cashRub = Number(tradeLimit?.cashRub ?? 0);
+  const allowedCount = previews.filter((row) => row.status === 'allowed').length;
+  const candidatesByTicker = new Map();
+
+  [...previews, ...dailyItems].forEach((row) => {
+    const ticker = row.ticker;
+    const amount = Number(row.estimatedOrderRub ?? row.currentPrice ?? row.lastPrice);
+    if (!ticker || !Number.isFinite(amount) || amount <= 0) return;
+    const existing = candidatesByTicker.get(ticker);
+    if (!existing || amount < existing.amount) {
+      candidatesByTicker.set(ticker, { ticker, name: row.name, amount, reason: row.reason });
+    }
+  });
+
+  const candidates = Array.from(candidatesByTicker.values()).sort((a, b) => a.amount - b.amount);
+  const cheapest = candidates[0];
+  const missingRub = cheapest ? Math.max(0, cheapest.amount - cashRub) : undefined;
+  const cashBlocked = Boolean(cheapest && missingRub > 0);
+  const brokerBlocked = previews.some((row) => String(row.reason || '').includes('normal trading status'));
+  const limitBlocked = tradeLimit && (Number(tradeLimit.ordersLeft) <= 0 || Number(tradeLimit.rubLeft) <= 0);
+
+  let headline = 'Ждем подходящий сигнал';
+  let detail = 'Кандидаты есть, но пока ни один не прошел весь путь до заявки.';
+  let tone = 'warn';
+
+  if (allowedCount) {
+    headline = 'Есть кандидат к заявке';
+    detail = `${allowedCount} кандидатов прошли фильтры; робот отправит заявку, если live-режим и брокерский статус позволяют.`;
+    tone = 'good';
+  } else if (limitBlocked) {
+    headline = 'Уперлись в дневные лимиты';
+    detail = `${tradeLimit.ordersLeft} заявок и ${money(tradeLimit.rubLeft)} RUB осталось по дневному бюджету.`;
+    tone = 'bad';
+  } else if (cashBlocked) {
+    headline = 'Не хватает свободных рублей';
+    detail = `Ближайший минимальный лот: ${cheapest.ticker} примерно ${money(cheapest.amount)} RUB; на счете ${money(cashRub)} RUB, не хватает ${money(missingRub)} RUB.`;
+    tone = 'bad';
+  } else if (brokerBlocked) {
+    headline = 'Инструменты не торгуются сейчас';
+    detail = 'Брокерский статус по последним кандидатам не normal trading. Робот ждет открытую сессию или доступный инструмент.';
+  }
+
+  return { tone, headline, detail, cashRub, cheapest, missingRub, allowedCount, candidateCount: candidates.length };
+};
+
 const socialCollectorText = (social) => {
   if (!social) return 'loading';
   if (social.health?.pendingAuth > 0) return 'needs auth';
@@ -819,6 +865,7 @@ function Buy({ data, loadingKeys }) {
   const buyScan = data.buyScan?.items || [];
   const tradeLimit = getTradeLimit(data);
   const blockerSummary = summarizeBlockers(filteredBlocked) || summarizeBlockers(blockedPreviews) || buyRecommendations[0]?.reason || EMPTY;
+  const readiness = getBuyReadiness({ tradeLimit, previews, dailyItems });
 
   return (
     <div className="grid">
@@ -833,6 +880,25 @@ function Buy({ data, loadingKeys }) {
             { label: 'Исполнение', value: blockedPreviews.length ? 'BLOCKED' : allowedPreviews.length ? 'READY' : 'WAIT', tone: blockedPreviews.length ? 'bad' : allowedPreviews.length ? 'good' : 'warn', detail: blockerSummary }
           ]}
         />
+      </Card>
+
+      <Card title="Почему не покупаем сейчас" icon={ShieldCheck} className="wide" help="Короткая диагностика текущего buy-контура: хватает ли свободных рублей на минимальный лот, есть ли прошедшие кандидаты и какой стопор сейчас главный.">
+        <div className="stats compact">
+          <Stat label="Статус" value={readiness.headline} tone={readiness.tone} title={readiness.detail} />
+          <Stat label="Свободно" value={`${money(readiness.cashRub)} RUB`} title="Свободные рубли на торговом счете по данным брокера." />
+          <Stat label="Мин. лот рядом" value={readiness.cheapest ? `${readiness.cheapest.ticker} ${money(readiness.cheapest.amount)} RUB` : EMPTY} title="Самый дешевый минимальный лот среди текущих buy-кандидатов и дневного списка." />
+          <Stat label="Не хватает" value={readiness.missingRub === undefined ? EMPTY : `${money(readiness.missingRub)} RUB`} tone={readiness.missingRub > 0 ? 'bad' : 'good'} />
+        </div>
+        <div className="insight-strip">
+          <div>
+            <span>Главная причина</span>
+            <strong>{readiness.detail}</strong>
+          </div>
+          <div>
+            <span>Кандидаты</span>
+            <strong>{readiness.allowedCount} ready из {readiness.candidateCount || previews.length || dailyItems.length}</strong>
+          </div>
+        </div>
       </Card>
 
       <Card title="Боевой предпросмотр" icon={ShieldCheck} className="wide" help="Самый практический блок покупок: качество кандидата отдельно, решение исполнения отдельно. Высокий score не означает покупку, если рынок закрыт, лимит исчерпан или позиция стала бы слишком большой.">
