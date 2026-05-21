@@ -44,7 +44,8 @@ const endpoints = {
   robotPositions: '/api/robot-positions',
   trades: '/api/trades?limit=80',
   tradePnl: '/api/trade-pnl?limit=500',
-  orderSafety: '/api/order-safety?limit=80'
+  orderSafety: '/api/order-safety?limit=80',
+  protectiveStops: '/api/protective-stops'
 };
 
 const endpointGroups = {
@@ -56,8 +57,8 @@ const endpointGroups = {
   evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
   sell: ['sellBrain', 'positions', 'robotPositions'],
-  trades: ['trades', 'tradePnl', 'robotPositions', 'decisions', 'orderSafety'],
-  logs: ['decisions', 'trades', 'robotPositions', 'orderSafety']
+  trades: ['trades', 'tradePnl', 'robotPositions', 'decisions', 'orderSafety', 'protectiveStops'],
+  logs: ['decisions', 'trades', 'robotPositions', 'orderSafety', 'protectiveStops']
 };
 
 const tabs = [
@@ -2154,6 +2155,7 @@ function OrderSafety({ data, loading, onCancelStaleLimits }) {
 function ExecutionOverview({ data, loading, className, onOrderTypeChange }) {
   const config = data.status?.config || {};
   const summary = data.orderSafety?.summary || {};
+  const protectiveStops = data.protectiveStops?.summary || {};
   const orderType = config.orderType || EMPTY;
   const buyOrderType = config.buyOrderType || orderType;
   const sellOrderType = config.sellOrderType || orderType;
@@ -2172,6 +2174,7 @@ function ExecutionOverview({ data, loading, className, onOrderTypeChange }) {
           { label: 'Sell type', value: sellOrderType, tone: sellOrderType === 'market' ? 'good' : 'warn', detail: sellOrderType === 'market' ? 'аварийный выход исполняется быстрее' : 'limit sell может не исполниться' },
           { label: 'Open', value: summary.open ?? 0, tone: summary.open ? 'warn' : 'good', detail: openAge !== EMPTY ? `старейшая ${openAge}` : 'нет открытых' },
           { label: 'Pending limit', value: summary.pendingLimit ?? 0, tone: summary.pendingLimit ? 'warn' : 'good', detail: 'limit-заявки ждут исполнения' },
+          { label: 'Protective stops', value: protectiveStops.active ?? 0, tone: protectiveStops.errors ? 'bad' : protectiveStops.active ? 'good' : 'warn', detail: protectiveStops.enabled ? 'broker stop-loss active' : 'disabled' },
           { label: 'Stale limit', value: summary.staleLimit ?? 0, tone: summary.staleLimit ? 'bad' : 'good', detail: summary.stalePolicy ? `${duration(summary.stalePolicy.maxAgeMs)} / ${percent(summary.stalePolicy.maxPriceDriftPercent)}` : 'policy loading' },
           { label: 'Unknown', value: summary.unknown ?? 0, tone: summary.unknown ? 'bad' : 'good', detail: summary.unknown ? 'повторы заблокированы' : 'нет неизвестных' },
           { label: 'Market / Limit', value: `${summary.market || 0} / ${summary.limit || 0}`, detail: `${summary.checked || 0} последних заявок` },

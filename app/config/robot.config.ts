@@ -169,6 +169,7 @@ export interface RobotConfig {
     orderType: RobotOrderType;
     buyOrderType: RobotOrderType;
     sellOrderType: RobotOrderType;
+    protectiveStopsEnabled: boolean;
     staleLimitOrderMs: number;
     staleLimitPriceDriftPercent: number;
     tradingPaused: boolean;
@@ -278,6 +279,7 @@ export const getRobotConfig = (): RobotConfig => {
         orderType: parseOrderType(env.ROBOT_ORDER_TYPE),
         buyOrderType: parseOrderType(env.ROBOT_BUY_ORDER_TYPE ?? env.ROBOT_ORDER_TYPE),
         sellOrderType: parseOrderType(env.ROBOT_SELL_ORDER_TYPE ?? env.ROBOT_ORDER_TYPE),
+        protectiveStopsEnabled: parseBoolean(env.ROBOT_PROTECTIVE_STOPS_ENABLED, true),
         staleLimitOrderMs: Math.max(0, parseNumber(env.ROBOT_STALE_LIMIT_ORDER_MS, 5 * 60_000)),
         staleLimitPriceDriftPercent: Math.max(0, parseNumber(env.ROBOT_STALE_LIMIT_PRICE_DRIFT_PERCENT, 0.5)),
         tradingPaused: parseBoolean(env.ROBOT_TRADING_PAUSED, false),

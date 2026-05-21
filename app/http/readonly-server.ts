@@ -44,6 +44,7 @@ import TradePnlService from '../services/trade-pnl.service';
 import TradeBudgetService from '../services/trade-budget.service';
 import ProfileManagementService from '../services/profile-management.service';
 import MarketDataService from '../services/marketData.service';
+import ProtectiveStopService from '../services/protective-stop.service';
 import { isOpenOrderStatus, isRejectedOrderStatus } from '../utils/order-status';
 
 type AccountMode = 'trade' | 'observe';
@@ -661,6 +662,7 @@ const safeConfig = (config: RobotConfig) => ({
     orderType: config.orderType,
     buyOrderType: config.buyOrderType,
     sellOrderType: config.sellOrderType,
+    protectiveStopsEnabled: config.protectiveStopsEnabled,
     staleLimitOrderMs: config.staleLimitOrderMs,
     staleLimitPriceDriftPercent: config.staleLimitPriceDriftPercent,
     tradingPaused: config.tradingPaused,
@@ -929,6 +931,52 @@ const getOrderSafetyPayload = async (url: URL, config: RobotConfig) => {
             }
         },
         orders: enrichedRows
+    };
+};
+
+const getProtectiveStopsPayload = async (config: RobotConfig) => {
+    const stops = [];
+    const errors = [];
+
+    for (const account of getAllAccounts(config)) {
+        try {
+            const accountStops = await ProtectiveStopService.getActiveStops(account.accountId);
+            stops.push(...accountStops.map(stop => ({
+                accountId: account.accountId,
+                accountAlias: config.accountAliases[account.accountId],
+                accountMode: account.mode,
+                stopOrderId: stop.stopOrderId,
+                figi: stop.figi,
+                instrumentUid: stop.instrumentUid,
+                ticker: stop.ticker,
+                direction: stop.direction,
+                orderType: stop.orderType,
+                status: stop.status,
+                exchangeOrderType: stop.exchangeOrderType,
+                lotsRequested: stop.lotsRequested,
+                price: quotationToNumber(stop.price),
+                stopPrice: quotationToNumber(stop.stopPrice),
+                createDate: stop.createDate,
+                activationDateTime: stop.activationDateTime,
+                expirationTime: stop.expirationTime
+            })));
+        } catch (error) {
+            errors.push({
+                accountId: account.accountId,
+                accountAlias: config.accountAliases[account.accountId],
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
+    }
+
+    return {
+        summary: {
+            enabled: config.protectiveStopsEnabled,
+            active: stops.length,
+            errors: errors.length
+        },
+        stops,
+        errors
     };
 };
 
@@ -1606,6 +1654,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/order-safety') {
         json(res, 200, await getOrderSafetyPayload(url, config));
+        return;
+    }
+
+    if (url.pathname === '/api/protective-stops') {
+        json(res, 200, await getProtectiveStopsPayload(config));
         return;
     }
 

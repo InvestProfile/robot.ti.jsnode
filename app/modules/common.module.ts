@@ -15,6 +15,8 @@ import PaperTradingService from '../services/paper-trading.service';
 import RuntimeConfigService from '../services/runtime-config.service';
 import SellPolicyService from '../services/sell-policy.service';
 import PositionStateService from '../services/position-state.service';
+import ProtectiveStopService from '../services/protective-stop.service';
+import RobotPositionLedgerService from '../services/robot-position-ledger.service';
 import StrategyEngine from '../strategies/strategy-engine';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
 import { normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
@@ -140,6 +142,105 @@ const getSubmittedDecisionReason = (
     return baseReason;
 };
 
+const placeProtectiveStopForBuy = async (input: {
+    config: RobotConfig;
+    accountId: string;
+    figi: string;
+    instrumentUid: string;
+    ticker?: string;
+    name?: string;
+    quantityLots: number;
+    entryPrice: number;
+}) => {
+    if (!input.config.protectiveStopsEnabled) return;
+
+    try {
+        const result = await ProtectiveStopService.placeStopLoss({
+            accountId: input.accountId,
+            figi: input.figi,
+            instrumentUid: input.instrumentUid,
+            ticker: input.ticker,
+            quantityLots: input.quantityLots,
+            entryPrice: input.entryPrice,
+            stopLossPercent: input.config.stopLossPercent
+        });
+
+        console.log('Protective stop checked:', {
+            accountId: input.accountId,
+            ticker: input.ticker,
+            name: input.name,
+            result
+        });
+    } catch (error) {
+        console.error('Protective stop placement failed:', {
+            accountId: input.accountId,
+            ticker: input.ticker,
+            name: input.name,
+            error: getErrorMessage(error)
+        });
+    }
+};
+
+const cancelProtectiveStopsAfterSell = async (input: {
+    config: RobotConfig;
+    accountId: string;
+    instrumentUid: string;
+    ticker?: string;
+}) => {
+    if (!input.config.protectiveStopsEnabled) return;
+
+    try {
+        const result = await ProtectiveStopService.cancelActiveSellStopsForInstrument(
+            input.accountId,
+            input.instrumentUid
+        );
+
+        if (result.cancelled > 0 || result.failed > 0) {
+            console.log('Protective sell stops cancelled after robot sell:', {
+                accountId: input.accountId,
+                ticker: input.ticker,
+                result
+            });
+        }
+    } catch (error) {
+        console.error('Protective stop cancellation failed:', {
+            accountId: input.accountId,
+            ticker: input.ticker,
+            error: getErrorMessage(error)
+        });
+    }
+};
+
+const ensureProtectiveStopsForOpenRobotPositions = async (config: RobotConfig) => {
+    if (!config.protectiveStopsEnabled || config.dryRun || !config.liveAllowedActions.includes('sell')) return;
+
+    try {
+        const ledger = await RobotPositionLedgerService.getLedger(config);
+        const openItems = (ledger.items || []).filter(item =>
+            Number(item.lots ?? 0) > 0
+            && Number(item.averagePrice ?? 0) > 0
+            && item.accountId
+            && item.figi
+            && item.instrumentUid
+        );
+
+        for (const item of openItems) {
+            await placeProtectiveStopForBuy({
+                config,
+                accountId: String(item.accountId),
+                figi: String(item.figi),
+                instrumentUid: String(item.instrumentUid),
+                ticker: item.ticker ? String(item.ticker) : undefined,
+                name: item.name ? String(item.name) : undefined,
+                quantityLots: Number(item.lots),
+                entryPrice: Number(item.averagePrice)
+            });
+        }
+    } catch (error) {
+        console.error('Protective stop sync failed:', getErrorMessage(error));
+    }
+};
+
 const submitTrackedOrder = async (input: {
     config: RobotConfig;
     accountId: string;
@@ -209,15 +310,39 @@ const submitTrackedOrder = async (input: {
         });
 
         if (input.side === ORDER_SIDE.BUY && !isRejectedOrderStatus(metadata.status)) {
+            const executedLots = Number(metadata.lotsExecuted ?? 0);
+            const entryPrice = moneyPartsToNumber(metadata.executedPriceUnits, metadata.executedPriceNano)
+                ?? moneyPartsToNumber(input.price.units, input.price.nano);
+
             await PositionStateService.resetHighWaterMark({
                 accountId: input.accountId,
                 figi: input.figi,
                 instrumentUid: input.instrumentUid,
                 ticker: input.ticker,
                 name: input.name,
-                currentPrice: moneyPartsToNumber(metadata.executedPriceUnits, metadata.executedPriceNano)
-                    ?? moneyPartsToNumber(input.price.units, input.price.nano)
-                    ?? 0
+                currentPrice: entryPrice ?? 0
+            });
+
+            if (executedLots > 0 && entryPrice) {
+                await placeProtectiveStopForBuy({
+                    config: input.config,
+                    accountId: input.accountId,
+                    figi: input.figi,
+                    instrumentUid: input.instrumentUid,
+                    ticker: input.ticker,
+                    name: input.name,
+                    quantityLots: executedLots,
+                    entryPrice
+                });
+            }
+        }
+
+        if (input.side === ORDER_SIDE.SELL && !isRejectedOrderStatus(metadata.status)) {
+            await cancelProtectiveStopsAfterSell({
+                config: input.config,
+                accountId: input.accountId,
+                instrumentUid: input.instrumentUid,
+                ticker: input.ticker
             });
         }
 
@@ -752,6 +877,7 @@ const executeRobotTick = async (config: RobotConfig) => {
         const instruments = shares?.instruments ?? [];
 
         await OrderReconciliationService.reconcileOpenOrders();
+        await ensureProtectiveStopsForOpenRobotPositions(config);
 
         for (const accountId of config.observeAccountIds) {
             await executeTrades(accountId, config, instruments, 'observe');

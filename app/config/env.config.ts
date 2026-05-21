@@ -20,6 +20,7 @@ interface EnvConfig {
     ROBOT_ORDER_TYPE: string | undefined;
     ROBOT_BUY_ORDER_TYPE: string | undefined;
     ROBOT_SELL_ORDER_TYPE: string | undefined;
+    ROBOT_PROTECTIVE_STOPS_ENABLED: string | undefined;
     ROBOT_STALE_LIMIT_ORDER_MS: string | undefined;
     ROBOT_STALE_LIMIT_PRICE_DRIFT_PERCENT: string | undefined;
     ROBOT_TRADING_PAUSED: string | undefined;
@@ -127,6 +128,7 @@ export const getEnv = (): EnvConfig => {
         ROBOT_ORDER_TYPE: process.env.ROBOT_ORDER_TYPE,
         ROBOT_BUY_ORDER_TYPE: process.env.ROBOT_BUY_ORDER_TYPE,
         ROBOT_SELL_ORDER_TYPE: process.env.ROBOT_SELL_ORDER_TYPE,
+        ROBOT_PROTECTIVE_STOPS_ENABLED: process.env.ROBOT_PROTECTIVE_STOPS_ENABLED,
         ROBOT_STALE_LIMIT_ORDER_MS: process.env.ROBOT_STALE_LIMIT_ORDER_MS,
         ROBOT_STALE_LIMIT_PRICE_DRIFT_PERCENT: process.env.ROBOT_STALE_LIMIT_PRICE_DRIFT_PERCENT,
         ROBOT_TRADING_PAUSED: process.env.ROBOT_TRADING_PAUSED,
