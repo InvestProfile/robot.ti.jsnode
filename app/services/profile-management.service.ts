@@ -1,4 +1,5 @@
 import SocialProfileModel, { SocialProfileStatus } from '../models/social-profile.model';
+import { Op } from 'sequelize';
 
 interface CreateProfileRequest {
     profileUrl: string;
@@ -30,6 +31,7 @@ interface ValidationResult {
 interface ParsedProfileUrl {
     profileKey: string;
     profileUid?: string;
+    displayName?: string;
     source: string;
 }
 
@@ -63,6 +65,7 @@ export default class ProfileManagementService {
             return {
                 profileKey,
                 profileUid: uidParam || undefined,
+                displayName: lastPart || undefined,
                 source: 't-pulse'
             };
         } catch {
@@ -140,26 +143,32 @@ export default class ProfileManagementService {
 
         // Parse profile URL
         const parsed = this.parseProfileUrl(data.profileUrl);
+        const profileUid = data.profileUid || parsed.profileUid;
+        const normalizedProfileUrl = data.profileUrl.trim();
         
-        // Check for duplicate profile key
+        // Check for duplicate identity. URL-only profiles start with a slug key and
+        // later discover profileUid, so we also guard by URL and optional UID here.
         const existing = await SocialProfileModel.findOne({
-            where: { profileKey: parsed.profileKey }
+            where: {
+                [Op.or]: [
+                    { profileKey: parsed.profileKey },
+                    { profileUrl: normalizedProfileUrl },
+                    ...(profileUid ? [{ profileUid }] : [])
+                ]
+            }
         });
 
         if (existing) {
-            throw new Error(`Profile with key '${parsed.profileKey}' already exists`);
+            throw new Error(`Profile '${parsed.displayName ?? parsed.profileKey}' already exists`);
         }
-
-        // Use provided profileUid or extracted one
-        const profileUid = data.profileUid || parsed.profileUid;
 
         // Create profile with defaults
         const profile = await SocialProfileModel.create({
             source: parsed.source,
             profileKey: parsed.profileKey,
             profileUid: profileUid || null,
-            profileUrl: data.profileUrl.trim(),
-            displayName: data.displayName || parsed.profileKey,
+            profileUrl: normalizedProfileUrl,
+            displayName: data.displayName || parsed.displayName || parsed.profileKey,
             confidence: data.confidence !== undefined ? data.confidence : null,
             activity: data.activity !== undefined ? Math.trunc(data.activity) : 1,
             description: data.description || null,

@@ -1,13 +1,21 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import ProfileManagementService from './profile-management.service';
+import { extractProfileUidFromHtml } from './social-collector.service';
 
 describe('ProfileManagementService - Unit Tests (No Database)', () => {
     describe('parseProfileUrl', () => {
         it('should extract profile key from URL path', () => {
             const result = ProfileManagementService.parseProfileUrl('https://www.tbank.ru/invest/social/profile/test-user-123');
             assert.strictEqual(result.profileKey, 'test-user-123');
+            assert.strictEqual(result.displayName, 'test-user-123');
             assert.strictEqual(result.source, 't-pulse');
+        });
+
+        it('should preserve display name casing from URL path', () => {
+            const result = ProfileManagementService.parseProfileUrl('https://www.tbank.ru/invest/social/profile/Kot.Finance?author=profile');
+            assert.strictEqual(result.profileKey, 'kot.finance');
+            assert.strictEqual(result.displayName, 'Kot.Finance');
         });
 
         it('should extract UID from query parameters', () => {
@@ -177,3 +185,28 @@ describe('ProfileManagementService - Unit Tests (No Database)', () => {
     });
 });
 
+describe('SocialCollectorService - profile UID discovery', () => {
+    it('should discover UID when nickname appears before id', () => {
+        const html = '{"nickname":"Kot.Finance","followersCount":123,"id":"99184713-1ac2-465c-a9cf-9af59b10916b","monthOperationsCount":51}';
+        assert.strictEqual(
+            extractProfileUidFromHtml(html, 'kot.finance'),
+            '99184713-1ac2-465c-a9cf-9af59b10916b'
+        );
+    });
+
+    it('should discover UID when id appears before nickname', () => {
+        const html = '{"id":"8019d0c5-d267-4e51-a509-00f34e3a6cc8","yearRelativeYield":430.27,"nickname":"Rostislavzzz"}';
+        assert.strictEqual(
+            extractProfileUidFromHtml(html, 'rostislavzzz'),
+            '8019d0c5-d267-4e51-a509-00f34e3a6cc8'
+        );
+    });
+
+    it('should discover UID from escaped page state fragments', () => {
+        const html = '{\\u0022id\\u0022:\\u002299184713-1ac2-465c-a9cf-9af59b10916b\\u0022,\\u0022profileName\\u0022:\\u0022Kot.Finance\\u0022,\\u0022followersCount\\u0022:1000}';
+        assert.strictEqual(
+            extractProfileUidFromHtml(html, 'kot.finance'),
+            '99184713-1ac2-465c-a9cf-9af59b10916b'
+        );
+    });
+});

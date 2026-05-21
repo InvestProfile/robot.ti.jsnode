@@ -15,6 +15,25 @@ interface ConfiguredProfile {
     description?: string;
 }
 
+type ProfileStats = {
+    followersCount?: number | null;
+    followingCount?: number | null;
+    monthOperationsCount?: number | null;
+    lastReturnPercent?: number | null;
+    portfolioLowerRub?: number | null;
+    portfolioUpperRub?: number | null;
+};
+
+interface ProfileCollectionResult {
+    status: 'pending-auth' | 'ready';
+    signals: number;
+    lastError: string | null;
+    profileUid?: string;
+    profileStats?: ProfileStats;
+}
+
+const PROFILE_UID_PATTERN = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+
 const parseNumber = (value: string | undefined, defaultValue: number) => {
     if (value === undefined || value.trim() === '') return defaultValue;
     const parsed = Number(value);
@@ -45,6 +64,60 @@ const getProfileKey = (profileUrl: string) => {
     } catch {
         return profileUrl.replace(/[^a-zA-Z0-9_.-]/g, '').toLowerCase();
     }
+};
+
+const normalizeHtmlForJsonSearch = (html: string) => html
+    .replace(/\\u0022/g, '"')
+    .replace(/\\u002F/g, '/')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&amp;/g, '&');
+
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export const extractProfileUidFromHtml = (html: string, profileKey: string) => {
+    const normalizedHtml = normalizeHtmlForJsonSearch(html);
+    const normalizedKey = profileKey.trim().toLowerCase();
+    if (!normalizedHtml || !normalizedKey) return null;
+
+    const keyPattern = new RegExp(`"${escapeRegExp(normalizedKey)}"`, 'i');
+    const fuzzyKeyPattern = new RegExp(escapeRegExp(normalizedKey), 'i');
+    const directPatterns = [
+        new RegExp(`"(?:nickname|displayName|profileName|slug|login|name)"\\s*:\\s*"${escapeRegExp(normalizedKey)}"[\\s\\S]{0,2000}?"id"\\s*:\\s*"(${PROFILE_UID_PATTERN.source})"`, 'i'),
+        new RegExp(`"id"\\s*:\\s*"(${PROFILE_UID_PATTERN.source})"[\\s\\S]{0,2000}?"(?:nickname|displayName|profileName|slug|login|name)"\\s*:\\s*"${escapeRegExp(normalizedKey)}"`, 'i')
+    ];
+
+    for (const pattern of directPatterns) {
+        const match = normalizedHtml.match(pattern);
+        if (match?.[1]) return match[1].toLowerCase();
+    }
+
+    const candidates = new Map<string, number>();
+    const lowerHtml = normalizedHtml.toLowerCase();
+    let searchIndex = 0;
+
+    while (searchIndex < lowerHtml.length) {
+        const index = lowerHtml.indexOf(normalizedKey, searchIndex);
+        if (index === -1) break;
+
+        const fragment = normalizedHtml.slice(Math.max(0, index - 4_000), Math.min(normalizedHtml.length, index + 4_000));
+        const hasStrongKey = keyPattern.test(fragment) || /"nickname"|"displayName"|"profileName"|"slug"|"login"/i.test(fragment);
+        const hasFuzzyKey = fuzzyKeyPattern.test(fragment);
+
+        for (const match of fragment.matchAll(PROFILE_UID_PATTERN)) {
+            const uid = match[0].toLowerCase();
+            const score = (hasStrongKey ? 5 : 0)
+                + (hasFuzzyKey ? 2 : 0)
+                + (/followersCount|monthOperationsCount|yearRelativeYield|totalAmountRange/i.test(fragment) ? 2 : 0)
+                + (/profile|author|social/i.test(fragment) ? 1 : 0);
+            candidates.set(uid, Math.max(candidates.get(uid) ?? 0, score));
+        }
+
+        searchIndex = index + normalizedKey.length;
+    }
+
+    const best = [...candidates.entries()].sort((a, b) => b[1] - a[1])[0];
+    return best?.[0] ?? null;
 };
 
 const parseProfileToken = (token: string): ConfiguredProfile | undefined => {
@@ -128,10 +201,11 @@ const parseNumericMatch = (source: string, pattern: RegExp) => {
 };
 
 const extractProfileStatsFromHtml = (html: string, profileUid: string) => {
-    const profileIndex = html.lastIndexOf(`"id":"${profileUid}"`);
+    const normalizedHtml = normalizeHtmlForJsonSearch(html);
+    const profileIndex = normalizedHtml.lastIndexOf(`"id":"${profileUid}"`);
     if (profileIndex === -1) return {};
 
-    const fragment = html.slice(profileIndex, profileIndex + 5_000);
+    const fragment = normalizedHtml.slice(profileIndex, profileIndex + 5_000);
     return {
         followersCount: parseNumericMatch(fragment, /"followersCount":(\d+)/),
         followingCount: parseNumericMatch(fragment, /"followingCount":(\d+)/),
@@ -204,37 +278,71 @@ export default class SocialCollectorService {
         return response.text();
     }
 
+    private static async fetchProfileHtml(profile: ConfiguredProfile, cookieHeader: string, config: ReturnType<typeof SocialCollectorService.getConfig>) {
+        if (!profile.profileUrl) return '';
+
+        await randomDelay(config.requestMinDelayMs, config.requestMaxDelayMs);
+        return this.requestText(profile.profileUrl, cookieHeader);
+    }
+
     private static async fetchProfileStats(profile: ConfiguredProfile, cookieHeader: string, config: ReturnType<typeof SocialCollectorService.getConfig>) {
         if (!profile.profileUid || !profile.profileUrl) return {};
 
-        await randomDelay(config.requestMinDelayMs, config.requestMaxDelayMs);
-        const html = await this.requestText(profile.profileUrl, cookieHeader);
+        const html = await this.fetchProfileHtml(profile, cookieHeader, config);
 
         return extractProfileStatsFromHtml(html, profile.profileUid);
     }
 
-    private static async collectProfile(profile: ConfiguredProfile, config: ReturnType<typeof SocialCollectorService.getConfig>) {
-        if (!profile.profileUid) {
+    private static async resolveProfileUid(profile: ConfiguredProfile, cookieHeader: string, config: ReturnType<typeof SocialCollectorService.getConfig>) {
+        if (profile.profileUid) {
+            const html = profile.profileUrl ? await this.fetchProfileHtml(profile, cookieHeader, config) : '';
             return {
-                status: 'pending-auth' as const,
+                profileUid: profile.profileUid,
+                profileStats: html ? extractProfileStatsFromHtml(html, profile.profileUid) : {}
+            };
+        }
+
+        if (!profile.profileUrl) return { profileUid: undefined, profileStats: {} };
+
+        const html = await this.fetchProfileHtml(profile, cookieHeader, config);
+        const profileUid = extractProfileUidFromHtml(html, profile.profileKey);
+
+        return {
+            profileUid: profileUid ?? undefined,
+            profileStats: profileUid ? extractProfileStatsFromHtml(html, profileUid) : {}
+        };
+    }
+
+    private static async collectProfile(profile: ConfiguredProfile, config: ReturnType<typeof SocialCollectorService.getConfig>): Promise<ProfileCollectionResult> {
+        const cookieHeader = buildCookieHeader(config.authCookie, config.sessionId);
+        const resolved = await this.resolveProfileUid(profile, cookieHeader, config);
+        const profileUid = resolved.profileUid;
+
+        if (!profileUid) {
+            return {
+                status: 'pending-auth',
                 signals: 0,
-                lastError: 'Profile UID is missing. Use uid|url|name|confidence|activity format for direct social API.'
+                lastError: 'Profile UID is missing and could not be discovered from profile URL.',
+                profileStats: resolved.profileStats
             };
         }
 
         if (!config.hasSessionId && !config.hasAuthCookie) {
             return {
-                status: 'pending-auth' as const,
+                status: 'pending-auth',
                 signals: 0,
-                lastError: 'ROBOT_SOCIAL_SESSION_ID or ROBOT_SOCIAL_AUTH_COOKIE is empty. Add psid/cookie before parsing Pulse.'
+                lastError: 'ROBOT_SOCIAL_SESSION_ID or ROBOT_SOCIAL_AUTH_COOKIE is empty. Add psid/cookie before parsing Pulse.',
+                profileUid,
+                profileStats: resolved.profileStats
             };
         }
 
-        const cookieHeader = buildCookieHeader(config.authCookie, config.sessionId);
         const sessionQuery = config.sessionId ? `&sessionId=${encodeURIComponent(config.sessionId)}` : '';
         const today = new Date().toISOString().slice(0, 10);
-        const profileStats = await this.fetchProfileStats(profile, cookieHeader, config);
-        const instrumentUrl = `https://www.tbank.ru/api/invest-gw/social/v1/profile/${profile.profileUid}/instrument?limit=${config.instrumentLimit}${sessionQuery}`;
+        const profileStats = Object.keys(resolved.profileStats).length > 0
+            ? resolved.profileStats
+            : await this.fetchProfileStats({ ...profile, profileUid }, cookieHeader, config);
+        const instrumentUrl = `https://www.tbank.ru/api/invest-gw/social/v1/profile/${profileUid}/instrument?limit=${config.instrumentLimit}${sessionQuery}`;
 
         await randomDelay(config.requestMinDelayMs, config.requestMaxDelayMs);
         const instrumentsResponse = await this.requestJson(instrumentUrl, cookieHeader);
@@ -247,7 +355,7 @@ export default class SocialCollectorService {
             if (!instrument?.ticker || !instrument?.classCode) continue;
 
             await randomDelay(config.requestMinDelayMs, config.requestMaxDelayMs);
-            const operationUrl = `https://www.tbank.ru/api/invest-gw/social/v1/profile/${profile.profileUid}/operation/instrument/${instrument.ticker}/${instrument.classCode}?limit=${config.operationLimit}${sessionQuery}`;
+            const operationUrl = `https://www.tbank.ru/api/invest-gw/social/v1/profile/${profileUid}/operation/instrument/${instrument.ticker}/${instrument.classCode}?limit=${config.operationLimit}${sessionQuery}`;
             const operationsResponse = await this.requestJson(operationUrl, cookieHeader);
             const operation = operationsResponse?.payload?.items?.[0];
             const action = mapAction(operation?.action);
@@ -275,9 +383,10 @@ export default class SocialCollectorService {
         }
 
         return {
-            status: 'ready' as const,
+            status: 'ready',
             signals,
             lastError: null,
+            profileUid: profileUid === profile.profileUid ? undefined : profileUid,
             profileStats
         };
     }
@@ -389,8 +498,28 @@ export default class SocialCollectorService {
 
             try {
                 const result = await this.collectProfile(configuredProfile, config);
+                if (result.profileUid && result.profileUid !== profile.profileUid) {
+                    const duplicate = await SocialProfileModel.findOne({
+                        where: {
+                            profileUid: result.profileUid,
+                            profileKey: { [Op.ne]: profile.profileKey }
+                        }
+                    });
+
+                    if (duplicate) {
+                        await profile.update({
+                            status: 'disabled',
+                            profileUid: result.profileUid,
+                            lastCheckedAt: new Date(),
+                            lastError: `Duplicate of ${duplicate.profileKey}; disabled automatically.`
+                        });
+                        continue;
+                    }
+                }
+
                 await profile.update({
                     status: result.status,
+                    profileUid: result.profileUid ?? profile.profileUid,
                     lastCheckedAt: new Date(),
                     lastError: result.lastError,
                     ...result.profileStats
