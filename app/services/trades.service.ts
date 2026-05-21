@@ -143,6 +143,7 @@ export default class TradesService {
         lot?: number;
         clientOrderId: string;
         lotsRequested?: number;
+        orderType?: string;
     }) {
         return await this.createTrade(
             input.figi,
@@ -159,6 +160,7 @@ export default class TradesService {
             {
                 orderId: input.clientOrderId,
                 clientOrderId: input.clientOrderId,
+                orderType: input.orderType,
                 status: LOCAL_PENDING_ORDER_STATUS,
                 tradeDateTime: new Date().toISOString(),
                 instrumentId: input.instrumentUid,

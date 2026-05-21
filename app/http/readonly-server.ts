@@ -389,6 +389,52 @@ const handleLiveActionsUpdate = async (req: IncomingMessage, res: ServerResponse
     }
 };
 
+const handleOrderTypeUpdate = async (req: IncomingMessage, res: ServerResponse) => {
+    if (!String(req.headers['content-type'] ?? '').includes('application/json')) {
+        json(res, 415, { ok: false, error: 'content-type must be application/json' });
+        return;
+    }
+
+    if (req.headers['x-robot-admin-action'] !== 'order-type') {
+        json(res, 403, { ok: false, error: 'missing x-robot-admin-action header' });
+        return;
+    }
+
+    try {
+        const payload = await readJsonBody(req);
+        const buyOrderType = String(payload.buyOrderType ?? '').trim().toLowerCase();
+        const sellOrderType = String(payload.sellOrderType ?? '').trim().toLowerCase();
+        const confirmation = String(payload.confirmation ?? '').trim();
+        const allowed = new Set(['market', 'limit']);
+
+        if (!allowed.has(buyOrderType) || !allowed.has(sellOrderType)) {
+            json(res, 400, { ok: false, error: 'buyOrderType and sellOrderType must be market or limit' });
+            return;
+        }
+
+        if (sellOrderType === 'limit' && confirmation !== 'LIMIT_SELL') {
+            json(res, 400, { ok: false, error: 'type LIMIT_SELL to enable limit sells; stop-loss limit orders can remain unfilled' });
+            return;
+        }
+
+        const settings = await RuntimeConfigService.setOrderTypeSettings({
+            buyOrderType,
+            sellOrderType
+        }, 'web-dashboard');
+        invalidatePreviewCache();
+
+        json(res, 200, {
+            ok: true,
+            settings
+        });
+    } catch (error) {
+        json(res, 400, {
+            ok: false,
+            error: error instanceof Error ? error.message : String(error)
+        });
+    }
+};
+
 const handleMarketRegimeUpdate = async (req: IncomingMessage, res: ServerResponse) => {
     if (!String(req.headers['content-type'] ?? '').includes('application/json')) {
         json(res, 415, { ok: false, error: 'content-type must be application/json' });
@@ -613,6 +659,8 @@ const safeConfig = (config: RobotConfig) => ({
     liveConfirmationRequired: config.liveConfirmationRequired,
     liveAllowedActions: config.liveAllowedActions,
     orderType: config.orderType,
+    buyOrderType: config.buyOrderType,
+    sellOrderType: config.sellOrderType,
     staleLimitOrderMs: config.staleLimitOrderMs,
     staleLimitPriceDriftPercent: config.staleLimitPriceDriftPercent,
     tradingPaused: config.tradingPaused,
@@ -1449,6 +1497,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (req.method === 'POST' && url.pathname === '/api/admin/live-actions') {
         await handleLiveActionsUpdate(req, res);
+        return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/admin/order-type') {
+        await handleOrderTypeUpdate(req, res);
         return;
     }
 

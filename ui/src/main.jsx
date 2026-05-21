@@ -2151,17 +2151,25 @@ function OrderSafety({ data, loading, onCancelStaleLimits }) {
   );
 }
 
-function ExecutionOverview({ data, loading, className }) {
+function ExecutionOverview({ data, loading, className, onOrderTypeChange }) {
   const config = data.status?.config || {};
   const summary = data.orderSafety?.summary || {};
   const orderType = config.orderType || EMPTY;
+  const buyOrderType = config.buyOrderType || orderType;
+  const sellOrderType = config.sellOrderType || orderType;
   const openAge = duration(summary.oldestOpenAgeMs);
+  const setOrderType = (patch) => onOrderTypeChange?.({
+    buyOrderType,
+    sellOrderType,
+    ...patch
+  });
 
   return (
     <Card title="Исполнение" icon={ShieldCheck} className={className} help="Execution layer: какой тип заявок включен, есть ли зависшие limit/pending/unknown заявки, и насколько чисто брокер подтверждает исполнения. Signal accepted не равно trade executed.">
       <StageStrip
         items={[
-          { label: 'Тип заявок', value: orderType, tone: orderType === 'limit' ? 'warn' : 'good', detail: orderType === 'limit' ? 'ждем fill по цене сигнала' : 'исполнение по рынку' },
+          { label: 'Buy type', value: buyOrderType, tone: buyOrderType === 'limit' ? 'good' : 'warn', detail: buyOrderType === 'limit' ? 'вход только по цене сигнала' : 'вход по рынку' },
+          { label: 'Sell type', value: sellOrderType, tone: sellOrderType === 'market' ? 'good' : 'warn', detail: sellOrderType === 'market' ? 'аварийный выход исполняется быстрее' : 'limit sell может не исполниться' },
           { label: 'Open', value: summary.open ?? 0, tone: summary.open ? 'warn' : 'good', detail: openAge !== EMPTY ? `старейшая ${openAge}` : 'нет открытых' },
           { label: 'Pending limit', value: summary.pendingLimit ?? 0, tone: summary.pendingLimit ? 'warn' : 'good', detail: 'limit-заявки ждут исполнения' },
           { label: 'Stale limit', value: summary.staleLimit ?? 0, tone: summary.staleLimit ? 'bad' : 'good', detail: summary.stalePolicy ? `${duration(summary.stalePolicy.maxAgeMs)} / ${percent(summary.stalePolicy.maxPriceDriftPercent)}` : 'policy loading' },
@@ -2170,6 +2178,22 @@ function ExecutionOverview({ data, loading, className }) {
           { label: 'Filled / Rejected', value: `${summary.filled || 0} / ${summary.rejected || 0}`, tone: summary.rejected ? 'warn' : 'good', detail: 'по последней выборке' }
         ]}
       />
+      {onOrderTypeChange ? (
+        <div className="control-row">
+          <button className={cls('mini-button', buyOrderType === 'limit' && 'active')} onClick={() => setOrderType({ buyOrderType: 'limit' })} title="Покупки лимитными заявками: робот не платит выше цены сигнала, но заявка может не исполниться.">
+            buy limit
+          </button>
+          <button className={cls('mini-button', buyOrderType === 'market' && 'active')} onClick={() => setOrderType({ buyOrderType: 'market' })} title="Покупки рыночными заявками: выше шанс исполнения, выше риск проскальзывания.">
+            buy market
+          </button>
+          <button className={cls('mini-button', sellOrderType === 'market' && 'active')} onClick={() => setOrderType({ sellOrderType: 'market' })} title="Продажи рыночными заявками: лучше для stop-loss, потому что важнее выйти, чем ждать цену.">
+            sell market
+          </button>
+          <button className={cls('mini-button', sellOrderType === 'limit' && 'active')} onClick={() => setOrderType({ sellOrderType: 'limit' })} title="Продажи лимитными заявками: цена контролируется, но stop-loss может не закрыться, если рынок пролетит ниже лимита.">
+            sell limit
+          </button>
+        </div>
+      ) : null}
       {loading ? <div className="muted">Обновляю исполнение...</div> : null}
     </Card>
   );
@@ -2261,7 +2285,7 @@ function OpenLots({ rows, loading }) {
   );
 }
 
-function Trades({ data, loadingKeys, onCancelStaleLimits }) {
+function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
   const [filters, setFilters] = useState({ side: 'all', status: 'all', ledger: 'all', ticker: '', pnl: 'all', sort: 'newest' });
   const rows = buildTradeRows(data);
   const robotEvents = data.robotPositions?.events || [];
@@ -2335,7 +2359,7 @@ function Trades({ data, loadingKeys, onCancelStaleLimits }) {
         <TradeFilters rows={rows} filters={filters} onChange={setFilters} />
       </TradeReview>
 
-      <ExecutionOverview data={data} loading={loadingKeys.orderSafety} className="wide" />
+      <ExecutionOverview data={data} loading={loadingKeys.orderSafety} className="wide" onOrderTypeChange={onOrderTypeChange} />
 
       <Card title="Round-trip P/L" icon={LineChart} className="wide" help="Закрытые пары buy -> sell по FIFO. Net P/L вычитает комиссии брокера, биржи и клиринга, если они найдены в broker report по orderId.">
         <Table
@@ -2569,6 +2593,38 @@ function App() {
 
     await reload();
   };
+  const updateOrderType = async (settings) => {
+    setActionError('');
+    let confirmation;
+
+    if (settings.sellOrderType === 'limit') {
+      confirmation = window.prompt('Limit sell может не исполнить stop-loss. Чтобы включить, введи LIMIT_SELL');
+      if (confirmation !== 'LIMIT_SELL') {
+        setActionError('Limit sell was not armed');
+        return;
+      }
+    }
+
+    const response = await fetch('/api/admin/order-type', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-robot-admin-action': 'order-type'
+      },
+      body: JSON.stringify({
+        ...settings,
+        confirmation
+      })
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => ({}));
+      setActionError(payload.error || `HTTP ${response.status}`);
+      return;
+    }
+
+    await reload();
+  };
   const updateMarketRegime = async (minHealthPercent, minAvgTrendPercent) => {
     setActionError('');
     const response = await fetch('/api/admin/market-regime', {
@@ -2667,7 +2723,7 @@ function App() {
     evidence: <Evidence data={data} loadingKeys={loadingKeys} />,
     accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} onLiveSellToggle={updateLiveSell} onRiskSettingsChange={updateRiskSettings} onSellSettingsChange={updateSellSettings} />,
     sell: <Sell data={data} loadingKeys={loadingKeys} />,
-    trades: <Trades data={data} loadingKeys={loadingKeys} onCancelStaleLimits={cancelStaleLimitOrders} />,
+    trades: <Trades data={data} loadingKeys={loadingKeys} onCancelStaleLimits={cancelStaleLimitOrders} onOrderTypeChange={updateOrderType} />,
     logs: <Logs data={data} loadingKeys={loadingKeys} onCancelStaleLimits={cancelStaleLimitOrders} />
   }[active.id];
 

@@ -1,4 +1,4 @@
-import { getRobotConfig, LiveAction, RobotConfig } from '../config/robot.config';
+import { getRobotConfig, LiveAction, RobotConfig, RobotOrderType } from '../config/robot.config';
 import RuntimeAccountModeModel, { RuntimeAccountMode } from '../models/runtime-account-mode.model';
 import RuntimeSettingModel from '../models/runtime-setting.model';
 import { Op } from 'sequelize';
@@ -34,6 +34,8 @@ const normalizeMode = (mode: string | undefined): AccountMode | undefined => {
 
 const PROTECTED_TRADE_REASON = 'protected-trade-confirmed';
 const LIVE_ALLOWED_ACTIONS_KEY = 'liveAllowedActions';
+const BUY_ORDER_TYPE_KEY = 'buyOrderType';
+const SELL_ORDER_TYPE_KEY = 'sellOrderType';
 const MARKET_HEALTH_KEY = 'marketRegimeMinHealthPercent';
 const MARKET_AVG_TREND_KEY = 'marketRegimeMinAvgTrendPercent';
 const MAX_ORDER_RUB_KEY = 'maxOrderRub';
@@ -48,6 +50,7 @@ const TRAILING_STOP_MIN_PROFIT_PERCENT_KEY = 'trailingStopMinProfitPercent';
 const SELL_HOLD_WINNER_MIN_PROFIT_PERCENT_KEY = 'sellHoldWinnerMinProfitPercent';
 const SELL_HOLD_WINNER_MAX_DRAWDOWN_PERCENT_KEY = 'sellHoldWinnerMaxDrawdownPercent';
 const ALLOWED_LIVE_ACTIONS = new Set<LiveAction>(['buy', 'sell']);
+const ALLOWED_ORDER_TYPES = new Set<RobotOrderType>(['market', 'limit']);
 
 const isProtectedTradeEnabled = (reason: string | undefined | null) =>
     String(reason ?? '').startsWith(PROTECTED_TRADE_REASON);
@@ -58,6 +61,11 @@ const normalizeLiveActions = (actions: string[] | undefined, fallback: LiveActio
         .filter((action): action is LiveAction => ALLOWED_LIVE_ACTIONS.has(action as LiveAction));
 
     return normalized.length > 0 ? [...new Set(normalized)] : fallback;
+};
+
+const normalizeOrderTypeSetting = (value: string | undefined | null, fallback: RobotOrderType): RobotOrderType => {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return ALLOWED_ORDER_TYPES.has(normalized as RobotOrderType) ? normalized as RobotOrderType : fallback;
 };
 
 const capRuntimeNumber = (value: unknown, fallback: number, absoluteMax: number, options: { integer?: boolean } = {}) => {
@@ -106,6 +114,7 @@ export default class RuntimeConfigService {
     static async getEffectiveConfig(baseConfig: RobotConfig = getRobotConfig()): Promise<RobotConfig> {
         const modes = await this.getAccountModes(baseConfig);
         const liveAllowedActions = await this.getLiveAllowedActions(baseConfig.liveAllowedActions);
+        const orderTypes = await this.getOrderTypeSettings(baseConfig);
         const marketRegime = await this.getMarketRegimeSettings(baseConfig);
         const riskSettings = await this.getRiskSettings(baseConfig);
         const sellSettings = await this.getSellSettings(baseConfig);
@@ -121,6 +130,7 @@ export default class RuntimeConfigService {
             accountIds,
             observeAccountIds,
             liveAllowedActions,
+            ...orderTypes,
             ...marketRegime,
             ...riskSettings,
             ...sellSettings
@@ -145,6 +155,51 @@ export default class RuntimeConfigService {
 
         return {
             liveAllowedActions
+        };
+    }
+
+    static async getOrderTypeSettings(baseConfig: RobotConfig = getRobotConfig()) {
+        const rows = await RuntimeSettingModel.findAll({
+            where: {
+                key: {
+                    [Op.in]: [BUY_ORDER_TYPE_KEY, SELL_ORDER_TYPE_KEY]
+                }
+            } as any
+        });
+        const byKey = new Map(rows.map(row => [row.key, row.value]));
+        const buyOrderType = normalizeOrderTypeSetting(byKey.get(BUY_ORDER_TYPE_KEY), baseConfig.buyOrderType);
+        const sellOrderType = normalizeOrderTypeSetting(byKey.get(SELL_ORDER_TYPE_KEY), baseConfig.sellOrderType);
+
+        return {
+            orderType: buyOrderType === sellOrderType ? buyOrderType : baseConfig.orderType,
+            buyOrderType,
+            sellOrderType
+        };
+    }
+
+    static async setOrderTypeSettings(input: {
+        buyOrderType?: string;
+        sellOrderType?: string;
+    }, updatedBy = 'web') {
+        const baseConfig = getRobotConfig();
+        const buyOrderType = normalizeOrderTypeSetting(input.buyOrderType, baseConfig.buyOrderType);
+        const sellOrderType = normalizeOrderTypeSetting(input.sellOrderType, baseConfig.sellOrderType);
+
+        await RuntimeSettingModel.upsert({
+            key: BUY_ORDER_TYPE_KEY,
+            value: buyOrderType,
+            updatedBy
+        });
+        await RuntimeSettingModel.upsert({
+            key: SELL_ORDER_TYPE_KEY,
+            value: sellOrderType,
+            updatedBy
+        });
+
+        return {
+            orderType: buyOrderType === sellOrderType ? buyOrderType : baseConfig.orderType,
+            buyOrderType,
+            sellOrderType
         };
     }
 

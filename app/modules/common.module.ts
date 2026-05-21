@@ -108,6 +108,9 @@ const moneyPartsToNumber = (units: unknown, nano: unknown) => {
     return Number.isFinite(value) && value > 0 ? value : undefined;
 };
 
+const orderTypeLabel = (orderType: RobotConfig['orderType']) =>
+    orderType === 'limit' ? 'ORDER_TYPE_LIMIT' : 'ORDER_TYPE_MARKET';
+
 const validateLiveOrderAllowed = (config: RobotConfig, side: OrderSide) => {
     const pauseReason = getLiveTradingPauseReason(config);
     if (config.dryRun) throw new Error('live order blocked: dry-run mode is enabled');
@@ -149,6 +152,7 @@ const submitTrackedOrder = async (input: {
     name?: string;
 }) => {
     const clientOrderId = orderService.createClientOrderId();
+    const orderType = input.side === ORDER_SIDE.BUY ? input.config.buyOrderType : input.config.sellOrderType;
     try {
         validateLiveOrderAllowed(input.config, input.side);
     } catch (error) {
@@ -176,7 +180,8 @@ const submitTrackedOrder = async (input: {
         name: input.name,
         lot: input.quantityLots,
         clientOrderId,
-        lotsRequested: input.quantityLots
+        lotsRequested: input.quantityLots,
+        orderType: orderTypeLabel(orderType)
     });
 
     try {
@@ -191,7 +196,7 @@ const submitTrackedOrder = async (input: {
             },
             input.figi,
             input.instrumentUid,
-            input.config.orderType,
+            orderType,
             clientOrderId
         );
 
@@ -831,6 +836,7 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
     console.log(`Buy score: min ${config.buyMinScore}, trend ${config.buyTrendDays}d, min trend ${config.buyMinTrendPercent}%, min momentum ${config.buyMinMomentumPercent}%`);
     console.log('Dry run: ' + config.dryRun);
     console.log('Live allowed actions: ' + config.liveAllowedActions.join(', '));
+    console.log(`Order types: buy=${config.buyOrderType}, sell=${config.sellOrderType}`);
     console.log('Live confirmation required: ' + config.liveConfirmationRequired);
     console.log('Trading paused: ' + config.tradingPaused);
     console.log('Max consecutive tick errors: ' + config.maxConsecutiveTickErrors);
