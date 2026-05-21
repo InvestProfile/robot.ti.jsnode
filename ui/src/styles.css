@@ -721,7 +721,20 @@ td {
 }
 
 .profile-table {
-  min-width: 1180px;
+  min-width: 1260px;
+}
+
+.profile-state {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.profile-state span:not(.pill) {
+  color: #93a1b2;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
 }
 
 .decision-table {

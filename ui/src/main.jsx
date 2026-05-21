@@ -1263,6 +1263,86 @@ const profileStatusTone = (status) => {
   return 'warn';
 };
 
+const profileRuntimeState = (profile) => {
+  const status = String(profile?.status || '');
+  const error = String(profile?.lastError || '');
+
+  if (status === 'disabled') {
+    return {
+      label: 'disabled',
+      tone: 'neutral',
+      detail: 'Выключен вручную, collector его не обходит.'
+    };
+  }
+
+  if (/duplicate/i.test(error)) {
+    return {
+      label: 'duplicate',
+      tone: 'neutral',
+      detail: error
+    };
+  }
+
+  if (status === 'error') {
+    return {
+      label: 'error',
+      tone: 'bad',
+      detail: error || 'Collector упал на этом профиле.'
+    };
+  }
+
+  if (!profile?.profileUid) {
+    return {
+      label: profile?.lastCheckedAt ? 'uid waiting' : 'new url',
+      tone: 'warn',
+      detail: profile?.lastCheckedAt
+        ? 'URL сохранен, collector еще не смог найти внутренний UID профиля.'
+        : 'URL сохранен. На ближайшем цикле collector попробует найти UID сам.'
+    };
+  }
+
+  if (status === 'pending-auth') {
+    return {
+      label: 'auth needed',
+      tone: 'warn',
+      detail: error || 'UID найден, но нужны свежие cookie/psid для чтения API Пульса.'
+    };
+  }
+
+  if (status === 'ready' && Number(profile?.recentSignalsCount || 0) <= 0) {
+    return {
+      label: 'ready, quiet',
+      tone: 'good',
+      detail: 'UID найден и профиль читается, но свежих сделок по нашим фильтрам пока нет.'
+    };
+  }
+
+  if (status === 'ready') {
+    return {
+      label: 'ready',
+      tone: 'good',
+      detail: `Профиль читается, сигналов: ${profile?.recentSignalsCount ?? 0}.`
+    };
+  }
+
+  return {
+    label: status || 'configured',
+    tone: profileStatusTone(status),
+    detail: error || 'Профиль настроен и ждет ближайшего цикла collector-а.'
+  };
+};
+
+const ProfileState = ({ profile }) => {
+  const state = profileRuntimeState(profile);
+
+  return (
+    <div className="profile-state" title={state.detail}>
+      <Pill tone={state.tone}>{state.label}</Pill>
+      <span>{state.detail}</span>
+    </div>
+  );
+};
+
 const profilePayloadFromForm = (form) => ({
   profileUrl: form.profileUrl?.trim(),
   profileUid: form.profileUid?.trim() || undefined,
@@ -1339,6 +1419,13 @@ function SocialProfiles({ data, loadingKeys, reload }) {
   const [actionError, setActionError] = useState('');
   const profiles = data.socialProfiles?.profiles || [];
   const summary = data.socialProfiles?.summary || {};
+  const profileStates = profiles.map(profileRuntimeState);
+  const uidWaiting = profiles.filter((row) => !row.profileUid && row.status !== 'disabled').length;
+  const quietReady = profiles.filter((row) => {
+    const state = profileRuntimeState(row);
+    return state.label === 'ready, quiet';
+  }).length;
+  const duplicates = profileStates.filter((state) => state.label === 'duplicate').length;
 
   const mutateProfile = async (profile, action) => {
     setActionError('');
@@ -1369,24 +1456,26 @@ function SocialProfiles({ data, loadingKeys, reload }) {
           items={[
             { label: 'Всего', value: summary.total ?? profiles.length, detail: 'профилей в базе' },
             { label: 'Активные', value: summary.active ?? profiles.filter((row) => row.status !== 'disabled').length, tone: summary.active ? 'good' : 'warn', detail: 'collector будет смотреть' },
-            { label: 'Disabled', value: summary.disabled ?? profiles.filter((row) => row.status === 'disabled').length, tone: summary.disabled ? 'warn' : 'good', detail: 'временно выключены' },
+            { label: 'UID wait', value: uidWaiting, tone: uidWaiting ? 'warn' : 'good', detail: 'URL есть, внутренний UID еще не найден' },
+            { label: 'Ready quiet', value: quietReady, tone: quietReady ? 'warn' : 'good', detail: 'профиль читается, свежих сигналов нет' },
+            { label: 'Дубли', value: duplicates, tone: duplicates ? 'warn' : 'good', detail: 'автоматически отключенные повторы' },
             { label: 'Ошибки', value: summary.error ?? profiles.filter((row) => row.status === 'error').length, tone: summary.error ? 'bad' : 'good', detail: 'нужна проверка cookie/UID' }
           ]}
         />
         {actionError ? <p className="form-error">{actionError}</p> : null}
       </Card>
 
-      <Card title="Добавить автора" icon={Signal} className="wide" help="Достаточно URL. UID полезен для прямого API Пульса; если UID не указан, collector поставит pending-auth и подскажет, что нужно дозаполнить.">
+      <Card title="Добавить автора" icon={Signal} className="wide" help="Достаточно URL. Если UID не указан, collector попробует открыть страницу автора, найти внутренний UID и только потом читать сделки через API Пульса.">
         <AddProfileForm onSaved={reload} />
       </Card>
 
-      <Card title="Профили" icon={ShieldCheck} className="wide" help="Confidence - твоя ручная оценка автора. Activity - вес/частота в очереди сбора. Effective - итоговый вес после автооценки.">
+      <Card title="Профили" icon={ShieldCheck} className="wide" help="State показывает не только сырой status, а реальное состояние профиля: найден ли UID, читается ли API, есть ли свежие сигналы или это дубль.">
         <Table
           className="profile-table"
           rowClassName={(row) => row.status === 'disabled' ? 'row-muted' : undefined}
           columns={[
             { key: 'displayName', label: 'Профиль', width: '220px', render: (row) => <><strong>{row.displayName || row.profileKey}</strong><div className="muted">{row.profileKey}</div></> },
-            { key: 'status', label: 'Status', width: '120px', render: (row) => <Pill tone={profileStatusTone(row.status)}>{row.status}</Pill> },
+            { key: 'status', label: 'State', width: '190px', render: (row) => <ProfileState profile={row} /> },
             { key: 'confidence', label: 'Manual', width: '90px', className: 'right', render: (row) => money(row.confidence) },
             { key: 'autoConfidence', label: 'Auto', width: '90px', className: 'right', render: (row) => money(row.autoConfidence) },
             { key: 'effectiveConfidence', label: 'Effective', width: '100px', className: 'right', render: (row) => money(row.effectiveConfidence) },
@@ -1394,7 +1483,7 @@ function SocialProfiles({ data, loadingKeys, reload }) {
             { key: 'lastReturnPercent', label: 'Return', width: '100px', className: 'right', render: (row) => percent(row.lastReturnPercent) },
             { key: 'recentSignalsCount', label: 'Signals', width: '90px', className: 'right', render: (row) => money(row.recentSignalsCount) },
             { key: 'lastCheckedAt', label: 'Checked', width: '145px', render: (row) => time(row.lastCheckedAt) },
-            { key: 'lastError', label: 'Комментарий', className: 'reason', render: (row) => <Reason>{row.lastError || row.description || row.profileUrl}</Reason> },
+            { key: 'lastError', label: 'Комментарий', className: 'reason', render: (row) => <Reason>{profileRuntimeState(row).detail || row.description || row.profileUrl}</Reason> },
             { key: 'actions', label: 'Action', width: '180px', render: (row) => (
               <div className="action-buttons">
                 <button className="mini-button" onClick={() => mutateProfile(row, 'toggle')}>{row.status === 'disabled' ? 'Enable' : 'Disable'}</button>
