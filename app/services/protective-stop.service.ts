@@ -7,6 +7,7 @@ import {
     TakeProfitType
 } from 'tinkoff-sdk-grpc-js/dist/generated/stoporders';
 import { PriceType } from 'tinkoff-sdk-grpc-js/dist/generated/common';
+import { randomUUID } from 'crypto';
 import { getEnv } from '../config/env.config';
 import { getSdk } from './get-sdk';
 import TInvestApiCacheService from './tinvest-api-cache.service';
@@ -88,7 +89,7 @@ export default class ProtectiveStopService {
         const { stopOrders } = getSdk(envVariables.INVEST_TOKEN);
         const response = await TInvestApiCacheService.withRetry(() => stopOrders.postStopOrder({
             accountId: input.accountId,
-            orderId: `protective-${Date.now()}-${input.ticker || input.instrumentUid}`,
+            orderId: randomUUID(),
             figi: input.figi,
             instrumentId: input.instrumentUid,
             quantity: uncoveredQuantity,
