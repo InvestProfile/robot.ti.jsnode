@@ -43,6 +43,27 @@ describe('TradeBudgetService', () => {
         assert.equal(result.projectedPositionSharePercent, 25);
     });
 
+    it('resizes multi-lot buy to the available cash and position budget', () => {
+        const result = TradeBudgetService.evaluateBuy({
+            availableCashRub: 2_500,
+            dailyOrdersCount: 2,
+            dailyOrdersRub: 10_000,
+            estimatedOrderRub: 5_000,
+            requestedLots: 5,
+            lotRub: 1_000,
+            portfolioValueRub: 20_000,
+            positionValueRub: 1_500
+        }, {
+            ...baseConfig,
+            maxLotsPerOrder: 10
+        });
+
+        assert.equal(result.allowed, true);
+        assert.equal(result.quantityLots, 2);
+        assert.equal(result.estimatedOrderRub, 2_000);
+        assert.equal(result.reason, 'trade budget resized: 2/5 lots');
+    });
+
     it('builds one account budget payload from the same risk inputs', () => {
         const budget = TradeBudgetService.buildAccountBudget(baseConfig, {
             totalRub: 20_000,

@@ -1502,7 +1502,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
   const diversificationButtons = [0, 3, 5, 8, 12, 20];
 
   return (
-    <Card title="Лимиты риска" icon={ShieldCheck} help="Меняет реальные лимиты робота без перезапуска. Лимит заявки и дневной бюджет управляют оборотом, лимит позиции не дает набрать слишком большой перекос в один тикер.">
+    <Card title="Лимиты покупок и оборота" icon={ShieldCheck} help="Это лимиты входа в новые позиции: размер одной buy-заявки, дневной оборот покупок, число заявок и концентрация в одной бумаге. Продажи управляются отдельными порогами выхода ниже.">
       <div className="stats compact">
         <Stat label="Лимит заявки" value={`${money(maxOrderRub)} RUB`} title={`Hard cap: ${money(config.maxRuntimeOrderRub)} RUB`} />
         <Stat label="Заявок в день" value={maxDailyOrders} title={`Hard cap: ${config.maxRuntimeDailyOrders}`} />
@@ -1519,7 +1519,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
             onClick={() => onRiskSettingsChange(riskPayload({ maxOrderRub: value }))}
             title="Поменять максимальный размер одной заявки."
           >
-            order {value}
+            buy до {value}
           </button>
         ))}
       </div>
@@ -1531,7 +1531,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
             onClick={() => onRiskSettingsChange(riskPayload({ maxDailyOrders: value }))}
             title="Поменять максимум заявок за день."
           >
-            {value} orders
+            {value} заявок
           </button>
         ))}
       </div>
@@ -1543,7 +1543,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
             onClick={() => onRiskSettingsChange(riskPayload({ maxDailyRub: value }))}
             title="Поменять общий дневной бюджет."
           >
-            day {value}
+            день {value}
           </button>
         ))}
       </div>
@@ -1555,7 +1555,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
             onClick={() => onRiskSettingsChange(riskPayload({ maxPositionSharePercent: value }))}
             title="Поменять максимальную долю одной бумаги в портфеле после покупки."
           >
-            position {value}%
+            бумага {value}%
           </button>
         ))}
       </div>
@@ -1567,7 +1567,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
             onClick={() => onRiskSettingsChange(riskPayload({ minDiversificationPositions: value }))}
             title="Поменять целевое минимальное число разных бумаг перед докупкой существующей позиции."
           >
-            diversify {value}
+            диверс. {value}
           </button>
         ))}
         <button
@@ -1575,7 +1575,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
           onClick={() => onRiskSettingsChange(riskPayload({ diversificationFirst: !diversificationFirst }))}
           title="Когда включено, робот сначала расширяет набор бумаг, а уже потом докупает существующие тикеры."
         >
-          diversification {diversificationFirst ? 'on' : 'off'}
+          диверсификация {diversificationFirst ? 'on' : 'off'}
         </button>
       </div>
     </Card>
@@ -1626,7 +1626,7 @@ function SellControls({ data, onSellSettingsChange }) {
   const drawdownButtons = [0.5, 1, 2, 3, 5, 8, 10];
 
   return (
-    <Card title="Пороги продаж" icon={AlertTriangle} help="Пороговые настройки выхода без перезапуска. Stop-loss режет убыток, trailing-stop защищает прибыль после движения вверх, hold-winner не дает продать победителя при маленькой просадке.">
+    <Card title="Пороги продаж" icon={AlertTriangle} help="Это не лимиты денег, а правила выхода: когда резать убыток, когда защищать прибыль trailing-stop и когда держать сильную позицию.">
       <div className="stats compact">
         <Stat label="Stop-loss" value={`${money(stopLossPercent)}%`} tone="bad" title={`Адаптивный порог: max(base ${money(stopLossPercent)}%, avg daily range * ${money(stopLossVolatilityMultiplier)}), но не выше ${stopLossMaxPercent > 0 ? `${money(stopLossMaxPercent)}%` : 'без лимита'}.`} />
         <Stat label="Trailing" value={`${money(trailingStopPercent)}%`} />

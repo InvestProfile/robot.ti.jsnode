@@ -106,7 +106,11 @@ export default class RiskManagerService {
             positionValueRub: input.positionValueRub,
             portfolioPositionsCount: input.portfolioPositionsCount,
             alreadyInPortfolio: input.alreadyInPortfolio,
-            estimatedOrderRub
+            estimatedOrderRub,
+            requestedLots: input.signal.quantityLots,
+            lotRub: input.signal.quantityLots && input.signal.quantityLots > 0
+                ? estimatedOrderRub / input.signal.quantityLots
+                : estimatedOrderRub
         }, config);
 
         if (!budget.allowed) {
@@ -129,7 +133,7 @@ export default class RiskManagerService {
         return {
             allowed: true,
             reason: `${input.signal.source}: ${input.signal.reason}`,
-            quantity: Math.min(signalLots, config.maxLotsPerOrder),
+            quantity: Math.min(signalLots, budget.quantityLots ?? signalLots, config.maxLotsPerOrder),
             profitPercent: 0,
             estimatedOrderRub: budget.estimatedOrderRub,
             projectedPositionRub: budget.projectedPositionRub,

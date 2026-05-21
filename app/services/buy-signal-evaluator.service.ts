@@ -249,7 +249,7 @@ export default class BuySignalEvaluatorService {
                 instrumentUid: instrument.uid,
                 ticker: instrument.ticker,
                 lot: instrument.lot ?? 1,
-                estimatedOrderRub: signal?.estimatedOrderRub ?? estimatedOrderRub,
+                estimatedOrderRub: risk.estimatedOrderRub ?? signal?.estimatedOrderRub ?? estimatedOrderRub,
                 sector: instrument.sector,
                 portfolioValueRub,
                 sectorValueRub: instrument.sector ? (sectorValueBySector.get(instrument.sector) ?? 0) : 0,
@@ -260,11 +260,7 @@ export default class BuySignalEvaluatorService {
             const allowed = risk.allowed && preBuyRisk.passed;
             let skipReason: string | undefined;
 
-            if (estimatedOrderRub > config.maxOrderRub) {
-                skipReason = 'estimated lot is above max order RUB';
-            } else if (estimatedOrderRub > remainingCashRub) {
-                skipReason = 'not enough cash for estimated lot';
-            } else if (scoreAnalysis && !scoreAnalysis.passed) {
+            if (scoreAnalysis && !scoreAnalysis.passed) {
                 skipReason = `score-buy blocked: ${scoreAnalysis.reason}`;
             } else if (!marketRegime.passed) {
                 skipReason = marketRegime.reason;
@@ -279,7 +275,7 @@ export default class BuySignalEvaluatorService {
                 ticker: instrument.ticker,
                 name: instrument.name,
                 currentPrice: lastPrice,
-                estimatedOrderRub: signal?.estimatedOrderRub ?? estimatedOrderRub,
+                estimatedOrderRub: risk.estimatedOrderRub ?? signal?.estimatedOrderRub ?? estimatedOrderRub,
                 quantityLots: risk.quantity,
                 status: allowed ? 'allowed' : 'blocked',
                 reason: allowed ? risk.reason : skipReason ?? risk.reason,

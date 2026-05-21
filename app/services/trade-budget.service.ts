@@ -5,6 +5,8 @@ export interface TradeBudgetInput {
     dailyOrdersRub: number;
     availableCashRub: number;
     estimatedOrderRub: number;
+    requestedLots?: number;
+    lotRub?: number;
     portfolioValueRub?: number;
     positionValueRub?: number;
     portfolioPositionsCount?: number;
@@ -15,6 +17,7 @@ export interface TradeBudgetResult {
     allowed: boolean;
     reason: string;
     estimatedOrderRub: number;
+    quantityLots?: number;
     projectedPositionRub?: number;
     projectedPositionSharePercent?: number;
     maxPositionRub?: number;
@@ -73,40 +76,75 @@ export default class TradeBudgetService {
     }
 
     static evaluateBuy(input: TradeBudgetInput, config: RobotConfig): TradeBudgetResult {
-        const estimatedOrderRub = input.estimatedOrderRub;
-        if (estimatedOrderRub <= 0) {
-            return { allowed: false, reason: 'estimated order amount is empty', estimatedOrderRub };
+        const requestedLots = Math.max(1, Math.trunc(input.requestedLots ?? 1));
+        const rawEstimatedOrderRub = input.estimatedOrderRub;
+        const lotRub = Number.isFinite(input.lotRub)
+            ? Number(input.lotRub)
+            : rawEstimatedOrderRub > 0 ? rawEstimatedOrderRub / requestedLots : 0;
+        if (rawEstimatedOrderRub <= 0 || lotRub <= 0) {
+            return { allowed: false, reason: 'estimated order amount is empty', estimatedOrderRub: rawEstimatedOrderRub };
         }
 
         if (input.dailyOrdersCount >= config.maxDailyOrders) {
-            return { allowed: false, reason: 'daily order limit reached', estimatedOrderRub };
-        }
-
-        if (estimatedOrderRub > config.maxOrderRub) {
-            return { allowed: false, reason: 'estimated order amount is above max order RUB', estimatedOrderRub };
+            return { allowed: false, reason: 'daily order limit reached', estimatedOrderRub: rawEstimatedOrderRub };
         }
 
         if (config.maxDailyRub <= 0) {
-            return { allowed: false, reason: 'daily RUB limit is zero', estimatedOrderRub };
-        }
-
-        if (input.dailyOrdersRub + estimatedOrderRub > config.maxDailyRub) {
-            return { allowed: false, reason: 'daily RUB limit reached', estimatedOrderRub };
-        }
-
-        if (estimatedOrderRub > input.availableCashRub) {
-            return { allowed: false, reason: 'not enough cash for buy signal', estimatedOrderRub };
+            return { allowed: false, reason: 'daily RUB limit is zero', estimatedOrderRub: rawEstimatedOrderRub };
         }
 
         const portfolioValueRub = input.portfolioValueRub ?? 0;
         const positionValueRub = Math.max(0, input.positionValueRub ?? 0);
-        const projectedPositionRub = positionValueRub + estimatedOrderRub;
         const maxPositionRub = portfolioValueRub > 0
             ? portfolioValueRub * Math.max(0, config.maxPositionSharePercent) / 100
             : undefined;
+        const remainingDailyRub = Math.max(0, config.maxDailyRub - input.dailyOrdersRub);
+        const remainingPositionRub = maxPositionRub === undefined
+            ? Number.POSITIVE_INFINITY
+            : Math.max(0, maxPositionRub - positionValueRub);
+        const maxLotsByOrder = config.maxOrderRub > 0 ? Math.floor(config.maxOrderRub / lotRub) : 0;
+        const maxLotsByCash = Math.floor(Math.max(0, input.availableCashRub) / lotRub);
+        const maxLotsByDailyRub = Math.floor(remainingDailyRub / lotRub);
+        const maxLotsByPosition = Number.isFinite(remainingPositionRub)
+            ? Math.floor(remainingPositionRub / lotRub)
+            : Number.MAX_SAFE_INTEGER;
+        const maxLotsPerOrder = Math.max(1, Math.trunc(config.maxLotsPerOrder || 1));
+        const quantityLots = Math.min(
+            requestedLots,
+            maxLotsPerOrder,
+            maxLotsByOrder,
+            maxLotsByCash,
+            maxLotsByDailyRub,
+            maxLotsByPosition
+        );
+        const estimatedOrderRub = quantityLots * lotRub;
+        const projectedPositionRub = positionValueRub + estimatedOrderRub;
         const projectedPositionSharePercent = portfolioValueRub > 0
             ? projectedPositionRub / portfolioValueRub * 100
             : undefined;
+
+        if (maxLotsByOrder <= 0) {
+            return { allowed: false, reason: 'estimated lot is above max order RUB', estimatedOrderRub: rawEstimatedOrderRub };
+        }
+
+        if (maxLotsByDailyRub <= 0) {
+            return { allowed: false, reason: 'daily RUB limit reached', estimatedOrderRub: rawEstimatedOrderRub };
+        }
+
+        if (maxLotsByCash <= 0) {
+            return { allowed: false, reason: 'not enough cash for minimum lot', estimatedOrderRub: rawEstimatedOrderRub };
+        }
+
+        if (maxLotsByPosition <= 0) {
+            return {
+                allowed: false,
+                reason: `position concentration limit reached: projected ${projectedPositionSharePercent?.toFixed(2) ?? '0.00'}% > ${config.maxPositionSharePercent}%`,
+                estimatedOrderRub: rawEstimatedOrderRub,
+                projectedPositionRub: positionValueRub + lotRub,
+                projectedPositionSharePercent: portfolioValueRub > 0 ? (positionValueRub + lotRub) / portfolioValueRub * 100 : undefined,
+                maxPositionRub
+            };
+        }
 
         if (
             config.diversificationFirst
@@ -118,6 +156,7 @@ export default class TradeBudgetService {
                 allowed: false,
                 reason: `diversification first: portfolio has ${input.portfolioPositionsCount ?? 0}/${config.minDiversificationPositions} positions`,
                 estimatedOrderRub,
+                quantityLots,
                 projectedPositionRub,
                 projectedPositionSharePercent,
                 maxPositionRub
@@ -133,6 +172,7 @@ export default class TradeBudgetService {
                 allowed: false,
                 reason: `position concentration limit reached: projected ${projectedPositionSharePercent?.toFixed(2)}% > ${config.maxPositionSharePercent}%`,
                 estimatedOrderRub,
+                quantityLots,
                 projectedPositionRub,
                 projectedPositionSharePercent,
                 maxPositionRub
@@ -141,8 +181,11 @@ export default class TradeBudgetService {
 
         return {
             allowed: true,
-            reason: 'trade budget passed',
+            reason: quantityLots < requestedLots
+                ? `trade budget resized: ${quantityLots}/${requestedLots} lots`
+                : 'trade budget passed',
             estimatedOrderRub,
+            quantityLots,
             projectedPositionRub,
             projectedPositionSharePercent,
             maxPositionRub
