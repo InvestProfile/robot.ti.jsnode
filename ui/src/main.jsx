@@ -2170,7 +2170,7 @@ function ExecutionOverview({ data, loading, className, onOrderTypeChange }) {
     <Card title="Исполнение" icon={ShieldCheck} className={className} help="Execution layer: какой тип заявок включен, есть ли зависшие limit/pending/unknown заявки, и насколько чисто брокер подтверждает исполнения. Signal accepted не равно trade executed.">
       <StageStrip
         items={[
-          { label: 'Buy type', value: buyOrderType, tone: buyOrderType === 'limit' ? 'good' : 'warn', detail: buyOrderType === 'limit' ? 'вход только по цене сигнала' : 'вход по рынку' },
+          { label: 'Buy type', value: buyOrderType, tone: buyOrderType === 'smart' || buyOrderType === 'limit' ? 'good' : 'warn', detail: buyOrderType === 'smart' ? 'market только при сильном сигнале и узком спреде' : buyOrderType === 'limit' ? 'вход только по цене сигнала' : 'вход по рынку' },
           { label: 'Sell type', value: sellOrderType, tone: sellOrderType === 'market' ? 'good' : 'warn', detail: sellOrderType === 'market' ? 'аварийный выход исполняется быстрее' : 'limit sell может не исполниться' },
           { label: 'Open', value: summary.open ?? 0, tone: summary.open ? 'warn' : 'good', detail: openAge !== EMPTY ? `старейшая ${openAge}` : 'нет открытых' },
           { label: 'Pending limit', value: summary.pendingLimit ?? 0, tone: summary.pendingLimit ? 'warn' : 'good', detail: 'limit-заявки ждут исполнения' },
@@ -2185,6 +2185,9 @@ function ExecutionOverview({ data, loading, className, onOrderTypeChange }) {
         <div className="control-row">
           <button className={cls('mini-button', buyOrderType === 'limit' && 'active')} onClick={() => setOrderType({ buyOrderType: 'limit' })} title="Покупки лимитными заявками: робот не платит выше цены сигнала, но заявка может не исполниться.">
             buy limit
+          </button>
+          <button className={cls('mini-button', buyOrderType === 'smart' && 'active')} onClick={() => setOrderType({ buyOrderType: 'smart' })} title="Умная покупка: market только для сильного сигнала, узкого спреда и достаточной ликвидности; иначе limit.">
+            buy smart
           </button>
           <button className={cls('mini-button', buyOrderType === 'market' && 'active')} onClick={() => setOrderType({ buyOrderType: 'market' })} title="Покупки рыночными заявками: выше шанс исполнения, выше риск проскальзывания.">
             buy market

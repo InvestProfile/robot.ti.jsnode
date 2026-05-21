@@ -1,4 +1,5 @@
 import { getRobotConfig, RobotConfig } from '../config/robot.config';
+import { RobotExecutableOrderType } from '../config/robot.config';
 import InstrumentsService from '../services/instruments.service';
 import BuySignalEvaluatorService from '../services/buy-signal-evaluator.service';
 import marketData from '../services/marketData.service';
@@ -110,8 +111,67 @@ const moneyPartsToNumber = (units: unknown, nano: unknown) => {
     return Number.isFinite(value) && value > 0 ? value : undefined;
 };
 
-const orderTypeLabel = (orderType: RobotConfig['orderType']) =>
+type SmartOrderBookMetrics = {
+    spreadPercent?: number;
+    askLiquidityRub?: number;
+};
+
+const orderTypeLabel = (orderType: RobotExecutableOrderType) =>
     orderType === 'limit' ? 'ORDER_TYPE_LIMIT' : 'ORDER_TYPE_MARKET';
+
+const resolveOrderType = async (input: {
+    config: RobotConfig;
+    side: OrderSide;
+    instrumentUid: string;
+    ticker?: string;
+    lot?: number;
+    estimatedOrderRub?: number;
+    score?: number;
+    orderBookMetrics?: SmartOrderBookMetrics;
+}): Promise<{ orderType: RobotExecutableOrderType; reason: string }> => {
+    const configured = input.side === ORDER_SIDE.BUY ? input.config.buyOrderType : input.config.sellOrderType;
+    if (configured !== 'smart') {
+        return { orderType: configured, reason: `${input.side} order type configured as ${configured}` };
+    }
+
+    if (input.side !== ORDER_SIDE.BUY) {
+        return { orderType: 'market', reason: 'smart sell falls back to market for exit reliability' };
+    }
+
+    try {
+        const orderBook = input.orderBookMetrics
+            ?? await marketData.getOrderBookMetrics(input.instrumentUid, Math.max(1, input.lot ?? 1));
+        const score = Number(input.score ?? 0);
+        const spreadPercent = orderBook?.spreadPercent;
+        const askLiquidityRub = orderBook?.askLiquidityRub;
+        const estimatedOrderRub = Number(input.estimatedOrderRub ?? 0);
+        const maxMarketSpreadPercent = Math.min(0.15, Math.max(0.03, input.config.maxSpreadPercent / 2));
+        const minMarketAskRub = Math.max(input.config.minOrderbookAskRub, estimatedOrderRub * 30);
+
+        if (
+            score >= 85
+            && spreadPercent !== undefined
+            && spreadPercent <= maxMarketSpreadPercent
+            && askLiquidityRub !== undefined
+            && askLiquidityRub >= minMarketAskRub
+        ) {
+            return {
+                orderType: 'market',
+                reason: `smart-buy market: score ${score}, spread ${spreadPercent.toFixed(2)}%, ask liquidity ${Math.round(askLiquidityRub)} RUB`
+            };
+        }
+
+        return {
+            orderType: 'limit',
+            reason: `smart-buy limit: score ${score}, spread ${spreadPercent === undefined ? '-' : spreadPercent.toFixed(2) + '%'}, ask liquidity ${askLiquidityRub === undefined ? '-' : Math.round(askLiquidityRub) + ' RUB'}`
+        };
+    } catch (error) {
+        return {
+            orderType: 'limit',
+            reason: `smart-buy limit: orderbook unavailable (${getErrorMessage(error)})`
+        };
+    }
+};
 
 const validateLiveOrderAllowed = (config: RobotConfig, side: OrderSide) => {
     const pauseReason = getLiveTradingPauseReason(config);
@@ -251,9 +311,14 @@ const submitTrackedOrder = async (input: {
     instrumentUid: string;
     ticker?: string;
     name?: string;
+    lot?: number;
+    estimatedOrderRub?: number;
+    score?: number;
+    orderBookMetrics?: SmartOrderBookMetrics;
 }) => {
     const clientOrderId = orderService.createClientOrderId();
-    const orderType = input.side === ORDER_SIDE.BUY ? input.config.buyOrderType : input.config.sellOrderType;
+    const executionPolicy = await resolveOrderType(input);
+    const orderType = executionPolicy.orderType;
     try {
         validateLiveOrderAllowed(input.config, input.side);
     } catch (error) {
@@ -350,7 +415,8 @@ const submitTrackedOrder = async (input: {
             orderResult,
             pendingTrade,
             clientOrderId,
-            unknown: false
+            unknown: false,
+            executionPolicy
         };
     } catch (error) {
         if (isPostOrderRejectedError(error)) {
@@ -514,7 +580,16 @@ const executeBuySignals = async (
             figi: preview.figi,
             instrumentUid: preview.instrumentUid,
             ticker: preview.ticker,
-            name: preview.name
+            name: preview.name,
+            lot: preview.lot,
+            estimatedOrderRub: preview.estimatedOrderRub,
+            score: preview.scoreAnalysis?.score,
+            orderBookMetrics: preview.preBuyRisk
+                ? {
+                    spreadPercent: preview.preBuyRisk.spreadPercent,
+                    askLiquidityRub: preview.preBuyRisk.askLiquidityRub
+                }
+                : undefined
         });
 
         if (orderSubmission.failedBeforeSubmit) {
@@ -565,7 +640,7 @@ const executeBuySignals = async (
             name: preview.name,
             status: getSubmittedDecisionStatus(orderSubmission),
             signalSource: preview.signal?.source,
-            reason: getSubmittedDecisionReason(preview.reason, orderSubmission),
+            reason: getSubmittedDecisionReason(`${preview.reason}; ${orderSubmission.executionPolicy?.reason ?? ''}`, orderSubmission),
             currentPrice: preview.currentPrice,
             quantityLots: preview.quantityLots,
             estimatedOrderRub: preview.estimatedOrderRub
@@ -798,7 +873,8 @@ export const executeTrades = async (
             figi: position.figi,
             instrumentUid: position.instrumentUid,
             ticker: instrument?.ticker,
-            name: instrument?.name
+            name: instrument?.name,
+            lot: instrument?.lot
         });
 
         if (orderSubmission.failedBeforeSubmit) {
@@ -851,7 +927,7 @@ export const executeTrades = async (
             name: instrument?.name,
             status: getSubmittedDecisionStatus(orderSubmission),
             signalSource: signal?.source,
-            reason: getSubmittedDecisionReason(`${risk.reason}; ${sellPolicy.reason}`, orderSubmission),
+            reason: getSubmittedDecisionReason(`${risk.reason}; ${sellPolicy.reason}; ${orderSubmission.executionPolicy?.reason ?? ''}`, orderSubmission),
             averagePrice,
             currentPrice,
             profitPercent: risk.profitPercent,

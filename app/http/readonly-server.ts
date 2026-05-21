@@ -406,10 +406,11 @@ const handleOrderTypeUpdate = async (req: IncomingMessage, res: ServerResponse) 
         const buyOrderType = String(payload.buyOrderType ?? '').trim().toLowerCase();
         const sellOrderType = String(payload.sellOrderType ?? '').trim().toLowerCase();
         const confirmation = String(payload.confirmation ?? '').trim();
-        const allowed = new Set(['market', 'limit']);
+        const allowedBuy = new Set(['market', 'limit', 'smart']);
+        const allowedSell = new Set(['market', 'limit']);
 
-        if (!allowed.has(buyOrderType) || !allowed.has(sellOrderType)) {
-            json(res, 400, { ok: false, error: 'buyOrderType and sellOrderType must be market or limit' });
+        if (!allowedBuy.has(buyOrderType) || !allowedSell.has(sellOrderType)) {
+            json(res, 400, { ok: false, error: 'buyOrderType must be market, limit or smart; sellOrderType must be market or limit' });
             return;
         }
 

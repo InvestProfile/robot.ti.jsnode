@@ -5,12 +5,13 @@ const DEFAULT_STRATEGIES = ['stop-loss', 'trailing-stop', 'hold-winner', 'profit
 const TRAILING_BASELINES = ['observed', 'history_30d', 'history_90d'] as const;
 const LIVE_ACTIONS = ['buy', 'sell'] as const;
 const SCAN_UNIVERSES = ['manual', 'auto'] as const;
-const ORDER_TYPES = ['market', 'limit'] as const;
+const ORDER_TYPES = ['market', 'limit', 'smart'] as const;
 
 export type TrailingBaseline = typeof TRAILING_BASELINES[number];
 export type LiveAction = typeof LIVE_ACTIONS[number];
 export type ScanUniverse = typeof SCAN_UNIVERSES[number];
 export type RobotOrderType = typeof ORDER_TYPES[number];
+export type RobotExecutableOrderType = Exclude<RobotOrderType, 'smart'>;
 
 export interface BuyScoreProfile {
     buyTrendDays: number;

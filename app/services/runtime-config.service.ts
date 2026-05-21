@@ -50,7 +50,7 @@ const TRAILING_STOP_MIN_PROFIT_PERCENT_KEY = 'trailingStopMinProfitPercent';
 const SELL_HOLD_WINNER_MIN_PROFIT_PERCENT_KEY = 'sellHoldWinnerMinProfitPercent';
 const SELL_HOLD_WINNER_MAX_DRAWDOWN_PERCENT_KEY = 'sellHoldWinnerMaxDrawdownPercent';
 const ALLOWED_LIVE_ACTIONS = new Set<LiveAction>(['buy', 'sell']);
-const ALLOWED_ORDER_TYPES = new Set<RobotOrderType>(['market', 'limit']);
+const ALLOWED_ORDER_TYPES = new Set<RobotOrderType>(['market', 'limit', 'smart']);
 
 const isProtectedTradeEnabled = (reason: string | undefined | null) =>
     String(reason ?? '').startsWith(PROTECTED_TRADE_REASON);

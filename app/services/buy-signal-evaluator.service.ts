@@ -27,6 +27,7 @@ export interface BuySignalPreview {
     currentPrice?: number;
     estimatedOrderRub?: number;
     quantityLots?: number;
+    lot?: number;
     status: 'allowed' | 'blocked';
     reason: string;
     signal?: TradeSignal;
@@ -277,6 +278,7 @@ export default class BuySignalEvaluatorService {
                 currentPrice: lastPrice,
                 estimatedOrderRub: risk.estimatedOrderRub ?? signal?.estimatedOrderRub ?? estimatedOrderRub,
                 quantityLots: risk.quantity,
+                lot: instrument.lot ?? 1,
                 status: allowed ? 'allowed' : 'blocked',
                 reason: allowed ? risk.reason : skipReason ?? risk.reason,
                 signal,

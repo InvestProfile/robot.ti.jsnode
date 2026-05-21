@@ -7,7 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import {OrderDirection, OrderIdType, OrderType, TimeInForceType} from "tinkoff-sdk-grpc-js/dist/generated/orders";
 import {PriceType} from "tinkoff-sdk-grpc-js/dist/generated/common";
 import TInvestApiCacheService from './tinvest-api-cache.service';
-import { RobotOrderType } from '../config/robot.config';
+import { RobotExecutableOrderType } from '../config/robot.config';
 
 const envVariables = getEnv();
 
@@ -36,7 +36,7 @@ const normalizeDirection = (side: OrderSide) => {
     throw new Error(`Unsupported order side: ${side}`);
 };
 
-const normalizeOrderType = (orderType: RobotOrderType) => {
+const normalizeOrderType = (orderType: RobotExecutableOrderType) => {
     if (orderType === 'market') return OrderType.ORDER_TYPE_MARKET;
     if (orderType === 'limit') return OrderType.ORDER_TYPE_LIMIT;
 
@@ -50,7 +50,7 @@ const validateOrderInput = (input: {
     price: Price;
     figi: string;
     instrumentId: string;
-    orderType: RobotOrderType;
+    orderType: RobotExecutableOrderType;
 }) => {
     if (!envVariables.INVEST_TOKEN) throw new Error('INVEST_TOKEN is not defined.');
     if (!input.accountId) throw new Error('accountId is required for order placement');
@@ -83,7 +83,7 @@ export default class OrdersService {
         price: Price,
         figi: string,
         instrumentId: string,
-        orderType: RobotOrderType = 'market',
+        orderType: RobotExecutableOrderType = 'market',
         clientOrderId = OrdersService.createClientOrderId()
     ) {
         validateOrderInput({ accountId, side, quantity, price, figi, instrumentId, orderType });
