@@ -247,9 +247,11 @@ export default class BuySignalEvaluatorService {
             }, config);
             const preBuyRisk = await PreBuyRiskService.evaluate({
                 accountId,
+                figi: instrument.figi,
                 instrumentUid: instrument.uid,
                 ticker: instrument.ticker,
                 lot: instrument.lot ?? 1,
+                currentPrice: lastPrice,
                 estimatedOrderRub: risk.estimatedOrderRub ?? signal?.estimatedOrderRub ?? estimatedOrderRub,
                 sector: instrument.sector,
                 portfolioValueRub,

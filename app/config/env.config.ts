@@ -51,6 +51,7 @@ interface EnvConfig {
     ROBOT_BUY_MIN_TREND_PERCENT: string | undefined;
     ROBOT_BUY_MIN_MOMENTUM_PERCENT: string | undefined;
     ROBOT_BUY_MIN_SCORE: string | undefined;
+    ROBOT_BUY_ADD_ON_MIN_PROFIT_PERCENT: string | undefined;
     ROBOT_BUY_SCORE_PROFILES: string | undefined;
     ROBOT_MAX_ORDER_RUB: string | undefined;
     ROBOT_MAX_DAILY_ORDERS: string | undefined;
@@ -159,6 +160,7 @@ export const getEnv = (): EnvConfig => {
         ROBOT_BUY_MIN_TREND_PERCENT: process.env.ROBOT_BUY_MIN_TREND_PERCENT,
         ROBOT_BUY_MIN_MOMENTUM_PERCENT: process.env.ROBOT_BUY_MIN_MOMENTUM_PERCENT,
         ROBOT_BUY_MIN_SCORE: process.env.ROBOT_BUY_MIN_SCORE,
+        ROBOT_BUY_ADD_ON_MIN_PROFIT_PERCENT: process.env.ROBOT_BUY_ADD_ON_MIN_PROFIT_PERCENT,
         ROBOT_BUY_SCORE_PROFILES: process.env.ROBOT_BUY_SCORE_PROFILES,
         ROBOT_MAX_ORDER_RUB: process.env.ROBOT_MAX_ORDER_RUB,
         ROBOT_MAX_DAILY_ORDERS: process.env.ROBOT_MAX_DAILY_ORDERS,

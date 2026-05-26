@@ -164,6 +164,7 @@ ROBOT_BUY_TREND_DAYS=20
 ROBOT_BUY_MIN_TREND_PERCENT=0.5
 ROBOT_BUY_MIN_MOMENTUM_PERCENT=0
 ROBOT_BUY_MIN_SCORE=70
+ROBOT_BUY_ADD_ON_MIN_PROFIT_PERCENT=1
 ROBOT_BUY_SCORE_PROFILES=
 ROBOT_MAX_ORDER_RUB=1000
 ROBOT_MAX_DAILY_ORDERS=10
@@ -257,6 +258,7 @@ Enabled strategies are configured by `ROBOT_ENABLED_STRATEGIES`.
 - `watchlist-buy` sends a buy signal for tickers listed in `ROBOT_BUY_TICKERS` when the instrument is not already in the portfolio and the estimated order fits risk limits.
 - `trend-follow-buy` filters watchlist buys by daily candles: current price must be above the `ROBOT_BUY_TREND_DAYS` average by `ROBOT_BUY_MIN_TREND_PERCENT`, with at least `ROBOT_BUY_MIN_MOMENTUM_PERCENT` momentum from the previous daily close.
 - `score-buy` scores watchlist buys using daily candles: trend, momentum, pullback from recent high, volatility, and volume. It sends a buy signal only when the score reaches `ROBOT_BUY_MIN_SCORE`.
+- `ROBOT_BUY_ADD_ON_MIN_PROFIT_PERCENT` blocks adding to an existing robot-owned ticker until the current robot position is already profitable by at least this percent. This prevents clustering several buys into the same losing setup without using a fixed time cooldown.
 
 `ROBOT_BUY_SCORE_PROFILES` can override the score window and threshold per ticker:
 

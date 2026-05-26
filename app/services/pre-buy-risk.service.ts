@@ -3,14 +3,17 @@ import { Op } from 'sequelize';
 import { TradeDecisionModel } from '../models/trade-decision.model';
 import { DailyCandle } from '../strategies/trade-signal';
 import MarketDataService from './marketData.service';
+import SellPolicyService from './sell-policy.service';
 
 type OrderBookMetrics = NonNullable<Awaited<ReturnType<typeof MarketDataService.getOrderBookMetrics>>>;
 
 interface PreBuyRiskInput {
     accountId: string;
+    figi?: string;
     instrumentUid: string;
     ticker?: string;
     lot: number;
+    currentPrice?: number;
     estimatedOrderRub: number;
     sector?: string;
     portfolioValueRub: number;
@@ -40,6 +43,9 @@ export interface PreBuyRiskResult {
     avgDailyTurnoverRub?: number;
     sector?: string;
     projectedSectorSharePercent?: number;
+    robotOwnedLots?: number;
+    robotAverageLotCostRub?: number;
+    robotProfitPercent?: number;
 }
 
 const average = (values: number[]) => values.length
@@ -145,6 +151,33 @@ export default class PreBuyRiskService {
                 reason: `same-day re-entry blocked after rejected buy order for ${input.ticker}`,
                 enforced: true
             });
+        }
+
+        const addOnMinProfitPercent = Number(config.buyAddOnMinProfitPercent ?? 0);
+        let robotOwnedLots: number | undefined;
+        let robotAverageLotCostRub: number | undefined;
+        let robotProfitPercent: number | undefined;
+
+        if (addOnMinProfitPercent > 0) {
+            const robotPosition = await SellPolicyService.getRobotPosition(input.accountId, input.figi, input.instrumentUid);
+            robotOwnedLots = robotPosition.robotOwnedLots;
+            robotAverageLotCostRub = robotPosition.robotAverageLotCostRub;
+
+            const currentLotValueRub = Number(input.currentPrice) * Math.max(1, Number(input.lot || 1));
+            robotProfitPercent = robotAverageLotCostRub && Number.isFinite(currentLotValueRub) && currentLotValueRub > 0
+                ? (currentLotValueRub / robotAverageLotCostRub - 1) * 100
+                : undefined;
+
+            if (robotOwnedLots > 0) {
+                addCheck({
+                    key: 'add-on-position-profit',
+                    status: robotProfitPercent !== undefined && robotProfitPercent >= addOnMinProfitPercent ? 'pass' : 'block',
+                    reason: `add-on blocked: existing robot position P/L ${formatPercent(robotProfitPercent)} < ${formatPercent(addOnMinProfitPercent)}`,
+                    enforced: true,
+                    value: robotProfitPercent,
+                    limit: addOnMinProfitPercent
+                });
+            }
         }
 
         let spreadPercent: number | undefined;
@@ -256,7 +289,10 @@ export default class PreBuyRiskService {
             askLiquidityRub,
             avgDailyTurnoverRub,
             sector,
-            projectedSectorSharePercent
+            projectedSectorSharePercent,
+            robotOwnedLots,
+            robotAverageLotCostRub,
+            robotProfitPercent
         };
     }
 }

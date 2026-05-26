@@ -30,7 +30,7 @@ const lotsFromTrade = (data: Record<string, unknown>) => {
 };
 
 export default class SellPolicyService {
-    private static async getRobotPosition(accountId: string, figi?: string, instrumentUid?: string) {
+    static async getRobotPosition(accountId: string, figi?: string, instrumentUid?: string) {
         if (!accountId || (!figi && !instrumentUid)) {
             return {
                 robotOwnedLots: 0,
