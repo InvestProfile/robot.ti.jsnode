@@ -119,6 +119,9 @@ export default class ScoreBuyStrategy {
             input.technicalReason
         ].filter(Boolean).join(', ');
         const reason = `score ${score}/${config.buyMinScore}: base ${baseScore}, adj ${totalAdjustment}, social ${socialScoreAdjustment}, analyst ${analystScoreAdjustment}, tech ${technicalScoreAdjustment}, trend ${trendPercent.toFixed(2)}%, momentum ${momentumPercent.toFixed(2)}%, below high ${belowHighPercent.toFixed(2)}%, volatility ${volatilityPercent.toFixed(2)}%${externalReasons ? `, ${externalReasons}` : ''}`;
+        const negativeTechRequiredScore = config.buyNegativeTechScoreBuffer > 0 && technicalScoreAdjustment < 0
+            ? Math.min(100, config.buyMinScore + config.buyNegativeTechScoreBuffer)
+            : undefined;
 
         if (score < config.buyMinScore) {
             return {
@@ -127,6 +130,19 @@ export default class ScoreBuyStrategy {
                 reason,
                 estimatedOrderRub: estimatedLotRub,
                 factors
+            };
+        }
+
+        if (negativeTechRequiredScore !== undefined && score < negativeTechRequiredScore) {
+            return {
+                score,
+                passed: false,
+                reason: `${reason}, negative tech gate: score ${score}/${negativeTechRequiredScore}`,
+                estimatedOrderRub: estimatedLotRub,
+                factors: {
+                    ...factors,
+                    negativeTechRequiredScore
+                }
             };
         }
 

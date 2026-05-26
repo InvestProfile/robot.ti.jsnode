@@ -203,6 +203,7 @@ export interface RobotConfig {
     buyMinMomentumPercent: number;
     buyMinScore: number;
     buyAddOnMinProfitPercent: number;
+    buyNegativeTechScoreBuffer: number;
     buyScoreProfiles: Record<string, BuyScoreProfile>;
     maxOrderRub: number;
     maxDailyOrders: number;
@@ -317,6 +318,7 @@ export const getRobotConfig = (): RobotConfig => {
         buyMinMomentumPercent: parseNumber(env.ROBOT_BUY_MIN_MOMENTUM_PERCENT, 0),
         buyMinScore: Math.max(1, Math.min(100, parseNumber(env.ROBOT_BUY_MIN_SCORE, 70))),
         buyAddOnMinProfitPercent: Math.max(0, Math.min(20, parseNumber(env.ROBOT_BUY_ADD_ON_MIN_PROFIT_PERCENT, 1))),
+        buyNegativeTechScoreBuffer: Math.max(0, Math.min(30, parseNumber(env.ROBOT_BUY_NEGATIVE_TECH_SCORE_BUFFER, 10))),
         buyScoreProfiles: parseBuyScoreProfiles(env.ROBOT_BUY_SCORE_PROFILES),
         maxOrderRub,
         maxDailyOrders,
