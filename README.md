@@ -46,6 +46,7 @@ npm run optimize:buy
 npm run optimize:buy -- --days 120 --windows 10,20,30 --thresholds 60,65,70 SBER T YDEX
 npm run signals:buy
 npm run signals:buy -- --capture
+npm run blockers:buy -- 50
 npm run paper
 npm run paper -- --tick
 ```

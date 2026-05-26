@@ -18,6 +18,7 @@
     "backtest:buy": "npm run build && node build/reports/buy-backtest.report.js",
     "optimize:buy": "npm run build && node build/reports/buy-optimize.report.js",
     "signals:buy": "npm run build && node build/reports/buy-signals.report.js",
+    "blockers:buy": "npm run build && node build/reports/buy-blockers.report.js",
     "paper": "npm run build && node build/reports/paper-positions.report.js",
     "evidence": "npm run build && node build/reports/strategy-evidence.report.js",
     "sell:brain": "npm run build && node build/reports/sell-brain.report.js",
