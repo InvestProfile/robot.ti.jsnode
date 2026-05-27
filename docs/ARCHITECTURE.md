@@ -1,5 +1,7 @@
 # T-Invest Robot Architecture
 
+Backlinks: [[START_HERE]], [[TRADING_ENGINE]], [[ORDER_SAFETY]], [[RUNBOOK]]
+
 This document is a quick map for future changes. It describes where to look first and how the main trading flow is wired.
 
 ## Runtime
