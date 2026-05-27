@@ -15,6 +15,8 @@ import { numberToQuotation, quotationToNumber } from '../utils/money';
 import InstrumentsService from './instruments.service';
 
 const envVariables = getEnv();
+const FAILED_STOP_RETRY_COOLDOWN_MS = 30 * 60 * 1000;
+const failedStopAttempts = new Map<string, { failedAt: number; reason: string }>();
 
 const roundSellStopPrice = (price: number, minPriceIncrement?: number) => {
     if (!Number.isFinite(minPriceIncrement) || !minPriceIncrement || minPriceIncrement <= 0) return price;
@@ -22,6 +24,8 @@ const roundSellStopPrice = (price: number, minPriceIncrement?: number) => {
     const rounded = Math.floor(price / minPriceIncrement) * minPriceIncrement;
     return rounded > 0 ? rounded : price;
 };
+
+const failedStopKey = (accountId: string, instrumentUid: string) => `${accountId}:${instrumentUid}`;
 
 export interface ProtectiveStopInput {
     accountId: string;
@@ -79,6 +83,15 @@ export default class ProtectiveStopService {
         if (!Number.isFinite(entryPrice) || entryPrice <= 0) throw new Error(`protective stop entry price must be positive, got ${input.entryPrice}`);
         if (!Number.isFinite(stopLossPercent) || stopLossPercent <= 0) throw new Error(`protective stop percent must be positive, got ${input.stopLossPercent}`);
 
+        const failureKey = failedStopKey(input.accountId, input.instrumentUid);
+        const previousFailure = failedStopAttempts.get(failureKey);
+        if (previousFailure && Date.now() - previousFailure.failedAt < FAILED_STOP_RETRY_COOLDOWN_MS) {
+            return {
+                skipped: true,
+                reason: `recent protective stop failure, cooling down: ${previousFailure.reason}`
+            };
+        }
+
         const activeLots = await this.getActiveSellStopLots(input.accountId, input.instrumentUid);
         const uncoveredQuantity = Math.max(0, quantity - activeLots);
         if (uncoveredQuantity <= 0) {
@@ -100,26 +113,51 @@ export default class ProtectiveStopService {
             units: stopPriceMoney.units,
             nano: stopPriceMoney.nano
         };
-        const { stopOrders } = getSdk(envVariables.INVEST_TOKEN);
-        const response = await TInvestApiCacheService.withRetry(() => stopOrders.postStopOrder({
+        const requestDiagnostics = {
             accountId: input.accountId,
-            orderId: randomUUID(),
-            figi: undefined,
-            instrumentId: input.instrumentUid,
+            ticker: input.ticker,
+            instrumentUid: input.instrumentUid,
             quantity: uncoveredQuantity,
+            rawStopPrice,
+            stopPrice,
+            minPriceIncrement,
+            direction: 'sell',
+            expirationType: 'good_till_cancel',
+            stopOrderType: 'stop_loss',
+            exchangeOrderType: 'market',
+            priceType: 'currency',
             price: undefined,
-            stopPrice: stopPriceQuotation,
-            direction: StopOrderDirection.STOP_ORDER_DIRECTION_SELL,
-            expirationType: StopOrderExpirationType.STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL,
-            stopOrderType: StopOrderType.STOP_ORDER_TYPE_STOP_LOSS,
-            expireDate: undefined,
-            exchangeOrderType: ExchangeOrderType.EXCHANGE_ORDER_TYPE_MARKET,
-            takeProfitType: TakeProfitType.TAKE_PROFIT_TYPE_UNSPECIFIED,
-            trailingData: undefined,
-            priceType: PriceType.PRICE_TYPE_CURRENCY,
-            confirmMarginTrade: false,
-            instantExecution: undefined
-        }));
+            stopPriceQuotation
+        };
+        const { stopOrders } = getSdk(envVariables.INVEST_TOKEN);
+        let response;
+        try {
+            response = await TInvestApiCacheService.withRetry(() => stopOrders.postStopOrder({
+                accountId: input.accountId,
+                orderId: randomUUID(),
+                figi: undefined,
+                instrumentId: input.instrumentUid,
+                quantity: uncoveredQuantity,
+                price: undefined,
+                stopPrice: stopPriceQuotation,
+                direction: StopOrderDirection.STOP_ORDER_DIRECTION_SELL,
+                expirationType: StopOrderExpirationType.STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL,
+                stopOrderType: StopOrderType.STOP_ORDER_TYPE_STOP_LOSS,
+                expireDate: undefined,
+                exchangeOrderType: ExchangeOrderType.EXCHANGE_ORDER_TYPE_MARKET,
+                takeProfitType: TakeProfitType.TAKE_PROFIT_TYPE_UNSPECIFIED,
+                trailingData: undefined,
+                priceType: PriceType.PRICE_TYPE_CURRENCY,
+                confirmMarginTrade: false,
+                instantExecution: undefined
+            }));
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            failedStopAttempts.set(failureKey, { failedAt: Date.now(), reason });
+            throw new Error(`protective stop post failed: ${reason}; diagnostics=${JSON.stringify(requestDiagnostics)}`);
+        }
+
+        failedStopAttempts.delete(failureKey);
 
         return {
             skipped: false,
