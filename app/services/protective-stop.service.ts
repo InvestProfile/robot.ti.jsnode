@@ -34,6 +34,7 @@ export interface ProtectiveStopInput {
     ticker?: string;
     quantityLots: number;
     entryPrice: number;
+    currentPrice?: number;
     stopLossPercent: number;
 }
 
@@ -108,6 +109,17 @@ export default class ProtectiveStopService {
         );
         const minPriceIncrement = quotationToNumber(instrument?.minPriceIncrement);
         const stopPrice = roundSellStopPrice(rawStopPrice, minPriceIncrement);
+        const currentPrice = Number(input.currentPrice);
+        if (
+            Number.isFinite(currentPrice)
+            && currentPrice > 0
+            && currentPrice <= stopPrice + Math.max(0, Number(minPriceIncrement ?? 0))
+        ) {
+            return {
+                skipped: true,
+                reason: `current price ${currentPrice.toFixed(4)} is already at or below protective stop ${stopPrice.toFixed(4)}`
+            };
+        }
         const stopPriceMoney = numberToQuotation(stopPrice);
         const stopPriceQuotation = {
             units: stopPriceMoney.units,

@@ -216,6 +216,7 @@ const placeProtectiveStopForBuy = async (input: {
     name?: string;
     quantityLots: number;
     entryPrice: number;
+    currentPrice?: number;
 }) => {
     if (!input.config.protectiveStopsEnabled) return;
 
@@ -227,6 +228,7 @@ const placeProtectiveStopForBuy = async (input: {
             ticker: input.ticker,
             quantityLots: input.quantityLots,
             entryPrice: input.entryPrice,
+            currentPrice: input.currentPrice,
             stopLossPercent: input.config.stopLossPercent
         });
 
@@ -298,7 +300,8 @@ const ensureProtectiveStopsForOpenRobotPositions = async (config: RobotConfig) =
                 ticker: item.ticker ? String(item.ticker) : undefined,
                 name: item.name ? String(item.name) : undefined,
                 quantityLots: Number(item.lots),
-                entryPrice: Number(item.averagePrice)
+                entryPrice: Number(item.averagePrice),
+                currentPrice: Number(item.currentPrice)
             });
         }
     } catch (error) {
