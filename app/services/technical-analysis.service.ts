@@ -43,10 +43,28 @@ type TechnicalSummaryItem = {
     bbMiddle?: number;
     bbLower?: number;
     updatedAt?: Date;
+    cacheState?: 'fresh' | 'cached' | 'stale' | 'error';
+    cachedAt?: string;
     reason?: string;
 };
 
 const summaryCache = new Map<string, { expiresAt: number; item: TechnicalSummaryItem }>();
+
+const isResourceExhausted = (error: unknown) => {
+    const data = error as { code?: string | number; message?: string; details?: string };
+    const text = [
+        data?.code,
+        data?.message,
+        data?.details,
+        error
+    ].map(value => String(value ?? '').toLowerCase()).join(' ');
+
+    return text.includes('resource_exhausted')
+        || text.includes('rate limit')
+        || text.includes('too many requests')
+        || text.includes('middleware returned void')
+        || text.includes('code: 8');
+};
 
 export default class TechnicalAnalysisService {
     static async getSummary(config: RobotConfig, tickers = config.buyTickers) {
@@ -69,10 +87,14 @@ export default class TechnicalAnalysisService {
                 continue;
             }
 
+            const cached = summaryCache.get(instrument.uid);
+
             try {
-                const cached = summaryCache.get(instrument.uid);
                 if (cached && cached.expiresAt > now) {
-                    items.push(cached.item);
+                    items.push({
+                        ...cached.item,
+                        cacheState: 'cached'
+                    });
                     continue;
                 }
 
@@ -109,7 +131,9 @@ export default class TechnicalAnalysisService {
                     bbUpper: quotationToNumber(bbLatest?.upperBand),
                     bbMiddle: quotationToNumber(bbLatest?.middleBand),
                     bbLower: quotationToNumber(bbLatest?.lowerBand),
-                    updatedAt: rsiLatest?.timestamp ?? smaLatest?.timestamp ?? emaLatest?.timestamp
+                    updatedAt: rsiLatest?.timestamp ?? smaLatest?.timestamp ?? emaLatest?.timestamp,
+                    cacheState: 'fresh' as const,
+                    cachedAt: new Date(now).toISOString()
                 };
 
                 if (cacheTtlMs > 0) {
@@ -121,6 +145,15 @@ export default class TechnicalAnalysisService {
 
                 items.push(item);
             } catch (error) {
+                if (cached && isResourceExhausted(error)) {
+                    items.push({
+                        ...cached.item,
+                        cacheState: 'stale',
+                        reason: `stale technical analysis cache after API rate limit: ${error instanceof Error ? error.message : String(error)}`
+                    });
+                    continue;
+                }
+
                 items.push({
                     ticker: instrument.ticker,
                     name: instrument.name,
@@ -128,6 +161,7 @@ export default class TechnicalAnalysisService {
                     instrumentUid: instrument.uid,
                     rsiState: 'error',
                     macdState: 'error',
+                    cacheState: 'error',
                     reason: error instanceof Error ? error.message : String(error)
                 });
             }

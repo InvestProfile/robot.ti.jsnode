@@ -64,9 +64,15 @@ const buildTechnicalAdjustment = (item: TechnicalItem, maxAdjustment: number): S
     const adjustment = Math.round(clamp(raw * maxAdjustment, -maxAdjustment, maxAdjustment));
     if (adjustment === 0) return undefined;
 
+    const cacheNote = item.cacheState === 'stale'
+        ? ', stale cache'
+        : item.cacheState === 'cached'
+            ? ', cached'
+            : '';
+
     return {
         adjustment,
-        reason: `tech: RSI ${finite(item.rsi14) ? item.rsi14.toFixed(2) : '-'} ${item.rsiState}, MACD ${item.macdState}, adjustment ${adjustment}`
+        reason: `tech: RSI ${finite(item.rsi14) ? item.rsi14.toFixed(2) : '-'} ${item.rsiState}, MACD ${item.macdState}, adjustment ${adjustment}${cacheNote}`
     };
 };
 
