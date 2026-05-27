@@ -37,7 +37,8 @@ export default class BuyScannerService {
         const missing = normalizedTickers.filter(ticker =>
             !selected.some(instrument => instrument.ticker?.toUpperCase() === ticker)
         );
-        const prices = await MarketDataService.getLastPrices(selected.map(instrument => instrument.uid));
+        const prices = await MarketDataService.getLastPrices(selected.map(instrument => instrument.uid))
+            .catch(() => new Map<string, number>());
         const marketRegime = await MarketRegimeService.evaluate(config);
         const socialConsensus = config.socialConsensusEnabled
             ? await SocialConsensusService.getConsensus({

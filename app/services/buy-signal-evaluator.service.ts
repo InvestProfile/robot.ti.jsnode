@@ -155,7 +155,8 @@ export default class BuySignalEvaluatorService {
         const buyInstruments = effectiveBuyTickers
             .map(ticker => allInstruments.find(instrument => instrument.ticker?.toUpperCase() === ticker))
             .filter((instrument): instrument is ShareInstrument => Boolean(instrument?.uid && instrument?.figi));
-        const lastPrices = await marketData.getLastPrices(buyInstruments.map(instrument => instrument.uid));
+        const lastPrices = await marketData.getLastPrices(buyInstruments.map(instrument => instrument.uid))
+            .catch(() => new Map<string, number>());
         const tradingStatuses = await marketData.getStatuses(buyInstruments.map(instrument => instrument.uid));
         const marketRegime = await MarketRegimeService.evaluate(config);
         const socialConsensus = config.socialConsensusEnabled
