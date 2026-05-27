@@ -104,10 +104,10 @@ export default class ProtectiveStopService {
         const response = await TInvestApiCacheService.withRetry(() => stopOrders.postStopOrder({
             accountId: input.accountId,
             orderId: randomUUID(),
-            figi: input.figi,
+            figi: undefined,
             instrumentId: input.instrumentUid,
             quantity: uncoveredQuantity,
-            price: stopPriceQuotation,
+            price: undefined,
             stopPrice: stopPriceQuotation,
             direction: StopOrderDirection.STOP_ORDER_DIRECTION_SELL,
             expirationType: StopOrderExpirationType.STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL,
@@ -118,7 +118,7 @@ export default class ProtectiveStopService {
             trailingData: undefined,
             priceType: PriceType.PRICE_TYPE_CURRENCY,
             confirmMarginTrade: false,
-            instantExecution: false
+            instantExecution: undefined
         }));
 
         return {
