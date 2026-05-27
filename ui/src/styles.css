@@ -902,6 +902,16 @@ td {
   background: #291719;
 }
 
+.score-meta {
+  grid-column: 2;
+}
+
+.score-meta .pill {
+  min-height: 20px;
+  padding: 1px 7px;
+  font-size: 10px;
+}
+
 .decision-stack {
   display: grid;
   gap: 5px;

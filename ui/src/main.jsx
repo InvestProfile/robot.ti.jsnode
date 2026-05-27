@@ -154,6 +154,23 @@ const adjustmentTone = (value) => {
   return 'neutral';
 };
 
+const cacheTone = (value) => {
+  if (value === 'fresh' || value === 'cached') return 'good';
+  if (value === 'stale' || value === 'skipped') return 'warn';
+  if (value === 'error') return 'bad';
+  return 'neutral';
+};
+
+const analystSourceFromReason = (reason) => {
+  const text = String(reason || '').toLowerCase();
+  if (text.includes('analyst skipped')) return { state: 'skipped', label: 'analyst skipped', title: 'Прогноз аналитиков не дергали: сработал лимит пачки, score не завышается.' };
+  if (text.includes('analyst stale cache ignored')) return { state: 'stale', label: 'analyst stale', title: 'Есть только устаревший кеш аналитиков; положительный boost проигнорирован.' };
+  if (text.includes('analyst') && text.includes('stale cache')) return { state: 'stale', label: 'analyst stale', title: 'Использован устаревший кеш аналитиков после лимита API.' };
+  if (text.includes('analyst') && text.includes('cached')) return { state: 'cached', label: 'analyst cached', title: 'Использован свежий кеш аналитиков в пределах TTL.' };
+  if (text.includes('analyst')) return { state: 'fresh', label: 'analyst fresh', title: 'Прогноз аналитиков получен свежим запросом или обычным свежим источником.' };
+  return undefined;
+};
+
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 const uniqueValues = (rows, getter) => [...new Set(rows.map(getter).filter(Boolean))].sort();
@@ -173,6 +190,7 @@ const normalizeSearch = (value) => String(value || '').trim().toUpperCase();
 
 const ScoreBreakdown = ({ analysis }) => {
   const factors = analysis?.factors || {};
+  const analystSource = analystSourceFromReason(analysis?.reason);
   const items = [
     { key: 'base', label: 'База', value: factors.baseScore, title: 'Базовый score: тренд, momentum, откат от хая, волатильность и объем.', base: true },
     { key: 'social', label: 'Пульс', value: factors.socialScoreAdjustment, title: 'Поправка от выбранных успешных авторов Пульса.' },
@@ -198,6 +216,11 @@ const ScoreBreakdown = ({ analysis }) => {
           </span>
         ))}
       </div>
+      {analystSource ? (
+        <div className="score-meta" title={analystSource.title}>
+          <Pill tone={cacheTone(analystSource.state)}>{analystSource.label}</Pill>
+        </div>
+      ) : null}
     </div>
   );
 };
@@ -1562,6 +1585,7 @@ function Evidence({ data, loadingKeys }) {
             { key: 'currentPrice', label: 'Price', className: 'right', render: (row) => money(row.currentPrice) },
             { key: 'targetPrice', label: 'Target', className: 'right', render: (row) => money(row.targetPrice) },
             { key: 'priceChangePercent', label: 'Upside', className: 'right', render: (row) => percent(row.priceChangePercent) },
+            { key: 'cacheState', label: 'Data', render: (row) => <Pill tone={cacheTone(row.cacheState)}>{row.cacheState || 'fresh'}</Pill> },
             { key: 'targetCount', label: 'Analysts', className: 'right' },
             { key: 'split', label: 'B/H/S', className: 'right', render: (row) => `${row.buyCount ?? 0}/${row.holdCount ?? 0}/${row.sellCount ?? 0}` }
           ]}

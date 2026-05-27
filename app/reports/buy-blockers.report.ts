@@ -50,6 +50,32 @@ const explainScore = (preview: BuySignalPreview, defaultMinScore: number) => {
     ].join(' ');
 };
 
+const explainDataSources = (preview: BuySignalPreview) => {
+    const text = preview.scoreAnalysis?.reason.toLowerCase() ?? '';
+    const analyst = text.includes('analyst skipped')
+        ? 'analyst:skipped'
+        : text.includes('analyst stale cache ignored')
+            ? 'analyst:stale-ignored'
+            : text.includes('analyst') && text.includes('stale cache')
+                ? 'analyst:stale'
+                : text.includes('analyst') && text.includes('cached')
+                    ? 'analyst:cached'
+                    : text.includes('analyst')
+                        ? 'analyst:fresh'
+                        : 'analyst:none';
+    const tech = text.includes('tech skipped')
+        ? 'tech:skipped'
+        : text.includes('tech') && text.includes('stale cache')
+            ? 'tech:stale'
+            : text.includes('tech') && text.includes('cached')
+                ? 'tech:cached'
+                : text.includes('tech')
+                    ? 'tech:fresh'
+                    : 'tech:none';
+
+    return `${analyst} ${tech}`;
+};
+
 const getLimit = () => {
     const raw = process.argv.find(arg => /^\d+$/.test(arg));
     const limit = Number(raw ?? 80);
@@ -92,6 +118,7 @@ const main = async () => {
         pad('Ticker', 8),
         pad('Blocker', 20),
         pad('Score', 56),
+        pad('Data', 34),
         pad('Price', 10),
         pad('Amount', 10),
         'Reason'
@@ -104,6 +131,7 @@ const main = async () => {
             pad(preview.ticker ?? '-', 8),
             pad(blocker, 20),
             pad(explainScore(preview, config.buyMinScore), 56),
+            pad(explainDataSources(preview), 34),
             pad(formatRub(preview.currentPrice), 10),
             pad(formatRub(preview.estimatedOrderRub), 10),
             preview.reason
