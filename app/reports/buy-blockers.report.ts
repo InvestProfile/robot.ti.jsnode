@@ -22,6 +22,8 @@ const classifyBlocker = (preview: BuySignalPreview) => {
     if (reason.includes('no buy strategy signal')) return 'no_signal';
     if (preview.scoreAnalysis?.reason.toLowerCase().includes('negative tech gate')) return 'negative_tech';
     if (reason.includes('score-buy blocked') || reason.includes('score ')) return 'score';
+    if (reason.includes('position concentration')) return 'position_concentration';
+    if (reason.includes('portfolio is still below diversification')) return 'diversification';
     if (checks.some(check => check.key === 'add-on-position-profit' && check.status === 'block')) return 'weak_add_on';
     if (checks.some(check => ['spread', 'orderbook-ask', 'daily-turnover'].includes(check.key) && check.status === 'block')) return 'liquidity';
     if (checks.some(check => check.key === 'sector-share' && check.status === 'block')) return 'sector';

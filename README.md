@@ -205,6 +205,8 @@ ROBOT_ANALYST_CONSENSUS_ENABLED=true
 ROBOT_ANALYST_CONSENSUS_MAX_SCORE_ADJUSTMENT=5
 ROBOT_TECHNICAL_SCORE_ENABLED=true
 ROBOT_TECHNICAL_MAX_SCORE_ADJUSTMENT=5
+ROBOT_TECHNICAL_ANALYSIS_CACHE_TTL_MS=900000
+ROBOT_TECHNICAL_ANALYSIS_MAX_TICKERS=40
 ROBOT_SOCIAL_COOKIE_UPDATE_SECRET=
 ROBOT_MIN_PROFIT_PERCENT=0.5
 ROBOT_STOP_LOSS_PERCENT=3
@@ -352,6 +354,10 @@ modifiers through `ROBOT_ANALYST_CONSENSUS_MAX_SCORE_ADJUSTMENT` and
 `ROBOT_TECHNICAL_MAX_SCORE_ADJUSTMENT`. They are additive diagnostics for
 `score-buy`; they do not bypass daily limits, market regime checks, account
 mode, dry-run mode, or order risk filters.
+Technical analysis requests are cached by `ROBOT_TECHNICAL_ANALYSIS_CACHE_TTL_MS`
+and capped by `ROBOT_TECHNICAL_ANALYSIS_MAX_TICKERS` per batch to avoid
+exhausting T-Invest API rate limits during large market scans and dashboard
+refreshes.
 `/api/social-evidence` and `npm run social:evidence` backtest collected social
 signals against future daily candles. For `buy`, a later price increase is good;
 for `sell`, a later price decrease is good. This becomes the factual layer for

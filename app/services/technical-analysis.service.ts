@@ -27,15 +27,41 @@ const classifyRsi = (rsi: number | undefined) => {
     return 'neutral';
 };
 
+type TechnicalSummaryItem = {
+    ticker: string;
+    name?: string;
+    figi?: string;
+    instrumentUid?: string;
+    rsi14?: number;
+    rsiState?: string;
+    sma20?: number;
+    ema20?: number;
+    macd?: number;
+    macdSignal?: number;
+    macdState?: string;
+    bbUpper?: number;
+    bbMiddle?: number;
+    bbLower?: number;
+    updatedAt?: Date;
+    reason?: string;
+};
+
+const summaryCache = new Map<string, { expiresAt: number; item: TechnicalSummaryItem }>();
+
 export default class TechnicalAnalysisService {
     static async getSummary(config: RobotConfig, tickers = config.buyTickers) {
         const shares = await InstrumentsService.getShares();
         const instruments = shares?.instruments ?? [];
         const normalizedTickers = tickers.map(ticker => ticker.trim().toUpperCase()).filter(Boolean);
-        const items = [];
+        const maxTickers = Math.max(1, config.technicalAnalysisMaxTickers ?? 40);
+        const requestedTickers = normalizedTickers.slice(0, maxTickers);
+        const skipped = normalizedTickers.slice(maxTickers);
+        const items: TechnicalSummaryItem[] = [];
         const missing = [];
+        const now = Date.now();
+        const cacheTtlMs = Math.max(0, config.technicalAnalysisCacheTtlMs ?? 15 * 60 * 1000);
 
-        for (const ticker of normalizedTickers) {
+        for (const ticker of requestedTickers) {
             const instrument = findInstrument(instruments, ticker);
 
             if (!instrument?.uid) {
@@ -44,6 +70,12 @@ export default class TechnicalAnalysisService {
             }
 
             try {
+                const cached = summaryCache.get(instrument.uid);
+                if (cached && cached.expiresAt > now) {
+                    items.push(cached.item);
+                    continue;
+                }
+
                 const [rsi, sma, ema, macd, bb] = await Promise.all([
                     MarketDataService.getTechAnalysis(instrument.uid, GetTechAnalysisRequest_IndicatorType.INDICATOR_TYPE_RSI, 14, 90),
                     MarketDataService.getTechAnalysis(instrument.uid, GetTechAnalysisRequest_IndicatorType.INDICATOR_TYPE_SMA, 20, 90),
@@ -60,7 +92,7 @@ export default class TechnicalAnalysisService {
                 const macdValue = getMacd(macdLatest);
                 const macdSignal = getSignal(macdLatest);
 
-                items.push({
+                const item = {
                     ticker: instrument.ticker,
                     name: instrument.name,
                     figi: instrument.figi,
@@ -78,7 +110,16 @@ export default class TechnicalAnalysisService {
                     bbMiddle: quotationToNumber(bbLatest?.middleBand),
                     bbLower: quotationToNumber(bbLatest?.lowerBand),
                     updatedAt: rsiLatest?.timestamp ?? smaLatest?.timestamp ?? emaLatest?.timestamp
-                });
+                };
+
+                if (cacheTtlMs > 0) {
+                    summaryCache.set(instrument.uid, {
+                        expiresAt: now + cacheTtlMs,
+                        item
+                    });
+                }
+
+                items.push(item);
             } catch (error) {
                 items.push({
                     ticker: instrument.ticker,
@@ -95,6 +136,9 @@ export default class TechnicalAnalysisService {
         return {
             generatedAt: new Date().toISOString(),
             tickers: normalizedTickers,
+            skipped,
+            maxTickers,
+            cacheTtlMs,
             missing,
             items
         };

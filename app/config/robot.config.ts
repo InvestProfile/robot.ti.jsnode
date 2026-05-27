@@ -244,6 +244,8 @@ export interface RobotConfig {
     analystConsensusMaxScoreAdjustment: number;
     technicalScoreEnabled: boolean;
     technicalMaxScoreAdjustment: number;
+    technicalAnalysisCacheTtlMs: number;
+    technicalAnalysisMaxTickers: number;
 }
 
 export const getRobotConfig = (): RobotConfig => {
@@ -361,7 +363,9 @@ export const getRobotConfig = (): RobotConfig => {
         analystConsensusEnabled: parseBoolean(env.ROBOT_ANALYST_CONSENSUS_ENABLED, true),
         analystConsensusMaxScoreAdjustment: Math.max(0, Math.min(15, parseNumber(env.ROBOT_ANALYST_CONSENSUS_MAX_SCORE_ADJUSTMENT, 5))),
         technicalScoreEnabled: parseBoolean(env.ROBOT_TECHNICAL_SCORE_ENABLED, true),
-        technicalMaxScoreAdjustment: Math.max(0, Math.min(15, parseNumber(env.ROBOT_TECHNICAL_MAX_SCORE_ADJUSTMENT, 5)))
+        technicalMaxScoreAdjustment: Math.max(0, Math.min(15, parseNumber(env.ROBOT_TECHNICAL_MAX_SCORE_ADJUSTMENT, 5))),
+        technicalAnalysisCacheTtlMs: Math.max(0, parseNumber(env.ROBOT_TECHNICAL_ANALYSIS_CACHE_TTL_MS, 15 * 60 * 1000)),
+        technicalAnalysisMaxTickers: Math.max(1, Math.trunc(parseNumber(env.ROBOT_TECHNICAL_ANALYSIS_MAX_TICKERS, 40)))
     };
 };
 

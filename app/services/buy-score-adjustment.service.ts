@@ -94,6 +94,13 @@ export default class BuyScoreAdjustmentService {
                 const adjustment = buildTechnicalAdjustment(item, config.technicalMaxScoreAdjustment);
                 if (adjustment) technical.set(item.ticker.toUpperCase(), adjustment);
             }
+
+            for (const ticker of summary.skipped ?? []) {
+                technical.set(ticker.toUpperCase(), {
+                    adjustment: 0,
+                    reason: `tech skipped: technical analysis batch limit ${summary.maxTickers}`
+                });
+            }
         }
 
         return { analyst, technical };
