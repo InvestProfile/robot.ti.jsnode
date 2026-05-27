@@ -140,12 +140,27 @@ export default class BuySignalEvaluatorService {
             dailyClosesByUid.set(instrument.uid, dailyCloses);
         }));
 
+        const orderBookEligibleUids = new Set(
+            buyInstruments
+                .slice(0, Math.max(1, config.orderbookMaxTickers ?? 20))
+                .map(instrument => instrument.uid)
+        );
         const liquidityRiskPrefetch = config.liquidityRiskEnabled
             ? Promise.all(buyInstruments.map(async instrument => {
+                if (!orderBookEligibleUids.has(instrument.uid)) {
+                    orderBookErrorByUid.set(instrument.uid, `orderbook skipped: batch limit ${config.orderbookMaxTickers}`);
+                    return;
+                }
+
                 try {
                     orderBookByUid.set(
                         instrument.uid,
-                        await marketData.getOrderBookMetrics(instrument.uid, instrument.lot ?? 1)
+                        await marketData.getOrderBookMetrics(
+                            instrument.uid,
+                            instrument.lot ?? 1,
+                            10,
+                            config.orderbookCacheTtlMs
+                        )
                     );
                 } catch (error) {
                     orderBookErrorByUid.set(instrument.uid, error);

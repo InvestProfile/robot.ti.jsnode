@@ -188,7 +188,7 @@ export default class MarketDataService {
         );
     }
 
-    static async getOrderBookMetrics(instrumentId: string, lot = 1, depth = 10) {
+    static async getOrderBookMetrics(instrumentId: string, lot = 1, depth = 10, cacheTtlMs = 60_000) {
         if (!envVariables.INVEST_TOKEN) {
             throw new Error('INVEST_TOKEN is not defined.');
         }
@@ -198,7 +198,7 @@ export default class MarketDataService {
         const {marketData} = getSdk(envVariables.INVEST_TOKEN);
         const orderBook = await TInvestApiCacheService.cached(
             `market:orderbook:${instrumentId}:${depth}`,
-            10_000,
+            Math.max(0, cacheTtlMs),
             () => marketData.getOrderBook({
                 instrumentId,
                 depth

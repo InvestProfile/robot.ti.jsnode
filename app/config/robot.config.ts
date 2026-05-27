@@ -218,6 +218,8 @@ export interface RobotConfig {
     liquidityRiskEnforced: boolean;
     maxSpreadPercent: number;
     minOrderbookAskRub: number;
+    orderbookCacheTtlMs: number;
+    orderbookMaxTickers: number;
     minDailyTurnoverRub: number;
     sectorRiskEnabled: boolean;
     sectorRiskEnforced: boolean;
@@ -337,6 +339,8 @@ export const getRobotConfig = (): RobotConfig => {
         liquidityRiskEnforced: parseBoolean(env.ROBOT_LIQUIDITY_RISK_ENFORCED, false),
         maxSpreadPercent: Math.max(0, parseNumber(env.ROBOT_MAX_SPREAD_PERCENT, 0.5)),
         minOrderbookAskRub: Math.max(0, parseNumber(env.ROBOT_MIN_ORDERBOOK_ASK_RUB, 50_000)),
+        orderbookCacheTtlMs: Math.max(0, parseNumber(env.ROBOT_ORDERBOOK_CACHE_TTL_MS, 60_000)),
+        orderbookMaxTickers: Math.max(1, Math.trunc(parseNumber(env.ROBOT_ORDERBOOK_MAX_TICKERS, 20))),
         minDailyTurnoverRub: Math.max(0, parseNumber(env.ROBOT_MIN_DAILY_TURNOVER_RUB, 3_000_000)),
         sectorRiskEnabled: parseBoolean(env.ROBOT_SECTOR_RISK_ENABLED, true),
         sectorRiskEnforced: parseBoolean(env.ROBOT_SECTOR_RISK_ENFORCED, false),

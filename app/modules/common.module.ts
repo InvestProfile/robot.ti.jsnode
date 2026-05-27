@@ -140,7 +140,12 @@ const resolveOrderType = async (input: {
 
     try {
         const orderBook = input.orderBookMetrics
-            ?? await marketData.getOrderBookMetrics(input.instrumentUid, Math.max(1, input.lot ?? 1));
+            ?? await marketData.getOrderBookMetrics(
+                input.instrumentUid,
+                Math.max(1, input.lot ?? 1),
+                10,
+                input.config.orderbookCacheTtlMs
+            );
         const score = Number(input.score ?? 0);
         const spreadPercent = orderBook?.spreadPercent;
         const askLiquidityRub = orderBook?.askLiquidityRub;
