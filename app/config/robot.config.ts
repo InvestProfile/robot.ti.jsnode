@@ -242,6 +242,8 @@ export interface RobotConfig {
     socialConsensusMinActors: number;
     analystConsensusEnabled: boolean;
     analystConsensusMaxScoreAdjustment: number;
+    analystForecastCacheTtlMs: number;
+    analystForecastMaxTickers: number;
     technicalScoreEnabled: boolean;
     technicalMaxScoreAdjustment: number;
     technicalAnalysisCacheTtlMs: number;
@@ -362,6 +364,8 @@ export const getRobotConfig = (): RobotConfig => {
         socialConsensusMinActors: Math.max(1, Math.trunc(parseNumber(env.ROBOT_SOCIAL_CONSENSUS_MIN_ACTORS, 1))),
         analystConsensusEnabled: parseBoolean(env.ROBOT_ANALYST_CONSENSUS_ENABLED, true),
         analystConsensusMaxScoreAdjustment: Math.max(0, Math.min(15, parseNumber(env.ROBOT_ANALYST_CONSENSUS_MAX_SCORE_ADJUSTMENT, 5))),
+        analystForecastCacheTtlMs: Math.max(0, parseNumber(env.ROBOT_ANALYST_FORECAST_CACHE_TTL_MS, 6 * 60 * 60 * 1000)),
+        analystForecastMaxTickers: Math.max(1, Math.trunc(parseNumber(env.ROBOT_ANALYST_FORECAST_MAX_TICKERS, 40))),
         technicalScoreEnabled: parseBoolean(env.ROBOT_TECHNICAL_SCORE_ENABLED, true),
         technicalMaxScoreAdjustment: Math.max(0, Math.min(15, parseNumber(env.ROBOT_TECHNICAL_MAX_SCORE_ADJUSTMENT, 5))),
         technicalAnalysisCacheTtlMs: Math.max(0, parseNumber(env.ROBOT_TECHNICAL_ANALYSIS_CACHE_TTL_MS, 15 * 60 * 1000)),

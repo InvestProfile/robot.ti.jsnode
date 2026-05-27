@@ -34,12 +34,24 @@ const buildAnalystAdjustment = (item: AnalystItem, maxAdjustment: number): Score
         : 0;
     const raw = 0.45 * recommendationWeight + 0.35 * upsideWeight + 0.20 * voteWeight;
     const adjustment = Math.round(clamp(raw * maxAdjustment, -maxAdjustment, maxAdjustment));
+    const cacheNote = item.cacheState === 'stale'
+        ? ', stale cache'
+        : item.cacheState === 'cached'
+            ? ', cached'
+            : '';
+
+    if (item.cacheState === 'stale' && adjustment > 0) {
+        return {
+            adjustment: 0,
+            reason: `analyst stale cache ignored positive boost: ${item.recommendation}, target ${finite(item.priceChangePercent) ? item.priceChangePercent.toFixed(2) : '-'}%, votes ${item.buyCount ?? 0}/${item.holdCount ?? 0}/${item.sellCount ?? 0}`
+        };
+    }
 
     if (adjustment === 0) return undefined;
 
     return {
         adjustment,
-        reason: `analyst ${item.recommendation}: target ${finite(item.priceChangePercent) ? item.priceChangePercent.toFixed(2) : '-'}%, votes ${item.buyCount ?? 0}/${item.holdCount ?? 0}/${item.sellCount ?? 0}, adjustment ${adjustment}`
+        reason: `analyst ${item.recommendation}: target ${finite(item.priceChangePercent) ? item.priceChangePercent.toFixed(2) : '-'}%, votes ${item.buyCount ?? 0}/${item.holdCount ?? 0}/${item.sellCount ?? 0}, adjustment ${adjustment}${cacheNote}`
     };
 };
 
@@ -91,6 +103,13 @@ export default class BuyScoreAdjustmentService {
             for (const item of forecasts.items) {
                 const adjustment = buildAnalystAdjustment(item, config.analystConsensusMaxScoreAdjustment);
                 if (adjustment) analyst.set(item.ticker.toUpperCase(), adjustment);
+            }
+
+            for (const ticker of forecasts.skipped ?? []) {
+                analyst.set(ticker.toUpperCase(), {
+                    adjustment: 0,
+                    reason: `analyst skipped: forecast batch limit ${forecasts.maxTickers}`
+                });
             }
         }
 
