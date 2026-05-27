@@ -12,8 +12,16 @@ import { getEnv } from '../config/env.config';
 import { getSdk } from './get-sdk';
 import TInvestApiCacheService from './tinvest-api-cache.service';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
+import InstrumentsService from './instruments.service';
 
 const envVariables = getEnv();
+
+const roundSellStopPrice = (price: number, minPriceIncrement?: number) => {
+    if (!Number.isFinite(minPriceIncrement) || !minPriceIncrement || minPriceIncrement <= 0) return price;
+
+    const rounded = Math.floor(price / minPriceIncrement) * minPriceIncrement;
+    return rounded > 0 ? rounded : price;
+};
 
 export interface ProtectiveStopInput {
     accountId: string;
@@ -80,7 +88,13 @@ export default class ProtectiveStopService {
             };
         }
 
-        const stopPrice = entryPrice * (1 - stopLossPercent / 100);
+        const rawStopPrice = entryPrice * (1 - stopLossPercent / 100);
+        const shares = await InstrumentsService.getShares();
+        const instrument = shares?.instruments?.find(item =>
+            item.uid === input.instrumentUid || item.figi === input.figi
+        );
+        const minPriceIncrement = quotationToNumber(instrument?.minPriceIncrement);
+        const stopPrice = roundSellStopPrice(rawStopPrice, minPriceIncrement);
         const stopPriceMoney = numberToQuotation(stopPrice);
         const stopPriceQuotation = {
             units: stopPriceMoney.units,
@@ -111,6 +125,8 @@ export default class ProtectiveStopService {
             skipped: false,
             stopOrderId: response.stopOrderId,
             orderRequestId: response.orderRequestId,
+            rawStopPrice,
+            minPriceIncrement,
             stopPrice: quotationToNumber(stopPriceQuotation),
             quantity: uncoveredQuantity
         };
