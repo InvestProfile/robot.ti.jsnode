@@ -50,11 +50,89 @@ export default class BuyScannerService {
         const socialByTicker = new Map(
             socialConsensus?.items.map(item => [item.ticker, item]) ?? []
         );
-        const scoreAdjustments = await BuyScoreAdjustmentService.getAdjustments(
+        const analystAdjustments = await BuyScoreAdjustmentService.getAdjustments(
             config,
-            selected.map(instrument => instrument.ticker)
+            selected.map(instrument => instrument.ticker),
+            { includeTechnical: false }
         );
+        const candlesByUid = new Map<string, Awaited<ReturnType<typeof MarketDataService.getDailyCandles>> | undefined>();
         const items: BuyScanItem[] = [];
+
+        for (const instrument of selected) {
+            const lastPrice = prices.get(instrument.uid);
+
+            if (!lastPrice) continue;
+
+            const baseScanConfig = getBuyScoreConfigForTicker(config, instrument.ticker);
+            const scanConfig = {
+                ...baseScanConfig,
+                buyTickers: normalizedTickers,
+                maxOrderRub: Number.MAX_SAFE_INTEGER
+            };
+            const candles = await MarketDataService.getDailyCandles(instrument.uid, scanConfig.buyTrendDays)
+                .catch(() => undefined);
+            candlesByUid.set(instrument.uid, candles);
+        }
+
+        const maxTechnicalTickers = Math.max(1, config.technicalAnalysisMaxTickers ?? 40);
+        const technicalReach = Math.max(5, config.technicalMaxScoreAdjustment ?? 0);
+        const technicalTickers = selected
+            .map(instrument => {
+                const lastPrice = prices.get(instrument.uid);
+                if (!lastPrice) return undefined;
+
+                const baseScanConfig = getBuyScoreConfigForTicker(config, instrument.ticker);
+                const scanConfig = {
+                    ...baseScanConfig,
+                    buyTickers: normalizedTickers,
+                    maxOrderRub: Number.MAX_SAFE_INTEGER
+                };
+                const social = socialByTicker.get(instrument.ticker.toUpperCase());
+                const analyst = analystAdjustments.analyst.get(instrument.ticker.toUpperCase());
+                const analysis = ScoreBuyStrategy.analyze({
+                    accountId: 'scan',
+                    figi: instrument.figi,
+                    instrumentUid: instrument.uid,
+                    ticker: instrument.ticker,
+                    name: instrument.name,
+                    lot: instrument.lot ?? 1,
+                    lastPrice,
+                    availableCashRub: Number.MAX_SAFE_INTEGER,
+                    alreadyInPortfolio: false,
+                    dailyCandles: candlesByUid.get(instrument.uid),
+                    socialScoreAdjustment: social?.scoreAdjustment,
+                    socialScore: social?.score,
+                    socialMood: social?.mood,
+                    socialReason: social?.reason,
+                    analystScoreAdjustment: analyst?.adjustment,
+                    analystReason: analyst?.reason,
+                    technicalScoreAdjustment: 0,
+                    technicalReason: 'tech pending: budget selection'
+                }, scanConfig);
+
+                return {
+                    ticker: instrument.ticker.toUpperCase(),
+                    score: analysis?.score ?? -1,
+                    threshold: (analysis?.factors?.negativeTechRequiredScore ?? scanConfig.buyMinScore) - technicalReach
+                };
+            })
+            .filter((item): item is { ticker: string; score: number; threshold: number } => Boolean(item))
+            .sort((a, b) => b.score - a.score)
+            .filter((item, index) => item.score >= item.threshold || index < maxTechnicalTickers)
+            .slice(0, maxTechnicalTickers)
+            .map(item => item.ticker);
+        const technicalAdjustments = await BuyScoreAdjustmentService.getAdjustments(
+            config,
+            selected.map(instrument => instrument.ticker),
+            {
+                includeAnalyst: false,
+                technicalTickers
+            }
+        );
+        const scoreAdjustments = {
+            analyst: analystAdjustments.analyst,
+            technical: technicalAdjustments.technical
+        };
 
         for (const instrument of selected) {
             const lastPrice = prices.get(instrument.uid);
@@ -76,8 +154,7 @@ export default class BuyScannerService {
                 buyTickers: normalizedTickers,
                 maxOrderRub: Number.MAX_SAFE_INTEGER
             };
-            const candles = await MarketDataService.getDailyCandles(instrument.uid, scanConfig.buyTrendDays)
-                .catch(() => undefined);
+            const candles = candlesByUid.get(instrument.uid);
             const social = socialByTicker.get(instrument.ticker.toUpperCase());
             const analyst = scoreAdjustments.analyst.get(instrument.ticker.toUpperCase());
             const technical = scoreAdjustments.technical.get(instrument.ticker.toUpperCase());

@@ -46,6 +46,65 @@ export interface BuySignalPreview {
     preBuyRisk?: PreBuyRiskResult;
 }
 
+const selectTechnicalBudgetTickers = (input: {
+    config: RobotConfig;
+    accountId: string;
+    instruments: ShareInstrument[];
+    lastPrices: Map<string, number>;
+    dailyCandlesByUid: Map<string, Awaited<ReturnType<typeof marketData.getDailyCandles>> | undefined>;
+    socialByTicker: Map<string, NonNullable<Awaited<ReturnType<typeof SocialConsensusService.getConsensus>>>['items'][number]>;
+    analystByTicker: Map<string, { adjustment: number; reason: string }>;
+    buyConfigByUid: Map<string, RobotConfig>;
+    effectiveBuyTickers: string[];
+    availableCashRub: number;
+}) => {
+    const maxTickers = Math.max(1, input.config.technicalAnalysisMaxTickers ?? 40);
+    const reach = Math.max(5, input.config.technicalMaxScoreAdjustment ?? 0);
+    const ranked = input.instruments
+        .map(instrument => {
+            const lastPrice = input.lastPrices.get(instrument.uid);
+            if (!lastPrice) return undefined;
+
+            const buyConfig = input.buyConfigByUid.get(instrument.uid) ?? input.config;
+            const analysis = ScoreBuyStrategy.analyze({
+                accountId: input.accountId,
+                figi: instrument.figi,
+                instrumentUid: instrument.uid,
+                ticker: instrument.ticker,
+                name: instrument.name,
+                lot: instrument.lot ?? 1,
+                lastPrice,
+                availableCashRub: input.availableCashRub,
+                alreadyInPortfolio: false,
+                dailyCandles: input.dailyCandlesByUid.get(instrument.uid),
+                socialScoreAdjustment: input.socialByTicker.get(instrument.ticker.toUpperCase())?.scoreAdjustment,
+                socialScore: input.socialByTicker.get(instrument.ticker.toUpperCase())?.score,
+                socialMood: input.socialByTicker.get(instrument.ticker.toUpperCase())?.mood,
+                socialReason: input.socialByTicker.get(instrument.ticker.toUpperCase())?.reason,
+                analystScoreAdjustment: input.analystByTicker.get(instrument.ticker.toUpperCase())?.adjustment,
+                analystReason: input.analystByTicker.get(instrument.ticker.toUpperCase())?.reason,
+                technicalScoreAdjustment: 0,
+                technicalReason: 'tech pending: budget selection'
+            }, {
+                ...buyConfig,
+                buyTickers: input.effectiveBuyTickers,
+                maxOrderRub: Number.MAX_SAFE_INTEGER
+            });
+
+            return {
+                ticker: instrument.ticker.toUpperCase(),
+                score: analysis?.score ?? -1,
+                threshold: (analysis?.factors?.negativeTechRequiredScore ?? buyConfig.buyMinScore) - reach
+            };
+        })
+        .filter((item): item is { ticker: string; score: number; threshold: number } => Boolean(item))
+        .sort((a, b) => b.score - a.score);
+    const nearThreshold = ranked.filter(item => item.score >= item.threshold).slice(0, maxTickers);
+    const selected = nearThreshold.length > 0 ? nearThreshold : ranked.slice(0, maxTickers);
+
+    return selected.map(item => item.ticker);
+};
+
 export default class BuySignalEvaluatorService {
     static async evaluateAccount(
         accountId: string,
@@ -110,10 +169,6 @@ export default class BuySignalEvaluatorService {
         const socialByTicker = new Map(
             socialConsensus?.items.map(item => [item.ticker, item]) ?? []
         );
-        const scoreAdjustments = await BuyScoreAdjustmentService.getAdjustments(
-            config,
-            buyInstruments.map(instrument => instrument.ticker)
-        );
         const buyConfigByUid = new Map(buyInstruments.map(instrument => [
             instrument.uid,
             getBuyScoreConfigForTicker(config, instrument.ticker)
@@ -169,6 +224,35 @@ export default class BuySignalEvaluatorService {
             : Promise.resolve([]);
 
         await Promise.all([dailyMarketDataPrefetch, liquidityRiskPrefetch]);
+        const analystAdjustments = await BuyScoreAdjustmentService.getAdjustments(
+            config,
+            buyInstruments.map(instrument => instrument.ticker),
+            { includeTechnical: false }
+        );
+        const technicalTickers = selectTechnicalBudgetTickers({
+            config,
+            accountId,
+            instruments: buyInstruments,
+            lastPrices,
+            dailyCandlesByUid,
+            socialByTicker,
+            analystByTicker: analystAdjustments.analyst,
+            buyConfigByUid,
+            effectiveBuyTickers,
+            availableCashRub: remainingCashRub
+        });
+        const technicalAdjustments = await BuyScoreAdjustmentService.getAdjustments(
+            config,
+            buyInstruments.map(instrument => instrument.ticker),
+            {
+                includeAnalyst: false,
+                technicalTickers
+            }
+        );
+        const scoreAdjustments = {
+            analyst: analystAdjustments.analyst,
+            technical: technicalAdjustments.technical
+        };
         const previews: BuySignalPreview[] = [];
 
         for (const instrument of buyInstruments) {

@@ -7,6 +7,12 @@ export interface ScoreAdjustment {
     reason: string;
 }
 
+interface ScoreAdjustmentOptions {
+    includeAnalyst?: boolean;
+    includeTechnical?: boolean;
+    technicalTickers?: string[];
+}
+
 type AnalystForecasts = Awaited<ReturnType<typeof AnalystForecastService.getForecasts>>;
 type AnalystItem = AnalystForecasts['items'][number];
 type TechnicalSummary = Awaited<ReturnType<typeof TechnicalAnalysisService.getSummary>>;
@@ -89,16 +95,18 @@ const buildTechnicalAdjustment = (item: TechnicalItem, maxAdjustment: number): S
 };
 
 export default class BuyScoreAdjustmentService {
-    static async getAdjustments(config: RobotConfig, tickers: string[]) {
+    static async getAdjustments(config: RobotConfig, tickers: string[], options: ScoreAdjustmentOptions = {}) {
         const normalizedTickers = [...new Set(tickers.map(ticker => ticker.toUpperCase()).filter(Boolean))];
         const analyst = new Map<string, ScoreAdjustment>();
         const technical = new Map<string, ScoreAdjustment>();
+        const includeAnalyst = options.includeAnalyst ?? true;
+        const includeTechnical = options.includeTechnical ?? true;
 
         if (normalizedTickers.length === 0) {
             return { analyst, technical };
         }
 
-        if (config.analystConsensusEnabled) {
+        if (includeAnalyst && config.analystConsensusEnabled) {
             const forecasts = await AnalystForecastService.getForecasts(config, normalizedTickers);
             for (const item of forecasts.items) {
                 const adjustment = buildAnalystAdjustment(item, config.analystConsensusMaxScoreAdjustment);
@@ -113,8 +121,12 @@ export default class BuyScoreAdjustmentService {
             }
         }
 
-        if (config.technicalScoreEnabled) {
-            const summary = await TechnicalAnalysisService.getSummary(config, normalizedTickers);
+        if (includeTechnical && config.technicalScoreEnabled) {
+            const technicalTickers = options.technicalTickers
+                ? [...new Set(options.technicalTickers.map(ticker => ticker.toUpperCase()).filter(Boolean))]
+                : normalizedTickers;
+            const technicalTickerSet = new Set(technicalTickers);
+            const summary = await TechnicalAnalysisService.getSummary(config, technicalTickers);
             for (const item of summary.items) {
                 const adjustment = buildTechnicalAdjustment(item, config.technicalMaxScoreAdjustment);
                 if (adjustment) technical.set(item.ticker.toUpperCase(), adjustment);
@@ -125,6 +137,15 @@ export default class BuyScoreAdjustmentService {
                     adjustment: 0,
                     reason: `tech skipped: technical analysis batch limit ${summary.maxTickers}`
                 });
+            }
+
+            for (const ticker of normalizedTickers) {
+                if (!technicalTickerSet.has(ticker) && !technical.has(ticker)) {
+                    technical.set(ticker, {
+                        adjustment: 0,
+                        reason: `tech skipped: technical budget selected ${technicalTickers.length}/${normalizedTickers.length}`
+                    });
+                }
             }
         }
 
