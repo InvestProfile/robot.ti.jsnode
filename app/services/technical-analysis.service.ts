@@ -49,6 +49,7 @@ type TechnicalSummaryItem = {
 };
 
 const summaryCache = new Map<string, { expiresAt: number; item: TechnicalSummaryItem }>();
+let rateLimitCooldownUntil = 0;
 
 const isResourceExhausted = (error: unknown) => {
     const data = error as { code?: string | number; message?: string; details?: string };
@@ -98,13 +99,33 @@ export default class TechnicalAnalysisService {
                     continue;
                 }
 
-                const [rsi, sma, ema, macd, bb] = await Promise.all([
-                    MarketDataService.getTechAnalysis(instrument.uid, GetTechAnalysisRequest_IndicatorType.INDICATOR_TYPE_RSI, 14, 90),
-                    MarketDataService.getTechAnalysis(instrument.uid, GetTechAnalysisRequest_IndicatorType.INDICATOR_TYPE_SMA, 20, 90),
-                    MarketDataService.getTechAnalysis(instrument.uid, GetTechAnalysisRequest_IndicatorType.INDICATOR_TYPE_EMA, 20, 90),
-                    MarketDataService.getTechAnalysis(instrument.uid, GetTechAnalysisRequest_IndicatorType.INDICATOR_TYPE_MACD, 26, 120),
-                    MarketDataService.getTechAnalysis(instrument.uid, GetTechAnalysisRequest_IndicatorType.INDICATOR_TYPE_BB, 20, 90)
-                ]);
+                if (rateLimitCooldownUntil > now) {
+                    if (cached) {
+                        items.push({
+                            ...cached.item,
+                            cacheState: 'stale',
+                            reason: 'stale technical analysis cache during API cooldown'
+                        });
+                    } else {
+                        items.push({
+                            ticker: instrument.ticker,
+                            name: instrument.name,
+                            figi: instrument.figi,
+                            instrumentUid: instrument.uid,
+                            rsiState: 'error',
+                            macdState: 'error',
+                            cacheState: 'error',
+                            reason: 'technical analysis skipped: API cooldown after rate limit'
+                        });
+                    }
+                    continue;
+                }
+
+                const rsi = await MarketDataService.getTechAnalysis(instrument.uid, GetTechAnalysisRequest_IndicatorType.INDICATOR_TYPE_RSI, 14, 90);
+                const sma = await MarketDataService.getTechAnalysis(instrument.uid, GetTechAnalysisRequest_IndicatorType.INDICATOR_TYPE_SMA, 20, 90);
+                const ema = await MarketDataService.getTechAnalysis(instrument.uid, GetTechAnalysisRequest_IndicatorType.INDICATOR_TYPE_EMA, 20, 90);
+                const macd = await MarketDataService.getTechAnalysis(instrument.uid, GetTechAnalysisRequest_IndicatorType.INDICATOR_TYPE_MACD, 26, 120);
+                const bb = await MarketDataService.getTechAnalysis(instrument.uid, GetTechAnalysisRequest_IndicatorType.INDICATOR_TYPE_BB, 20, 90);
                 const rsiLatest = latest(rsi.technicalIndicators);
                 const smaLatest = latest(sma.technicalIndicators);
                 const emaLatest = latest(ema.technicalIndicators);
@@ -146,12 +167,17 @@ export default class TechnicalAnalysisService {
                 items.push(item);
             } catch (error) {
                 if (cached && isResourceExhausted(error)) {
+                    rateLimitCooldownUntil = Date.now() + 60_000;
                     items.push({
                         ...cached.item,
                         cacheState: 'stale',
                         reason: `stale technical analysis cache after API rate limit: ${error instanceof Error ? error.message : String(error)}`
                     });
                     continue;
+                }
+
+                if (isResourceExhausted(error)) {
+                    rateLimitCooldownUntil = Date.now() + 60_000;
                 }
 
                 items.push({
