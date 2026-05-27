@@ -63,6 +63,10 @@ export default class TInvestApiCacheService {
                 });
                 return value;
             })
+            .catch(error => {
+                if (cached && isRateLimitError(error)) return cached.value;
+                throw error;
+            })
             .finally(() => {
                 this.inFlight.delete(key);
             });

@@ -128,8 +128,12 @@ export default class BuySignalEvaluatorService {
             const needsDailyCandles = buyConfig.enabledStrategies.includes('score-buy') || config.liquidityRiskEnabled;
             const needsDailyCloses = buyConfig.enabledStrategies.includes('trend-follow-buy');
             const [dailyCandles, dailyCloses] = await Promise.all([
-                needsDailyCandles ? marketData.getDailyCandles(instrument.uid, buyConfig.buyTrendDays) : Promise.resolve(undefined),
-                needsDailyCloses ? marketData.getDailyClosePrices(instrument.uid, buyConfig.buyTrendDays) : Promise.resolve(undefined)
+                needsDailyCandles
+                    ? marketData.getDailyCandles(instrument.uid, buyConfig.buyTrendDays).catch(() => undefined)
+                    : Promise.resolve(undefined),
+                needsDailyCloses
+                    ? marketData.getDailyClosePrices(instrument.uid, buyConfig.buyTrendDays).catch(() => undefined)
+                    : Promise.resolve(undefined)
             ]);
 
             dailyCandlesByUid.set(instrument.uid, dailyCandles);

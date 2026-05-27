@@ -76,7 +76,8 @@ export default class BuyScannerService {
                 buyTickers: normalizedTickers,
                 maxOrderRub: Number.MAX_SAFE_INTEGER
             };
-            const candles = await MarketDataService.getDailyCandles(instrument.uid, scanConfig.buyTrendDays);
+            const candles = await MarketDataService.getDailyCandles(instrument.uid, scanConfig.buyTrendDays)
+                .catch(() => undefined);
             const social = socialByTicker.get(instrument.ticker.toUpperCase());
             const analyst = scoreAdjustments.analyst.get(instrument.ticker.toUpperCase());
             const technical = scoreAdjustments.technical.get(instrument.ticker.toUpperCase());
