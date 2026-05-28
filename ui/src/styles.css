@@ -785,6 +785,63 @@ tbody tr:hover td {
   line-height: 1.35;
 }
 
+.compact-reason {
+  display: block;
+  max-width: 100%;
+}
+
+.compact-reason summary {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 8px;
+  border: 1px solid #344454;
+  border-radius: 999px;
+  color: #dce5ef;
+  background: #16202a;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-reason summary::-webkit-details-marker {
+  display: none;
+}
+
+.compact-reason summary::after {
+  content: "+";
+  flex: none;
+  margin-left: 8px;
+  color: #70b7ff;
+  font-size: 12px;
+}
+
+.compact-reason[open] summary {
+  border-color: #2d80ed;
+  color: #edf2f7;
+}
+
+.compact-reason[open] summary::after {
+  content: "-";
+}
+
+.compact-reason p {
+  max-height: 112px;
+  margin: 8px 0 0;
+  padding-right: 4px;
+  color: #c8d2df;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow: auto;
+}
+
 .filters {
   display: grid;
   grid-template-columns: repeat(5, minmax(130px, 1fr));
@@ -900,6 +957,19 @@ tbody tr:hover td {
   min-width: 930px;
 }
 
+.round-trip-table {
+  min-width: 1620px;
+}
+
+.round-trip-table td,
+.round-trip-table th {
+  overflow: hidden;
+}
+
+.round-trip-table td {
+  height: 44px;
+}
+
 .order-safety-table {
   min-width: 1060px;
 }
@@ -908,6 +978,8 @@ tbody tr:hover td {
 .decision-table th,
 .trade-review-table td,
 .trade-review-table th,
+.round-trip-table td,
+.round-trip-table th,
 .order-safety-table td,
 .order-safety-table th {
   vertical-align: top;

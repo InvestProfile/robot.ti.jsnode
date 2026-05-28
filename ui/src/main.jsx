@@ -368,6 +368,21 @@ const Reason = ({ children }) => {
   );
 };
 
+const CompactReason = ({ children }) => {
+  const text = String(children || EMPTY);
+  const label = classifyBlocker(text);
+  const displayLabel = label !== text && label !== EMPTY ? label : shortReason(text);
+
+  if (!text || text === EMPTY) return <span className="muted">-</span>;
+
+  return (
+    <details className="compact-reason" title={text}>
+      <summary>{displayLabel}</summary>
+      <p>{text}</p>
+    </details>
+  );
+};
+
 const Card = ({ title, icon: Icon, help, children, className }) => (
   <section className={cls('panel', className)}>
     <div className="panel-head">
@@ -2645,12 +2660,13 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
 
       <Card title="Round-trip P/L" icon={LineChart} className="wide" help="Закрытые пары buy -> sell по FIFO. Net P/L вычитает комиссии брокера, биржи и клиринга, если они найдены в broker report по orderId.">
         <Table
+          className="round-trip-table"
           columns={[
             { key: 'entryAt', label: 'Вход', width: '150px', render: (row) => time(row.entryAt) },
             { key: 'exitAt', label: 'Выход', width: '150px', render: (row) => time(row.exitAt) },
-            { key: 'ticker', label: 'Тикер', width: '110px', render: (row) => <><strong>{row.ticker || '-'}</strong><div className="muted">{row.name}</div></> },
-            { key: 'entrySignalSource', label: 'Вход', width: '120px', render: (row) => <TextCell>{row.entrySignalSource || EMPTY}</TextCell> },
-            { key: 'exitSignalSource', label: 'Выход signal', width: '125px', render: (row) => <TextCell>{row.exitSignalSource || EMPTY}</TextCell> },
+            { key: 'ticker', label: 'Тикер', width: '125px', render: (row) => <><strong>{row.ticker || '-'}</strong><div className="muted">{row.name}</div></> },
+            { key: 'entrySignalSource', label: 'Сигнал входа', width: '125px', render: (row) => <TextCell>{row.entrySignalSource || EMPTY}</TextCell> },
+            { key: 'exitSignalSource', label: 'Сигнал выхода', width: '125px', render: (row) => <TextCell>{row.exitSignalSource || EMPTY}</TextCell> },
             { key: 'status', label: 'Статус', width: '95px', render: (row) => <Pill tone={row.status === 'closed' ? 'good' : 'warn'}>{roundTripStatusLabel(row.status)}</Pill> },
             { key: 'lots', label: 'Лоты', width: '70px', className: 'right', render: (row) => money(row.lots) },
             { key: 'entryPrice', label: 'Вход', width: '90px', className: 'right', render: (row) => money(row.entryPrice) },
@@ -2659,8 +2675,8 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
             { key: 'commissionRub', label: 'Fees', width: '80px', className: 'right', render: (row) => money(row.commissionRub) },
             { key: 'netPnlRub', label: 'Net', width: '95px', className: 'right', render: (row) => <span className={Number(row.netPnlRub ?? row.pnlRub) >= 0 ? 'good' : 'bad'}>{money(row.netPnlRub ?? row.pnlRub)}</span> },
             { key: 'netPnlPercent', label: 'Net %', width: '90px', className: 'right', render: (row) => percent(row.netPnlPercent ?? row.pnlPercent) },
-            { key: 'entryDecisionReason', label: 'Причина входа', className: 'reason', render: (row) => <Reason>{row.entryDecisionReason || EMPTY}</Reason> },
-            { key: 'exitDecisionReason', label: 'Причина выхода', className: 'reason', render: (row) => <Reason>{row.exitDecisionReason || row.reason}</Reason> }
+            { key: 'entryDecisionReason', label: 'Причина входа', width: '190px', render: (row) => <CompactReason>{row.entryDecisionReason || EMPTY}</CompactReason> },
+            { key: 'exitDecisionReason', label: 'Причина выхода', width: '190px', render: (row) => <CompactReason>{row.exitDecisionReason || row.reason}</CompactReason> }
           ]}
           rows={filteredRoundTrips}
           empty="Закрытых пар под фильтр нет"
