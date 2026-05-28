@@ -93,7 +93,21 @@ export default class ProtectiveStopService {
             };
         }
 
-        const activeLots = await this.getActiveSellStopLots(input.accountId, input.instrumentUid);
+        let activeLots = await this.getActiveSellStopLots(input.accountId, input.instrumentUid);
+        let resync: { reason: string; cancelled: number; failed: number } | undefined;
+        if (activeLots > quantity) {
+            const cancelResult = await this.cancelActiveSellStopsForInstrument(input.accountId, input.instrumentUid);
+            if (cancelResult.failed > 0) {
+                throw new Error(`protective stop resync failed: active sell stops cover ${activeLots}/${quantity} lots, cancelled ${cancelResult.cancelled}, failed ${cancelResult.failed}`);
+            }
+            resync = {
+                reason: `active sell stops over-cover ${activeLots}/${quantity} lots`,
+                cancelled: cancelResult.cancelled,
+                failed: cancelResult.failed
+            };
+            activeLots = 0;
+        }
+
         const uncoveredQuantity = Math.max(0, quantity - activeLots);
         if (uncoveredQuantity <= 0) {
             return {
@@ -178,7 +192,8 @@ export default class ProtectiveStopService {
             rawStopPrice,
             minPriceIncrement,
             stopPrice: quotationToNumber(stopPriceQuotation),
-            quantity: uncoveredQuantity
+            quantity: uncoveredQuantity,
+            resync
         };
     }
 
