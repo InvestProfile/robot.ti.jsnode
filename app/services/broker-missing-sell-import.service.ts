@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import { BrokerReport, OperationItem, OperationState, OperationType } from 'tinkoff-sdk-grpc-js/dist/generated/operations';
+import { BrokerReport } from 'tinkoff-sdk-grpc-js/dist/generated/operations';
 import { RobotConfig } from '../config/robot.config';
 import { TradesModel } from '../models/trades.model';
 import { quotationToNumber } from '../utils/money';
@@ -66,36 +66,6 @@ const moneyParts = (value: number) => {
     };
 };
 
-const operationLots = (operation: OperationItem) => {
-    const done = toNumber(operation.quantityDone);
-    if (done > 0) return done;
-
-    return Math.max(0, toNumber(operation.quantity));
-};
-
-const operationToCandidate = (issue: AuditIssue, operation: OperationItem): MissingBrokerSellCandidate | undefined => {
-    const lots = operationLots(operation);
-    const price = absMoney(quotationToNumber(operation.price));
-    const amount = absMoney(quotationToNumber(operation.payment));
-
-    if (!operation.id || lots <= 0 || !price || !amount) return undefined;
-
-    return {
-        accountId: issue.accountId,
-        accountAlias: issue.accountAlias,
-        ticker: operation.ticker || issue.ticker,
-        name: operation.name || issue.name,
-        figi: operation.figi || issue.figi,
-        instrumentUid: operation.instrumentUid || issue.instrumentUid,
-        orderId: operation.id,
-        tradeDateTime: operation.date?.toISOString(),
-        lots,
-        price,
-        amount,
-        reason: `broker sell exists, but local trades table has no matching orderId; ledger ${issue.ledgerLots}, broker ${issue.brokerLots}`
-    };
-};
-
 const brokerReportDirectionIsSell = (direction: unknown) => {
     const value = String(direction ?? '').toLowerCase();
     return value.includes('sell') || value.includes('прод');
@@ -127,34 +97,33 @@ const brokerReportToCandidate = (issue: AuditIssue, row: BrokerReport): MissingB
 };
 
 export default class BrokerMissingSellImportService {
-    private static async getBrokerSellCandidates(issue: AuditIssue, from: Date, to: Date) {
-        try {
-            const operations = await OperationsService.getOperationsByCursorItems(issue.accountId, from, to, {
-                instrumentId: issue.instrumentUid || issue.figi,
-                figi: issue.figi,
-                operationTypes: [OperationType.OPERATION_TYPE_SELL],
-                state: OperationState.OPERATION_STATE_EXECUTED,
-                withoutCommissions: false,
-                withoutTrades: false,
-                withoutOvernights: true
-            });
+    private static async getBrokerSellCandidates(issue: AuditIssue, from: Date, to: Date, missingLots: number) {
+        const candidates: MissingBrokerSellCandidate[] = [];
+        const seenOrderIds = new Set<string>();
+        let cursorTo = new Date(to);
 
-            return operations
-                .map(operation => operationToCandidate(issue, operation))
-                .filter((candidate): candidate is MissingBrokerSellCandidate => Boolean(candidate));
-        } catch (error) {
-            console.warn('Broker operations cursor failed, falling back to broker report:', {
-                accountId: issue.accountId,
-                ticker: issue.ticker,
-                error: error instanceof Error ? error.message : String(error)
-            });
+        while (cursorTo > from) {
+            const cursorFrom = new Date(Math.max(
+                from.getTime(),
+                cursorTo.getTime() - 24 * 60 * 60 * 1000
+            ));
+            const rows = await OperationsService.getBrokerReportRows(issue.accountId, cursorFrom, cursorTo);
+
+            for (const candidate of (rows as BrokerReport[])
+                .map(row => brokerReportToCandidate(issue, row))
+                .filter((item): item is MissingBrokerSellCandidate => Boolean(item))) {
+                if (seenOrderIds.has(candidate.orderId)) continue;
+                seenOrderIds.add(candidate.orderId);
+                candidates.push(candidate);
+            }
+
+            const foundLots = candidates.reduce((sum, candidate) => sum + candidate.lots, 0);
+            if (foundLots >= missingLots) break;
+
+            cursorTo = cursorFrom;
         }
 
-        const rows = await OperationsService.getBrokerReportRows(issue.accountId, from, to);
-
-        return (rows as BrokerReport[])
-            .map(row => brokerReportToCandidate(issue, row))
-            .filter((candidate): candidate is MissingBrokerSellCandidate => Boolean(candidate));
+        return candidates;
     }
 
     static async importMissingSells(config: RobotConfig, options: { apply?: boolean; from?: Date; to?: Date } = {}): Promise<MissingBrokerSellImportResult> {
@@ -180,7 +149,7 @@ export default class BrokerMissingSellImportService {
             const missingLots = Math.max(0, toNumber(issue.ledgerLots) - toNumber(issue.brokerLots));
             if (missingLots <= 0) continue;
 
-            const brokerCandidates = await this.getBrokerSellCandidates(issue, from, to);
+            const brokerCandidates = await this.getBrokerSellCandidates(issue, from, to, missingLots);
             const orderIds = brokerCandidates.map(candidate => candidate.orderId).filter(Boolean);
             const existing = orderIds.length > 0
                 ? await TradesModel.findAll({

@@ -5,33 +5,29 @@ import { RobotConfig } from '../config/robot.config';
 import AccountingAuditService from './accounting-audit.service';
 import BrokerMissingSellImportService from './broker-missing-sell-import.service';
 import OperationsService from './operations.service';
-import { OperationState, OperationType } from 'tinkoff-sdk-grpc-js/dist/generated/operations';
 
 const originalAudit = AccountingAuditService.getLedgerBrokerAudit;
-const originalOperations = OperationsService.getOperationsByCursorItems;
+const originalBrokerReport = OperationsService.getBrokerReportRows;
 const originalFindAll = TradesModel.findAll;
 const originalCreate = TradesModel.create;
 
 const config = { accountIds: ['acc-1'], accountAliases: { 'acc-1': 'trade' } } as unknown as RobotConfig;
 
-const operation = {
-    id: 'sell-order-1',
-    date: new Date('2026-05-26T12:31:04.000Z'),
-    type: OperationType.OPERATION_TYPE_SELL,
-    state: OperationState.OPERATION_STATE_EXECUTED,
-    instrumentUid: 'uid-1',
+const brokerReportRow = {
+    orderId: 'sell-order-1',
+    tradeDatetime: new Date('2026-05-26T12:31:04.000Z'),
+    direction: 'sell',
     figi: 'figi-1',
     ticker: 'VKCO',
     name: 'VK',
-    payment: { currency: 'rub', units: 237, nano: 150000000 },
+    totalOrderAmount: { currency: 'rub', units: 237, nano: 150000000 },
     price: { currency: 'rub', units: 237, nano: 150000000 },
-    quantity: 1,
-    quantityDone: 1
+    quantity: 1
 };
 
 afterEach(() => {
     (AccountingAuditService.getLedgerBrokerAudit as unknown) = originalAudit;
-    (OperationsService.getOperationsByCursorItems as unknown) = originalOperations;
+    (OperationsService.getBrokerReportRows as unknown) = originalBrokerReport;
     (TradesModel.findAll as unknown) = originalFindAll;
     (TradesModel.create as unknown) = originalCreate;
 });
@@ -56,7 +52,7 @@ describe('BrokerMissingSellImportService', () => {
     it('finds missing broker sell operations without writing in dry-run mode', async () => {
         mockMismatch();
         let createCalls = 0;
-        (OperationsService.getOperationsByCursorItems as unknown) = async () => [operation];
+        (OperationsService.getBrokerReportRows as unknown) = async () => [brokerReportRow];
         (TradesModel.findAll as unknown) = async () => [];
         (TradesModel.create as unknown) = async () => {
             createCalls += 1;
@@ -76,7 +72,7 @@ describe('BrokerMissingSellImportService', () => {
     it('imports missing broker sell fills only when apply is enabled', async () => {
         mockMismatch();
         const created: Record<string, unknown>[] = [];
-        (OperationsService.getOperationsByCursorItems as unknown) = async () => [operation];
+        (OperationsService.getBrokerReportRows as unknown) = async () => [brokerReportRow];
         (TradesModel.findAll as unknown) = async () => [];
         (TradesModel.create as unknown) = async (data: Record<string, unknown>) => {
             created.push(data);
@@ -96,7 +92,7 @@ describe('BrokerMissingSellImportService', () => {
 
     it('does not import broker operations that are already present locally', async () => {
         mockMismatch();
-        (OperationsService.getOperationsByCursorItems as unknown) = async () => [operation];
+        (OperationsService.getBrokerReportRows as unknown) = async () => [brokerReportRow];
         (TradesModel.findAll as unknown) = async () => [{
             getDataValue: () => 'sell-order-1'
         }];
