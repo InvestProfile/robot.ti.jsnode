@@ -4,6 +4,9 @@ import OrdersService from './orders.service';
 import { isFinalOrderStatus, normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
 import { OrderIdType } from 'tinkoff-sdk-grpc-js/dist/generated/orders';
 
+const RECONCILIATION_LOOKBACK_MS = 36 * 60 * 60 * 1000;
+const RECONCILIATION_LIMIT = 40;
+
 const moneyParts = (value: unknown) => {
     const money = value as Record<string, unknown> | undefined;
     return {
@@ -23,6 +26,11 @@ const hasExecutionDetails = (data: Record<string, unknown>) => {
     const totalAmount = moneyValue(data.totalAmountUnits, data.totalAmountNano);
 
     return lotsExecuted > 0 && (executedPrice > 0 || totalAmount > 0);
+};
+
+const isResourceExhausted = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes('RESOURCE_EXHAUSTED');
 };
 
 export default class OrderReconciliationService {
@@ -84,15 +92,21 @@ export default class OrderReconciliationService {
     }
 
     static async reconcileOpenOrders() {
+        const since = new Date(Date.now() - RECONCILIATION_LOOKBACK_MS);
         const trades = await TradesModel.findAll({
             where: {
-                [Op.or]: [
-                    { orderId: { [Op.ne]: null } },
-                    { clientOrderId: { [Op.ne]: null } }
+                [Op.and]: [
+                    {
+                        [Op.or]: [
+                            { orderId: { [Op.ne]: null } },
+                            { clientOrderId: { [Op.ne]: null } }
+                        ]
+                    },
+                    { createdAt: { [Op.gte]: since } }
                 ]
             } as any,
             order: [['createdAt', 'DESC']],
-            limit: 100
+            limit: RECONCILIATION_LIMIT
         });
 
         let checked = 0;
@@ -124,6 +138,11 @@ export default class OrderReconciliationService {
                     orderId: orderId ?? clientOrderId,
                     error: error instanceof Error ? error.message : String(error)
                 });
+
+                if (isResourceExhausted(error)) {
+                    console.warn('Order reconciliation stopped: broker API rate limit is exhausted');
+                    break;
+                }
             }
         }
 
