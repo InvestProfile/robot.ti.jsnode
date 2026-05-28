@@ -970,6 +970,50 @@ tbody tr:hover td {
   height: 44px;
 }
 
+.accounting-audit-table {
+  min-width: 1350px;
+}
+
+.accounting-audit-table td,
+.accounting-audit-table th {
+  overflow: hidden;
+}
+
+.audit-row-bad td {
+  background: #1b1518;
+}
+
+.audit-row-warn td {
+  background: #1b1911;
+}
+
+.audit-callout {
+  display: grid;
+  grid-template-columns: auto minmax(220px, 1fr) minmax(280px, 1.2fr);
+  gap: 10px;
+  align-items: center;
+  margin: 0 14px 10px;
+  padding: 10px 12px;
+  border: 1px solid #6f5a22;
+  border-radius: 7px;
+  background: #181a16;
+}
+
+.audit-callout span,
+.audit-callout strong,
+.audit-action {
+  min-width: 0;
+  color: #dce5ef;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.audit-callout strong,
+.audit-action {
+  color: #ffd76a;
+  font-weight: 800;
+}
+
 .order-safety-table {
   min-width: 1060px;
 }
@@ -980,6 +1024,8 @@ tbody tr:hover td {
 .trade-review-table th,
 .round-trip-table td,
 .round-trip-table th,
+.accounting-audit-table td,
+.accounting-audit-table th,
 .order-safety-table td,
 .order-safety-table th {
   vertical-align: top;

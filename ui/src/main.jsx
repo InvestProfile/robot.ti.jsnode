@@ -2207,6 +2207,32 @@ const roundTripStatusLabel = (status) => {
   return display(status);
 };
 
+const accountingIssueMeta = (row) => {
+  const type = String(row?.type || '');
+  if (type === 'ledger-ghost') {
+    return {
+      label: 'ghost ledger',
+      tone: 'bad',
+      reason: 'В ledger есть открытые лоты, но брокерской позиции уже нет.',
+      action: 'Не продавать из ledger; найти закрывающую sell-сделку или очистить accounting.'
+    };
+  }
+  if (type === 'ledger-overstates-broker') {
+    return {
+      label: 'лишние лоты',
+      tone: 'warn',
+      reason: 'Ledger показывает больше лотов, чем реально есть у брокера.',
+      action: 'Сверить количество с брокером; до очистки продавать только broker-owned остаток.'
+    };
+  }
+  return {
+    label: type || EMPTY,
+    tone: row?.severity === 'high' ? 'bad' : 'warn',
+    reason: row?.reason || EMPTY,
+    action: 'Проверить ledger, broker portfolio и последние сделки по тикеру.'
+  };
+};
+
 const accountingIgnoredStatuses = new Set([
   'LOCAL_PENDING_SUBMIT',
   'LOCAL_SUBMIT_UNKNOWN',
@@ -2549,6 +2575,7 @@ function OpenLots({ rows, loading }) {
 function AccountingAudit({ audit, loading }) {
   const summary = audit?.summary || {};
   const issues = audit?.issues || [];
+  const mainIssue = issues[0] ? accountingIssueMeta(issues[0]) : null;
 
   return (
     <Card title="Расхождения учета" icon={ShieldCheck} className="wide" help="Сравнение robot-owned ledger с реальным брокерским портфелем. Ghost означает: робот считает лоты открытыми, но у брокера такой позиции уже нет. Такие строки нельзя использовать для стопов и продаж, пока accounting не очищен.">
@@ -2561,16 +2588,26 @@ function AccountingAudit({ audit, loading }) {
           { label: 'Lots mismatch', value: summary.quantityMismatches ?? 0, tone: summary.quantityMismatches ? 'warn' : 'good', detail: 'ledger больше брокера' }
         ]}
       />
+      {summary.issues ? (
+        <div className="audit-callout">
+          <Pill tone={mainIssue?.tone || 'bad'}>{summary.issues} проблем</Pill>
+          <span>{mainIssue?.reason || 'Ledger расходится с брокерским портфелем.'}</span>
+          <strong>{mainIssue?.action || 'Нужен accounting-аудит перед продажами по этим строкам.'}</strong>
+        </div>
+      ) : null}
       <Table
+        className="accounting-audit-table"
+        rowClassName={(row) => `audit-row-${accountingIssueMeta(row).tone}`}
         columns={[
-          { key: 'type', label: 'Тип', width: '150px', render: (row) => <Pill tone={row.severity === 'high' ? 'bad' : 'warn'}>{row.type}</Pill> },
-          { key: 'ticker', label: 'Тикер', width: '120px', render: (row) => <><strong>{row.ticker || EMPTY}</strong><div className="muted">{row.name}</div></> },
-          { key: 'accountAlias', label: 'Счет', width: '135px', render: (row) => <TextCell>{row.accountAlias || row.accountId}</TextCell> },
-          { key: 'ledgerLots', label: 'Ledger', width: '90px', className: 'right', render: (row) => money(row.ledgerLots) },
-          { key: 'brokerLots', label: 'Broker', width: '90px', className: 'right', render: (row) => money(row.brokerLots) },
+          { key: 'type', label: 'Тип', width: '145px', render: (row) => { const meta = accountingIssueMeta(row); return <Pill tone={meta.tone} className="table-pill" title={row.type}>{meta.label}</Pill>; } },
+          { key: 'ticker', label: 'Тикер', width: '135px', render: (row) => <><strong>{row.ticker || EMPTY}</strong><div className="muted">{row.name}</div></> },
+          { key: 'accountAlias', label: 'Счет', width: '125px', render: (row) => <TextCell>{row.accountAlias || row.accountId}</TextCell> },
+          { key: 'ledgerLots', label: 'Ledger', width: '78px', className: 'right', render: (row) => money(row.ledgerLots) },
+          { key: 'brokerLots', label: 'Broker', width: '78px', className: 'right', render: (row) => money(row.brokerLots) },
           { key: 'averagePrice', label: 'Avg', width: '90px', className: 'right', render: (row) => money(row.averagePrice) },
           { key: 'lastTradeAt', label: 'Last trade', width: '150px', render: (row) => time(row.lastTradeAt) },
-          { key: 'reason', label: 'Причина', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+          { key: 'reason', label: 'Что не так', width: '260px', render: (row) => <CompactReason>{accountingIssueMeta(row).reason}</CompactReason> },
+          { key: 'action', label: 'Действие', render: (row) => <span className="audit-action">{accountingIssueMeta(row).action}</span> }
         ]}
         rows={issues}
         empty="Ledger совпадает с брокерским портфелем"
