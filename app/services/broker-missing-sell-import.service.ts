@@ -8,7 +8,7 @@ import OperationsService from './operations.service';
 
 const SELL_DIRECTION = '2';
 const FILL_STATUS = 'EXECUTION_REPORT_STATUS_FILL';
-const LOOKBACK_DAYS = 45;
+const LOOKBACK_DAYS = 30;
 
 type AuditIssue = {
     type: string;

@@ -8,7 +8,7 @@ import { OperationItem, OperationState, OperationType } from 'tinkoff-sdk-grpc-j
 const envVariables = getEnv();
 const delay = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
 const BROKER_REPORT_CACHE_TTL_MS = 15 * 60 * 1000;
-const BROKER_REPORT_TIMEOUT_MS = 5 * 1000;
+const BROKER_REPORT_TIMEOUT_MS = 30 * 1000;
 const OPERATIONS_CURSOR_CACHE_TTL_MS = 2 * 60 * 1000;
 const OPERATIONS_CURSOR_TIMEOUT_MS = 30 * 1000;
 
