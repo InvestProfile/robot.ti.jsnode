@@ -8,7 +8,7 @@ import { OperationItem, OperationState, OperationType } from 'tinkoff-sdk-grpc-j
 const envVariables = getEnv();
 const delay = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
 const BROKER_REPORT_CACHE_TTL_MS = 15 * 60 * 1000;
-const BROKER_REPORT_TIMEOUT_MS = 30 * 1000;
+const BROKER_REPORT_TIMEOUT_MS = 90 * 1000;
 const OPERATIONS_CURSOR_CACHE_TTL_MS = 2 * 60 * 1000;
 const OPERATIONS_CURSOR_TIMEOUT_MS = 30 * 1000;
 
@@ -34,6 +34,15 @@ const withTimeout = async <T>(promise: Promise<T>, milliseconds: number, label: 
     } finally {
         if (timeout) clearTimeout(timeout);
     }
+};
+
+const isBrokerReportPending = (error: unknown) => {
+    const text = String(error instanceof Error ? error.message : error ?? '').toLowerCase();
+    const details = String((error as { details?: unknown })?.details ?? '');
+
+    return details === '30058'
+        || text.includes('task not completed')
+        || (text.includes('задач') && text.includes('не заверш'));
 };
 
 export default class OperationsService {
@@ -195,18 +204,25 @@ export default class OperationsService {
         let page = 0;
         let pagesCount = 1;
 
-        for (let attempt = 0; attempt < 4 && page < pagesCount; attempt += 1) {
-            const response = await TInvestApiCacheService.withRetry(() => operations.getBrokerReport({
-                generateBrokerReportRequest: undefined,
-                getBrokerReportRequest: {
-                    taskId,
-                    page
-                }
-            }));
+        for (let attempt = 0; attempt < 20 && page < pagesCount; attempt += 1) {
+            let response;
+            try {
+                response = await TInvestApiCacheService.withRetry(() => operations.getBrokerReport({
+                    generateBrokerReportRequest: undefined,
+                    getBrokerReportRequest: {
+                        taskId,
+                        page
+                    }
+                }));
+            } catch (error) {
+                if (!isBrokerReportPending(error)) throw error;
+                await delay(3_000);
+                continue;
+            }
             const report = response.getBrokerReportResponse;
 
             if (!report) {
-                await delay(500);
+                await delay(3_000);
                 continue;
             }
 
