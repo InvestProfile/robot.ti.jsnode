@@ -86,7 +86,7 @@ export default class OperationsService {
             try {
                 do {
                     const response = await withTimeout(
-                        TInvestApiCacheService.withRetry(() => operations.getOperationsByCursor({
+                        operations.getOperationsByCursor({
                             accountId,
                             instrumentId: options.instrumentId,
                             from,
@@ -98,7 +98,7 @@ export default class OperationsService {
                             withoutCommissions: options.withoutCommissions,
                             withoutTrades: options.withoutTrades,
                             withoutOvernights: options.withoutOvernights
-                        })),
+                        }),
                         OPERATIONS_CURSOR_TIMEOUT_MS,
                         'operations cursor'
                     );
@@ -110,13 +110,13 @@ export default class OperationsService {
                 if (!options.figi || !options.fallbackToBrokerReport) throw error;
 
                 const response = await withTimeout(
-                    TInvestApiCacheService.withRetry(() => operations.getOperations({
+                    operations.getOperations({
                         accountId,
                         from,
                         to,
                         state: options.state,
                         figi: options.figi
-                    })),
+                    }),
                     OPERATIONS_CURSOR_TIMEOUT_MS,
                     'operations fallback'
                 );
@@ -190,14 +190,14 @@ export default class OperationsService {
 
     private static async fetchBrokerReportRows(token: string, accountId: string, from: Date, to: Date) {
         const {operations} = getSdk(token);
-        const generated = await TInvestApiCacheService.withRetry(() => operations.getBrokerReport({
+        const generated = await operations.getBrokerReport({
             generateBrokerReportRequest: {
                 accountId,
                 from,
                 to
             },
             getBrokerReportRequest: undefined
-        }));
+        });
         const taskId = generated.generateBrokerReportResponse?.taskId;
         if (!taskId) return [];
 
@@ -208,13 +208,13 @@ export default class OperationsService {
         for (let attempt = 0; attempt < 20 && page < pagesCount; attempt += 1) {
             let response;
             try {
-                response = await TInvestApiCacheService.withRetry(() => operations.getBrokerReport({
+                response = await operations.getBrokerReport({
                     generateBrokerReportRequest: undefined,
                     getBrokerReportRequest: {
                         taskId,
                         page
                     }
-                }));
+                });
             } catch (error) {
                 if (!isBrokerReportPending(error)) throw error;
                 await delay(3_000);
