@@ -2699,21 +2699,21 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
         <Table
           className="round-trip-table"
           columns={[
-            { key: 'entryAt', label: 'Вход', width: '150px', render: (row) => time(row.entryAt) },
-            { key: 'exitAt', label: 'Выход', width: '150px', render: (row) => time(row.exitAt) },
-            { key: 'ticker', label: 'Тикер', width: '125px', render: (row) => <><strong>{row.ticker || '-'}</strong><div className="muted">{row.name}</div></> },
-            { key: 'entrySignalSource', label: 'Сигнал входа', width: '125px', render: (row) => <TextCell>{row.entrySignalSource || EMPTY}</TextCell> },
-            { key: 'exitSignalSource', label: 'Сигнал выхода', width: '125px', render: (row) => <TextCell>{row.exitSignalSource || EMPTY}</TextCell> },
-            { key: 'status', label: 'Статус', width: '95px', render: (row) => <Pill tone={row.status === 'closed' ? 'good' : 'warn'}>{roundTripStatusLabel(row.status)}</Pill> },
-            { key: 'lots', label: 'Лоты', width: '70px', className: 'right', render: (row) => money(row.lots) },
-            { key: 'entryPrice', label: 'Вход', width: '90px', className: 'right', render: (row) => money(row.entryPrice) },
-            { key: 'exitPrice', label: 'Выход', width: '90px', className: 'right', render: (row) => money(row.exitPrice) },
-            { key: 'grossPnlRub', label: 'Gross', width: '95px', className: 'right', render: (row) => <span className={Number(row.grossPnlRub ?? row.pnlRub) >= 0 ? 'good' : 'bad'}>{money(row.grossPnlRub ?? row.pnlRub)}</span> },
-            { key: 'commissionRub', label: 'Fees', width: '80px', className: 'right', render: (row) => money(row.commissionRub) },
-            { key: 'netPnlRub', label: 'Net', width: '95px', className: 'right', render: (row) => <span className={Number(row.netPnlRub ?? row.pnlRub) >= 0 ? 'good' : 'bad'}>{money(row.netPnlRub ?? row.pnlRub)}</span> },
-            { key: 'netPnlPercent', label: 'Net %', width: '90px', className: 'right', render: (row) => percent(row.netPnlPercent ?? row.pnlPercent) },
-            { key: 'entryDecisionReason', label: 'Причина входа', width: '190px', render: (row) => <CompactReason>{row.entryDecisionReason || EMPTY}</CompactReason> },
-            { key: 'exitDecisionReason', label: 'Причина выхода', width: '190px', render: (row) => <CompactReason>{row.exitDecisionReason || row.reason}</CompactReason> }
+            { key: 'entryAt', label: 'Вход', width: '136px', render: (row) => time(row.entryAt) },
+            { key: 'exitAt', label: 'Выход', width: '136px', render: (row) => time(row.exitAt) },
+            { key: 'ticker', label: 'Тикер', width: '110px', render: (row) => <><strong>{row.ticker || '-'}</strong><div className="muted">{row.name}</div></> },
+            { key: 'entrySignalSource', label: 'Сигнал входа', width: '105px', render: (row) => <TextCell>{row.entrySignalSource || EMPTY}</TextCell> },
+            { key: 'exitSignalSource', label: 'Сигнал выхода', width: '105px', render: (row) => <TextCell>{row.exitSignalSource || EMPTY}</TextCell> },
+            { key: 'status', label: 'Статус', width: '84px', render: (row) => <Pill tone={row.status === 'closed' ? 'good' : 'warn'}>{roundTripStatusLabel(row.status)}</Pill> },
+            { key: 'lots', label: 'Лоты', width: '54px', className: 'right', render: (row) => money(row.lots) },
+            { key: 'entryPrice', label: 'Вход', width: '82px', className: 'right', render: (row) => money(row.entryPrice) },
+            { key: 'exitPrice', label: 'Выход', width: '82px', className: 'right', render: (row) => money(row.exitPrice) },
+            { key: 'grossPnlRub', label: 'Gross', width: '82px', className: 'right', render: (row) => <span className={Number(row.grossPnlRub ?? row.pnlRub) >= 0 ? 'good' : 'bad'}>{money(row.grossPnlRub ?? row.pnlRub)}</span> },
+            { key: 'commissionRub', label: 'Fees', width: '60px', className: 'right', render: (row) => money(row.commissionRub) },
+            { key: 'netPnlRub', label: 'Net', width: '82px', className: 'right', render: (row) => <span className={Number(row.netPnlRub ?? row.pnlRub) >= 0 ? 'good' : 'bad'}>{money(row.netPnlRub ?? row.pnlRub)}</span> },
+            { key: 'netPnlPercent', label: 'Net %', width: '70px', className: 'right', render: (row) => percent(row.netPnlPercent ?? row.pnlPercent) },
+            { key: 'entryDecisionReason', label: 'Причина входа', width: '150px', render: (row) => <CompactReason>{row.entryDecisionReason || EMPTY}</CompactReason> },
+            { key: 'exitDecisionReason', label: 'Причина выхода', width: '150px', render: (row) => <CompactReason>{row.exitDecisionReason || row.reason}</CompactReason> }
           ]}
           rows={filteredRoundTrips}
           empty="Закрытых пар под фильтр нет"
