@@ -4,6 +4,7 @@ import { RobotConfig } from '../config/robot.config';
 import { TradesModel } from '../models/trades.model';
 import { quotationToNumber } from '../utils/money';
 import AccountingAuditService from './accounting-audit.service';
+import InstrumentsService from './instruments.service';
 import OperationsService from './operations.service';
 
 const SELL_DIRECTION = '2';
@@ -33,6 +34,7 @@ export type MissingBrokerSellCandidate = {
     orderId: string;
     tradeDateTime?: string;
     lots: number;
+    lotSize: number;
     price: number;
     amount: number;
     reason: string;
@@ -67,19 +69,20 @@ const moneyParts = (value: number) => {
     };
 };
 
-const operationLots = (operation: OperationItem) => {
+const operationQuantity = (operation: OperationItem) => {
     const done = toNumber(operation.quantityDone);
     if (done > 0) return done;
 
     return Math.max(0, toNumber(operation.quantity));
 };
 
-const operationToCandidate = (issue: AuditIssue, operation: OperationItem): MissingBrokerSellCandidate | undefined => {
-    const lots = operationLots(operation);
+const operationToCandidate = (issue: AuditIssue, operation: OperationItem, lotSize: number): MissingBrokerSellCandidate | undefined => {
+    const quantity = operationQuantity(operation);
+    const lots = lotSize > 1 ? quantity / lotSize : quantity;
     const price = absMoney(quotationToNumber(operation.price));
     const amount = absMoney(quotationToNumber(operation.payment));
 
-    if (!operation.id || lots <= 0 || !price || !amount) return undefined;
+    if (!operation.id || lots <= 0 || !Number.isInteger(lots) || !price || !amount) return undefined;
 
     return {
         accountId: issue.accountId,
@@ -91,6 +94,7 @@ const operationToCandidate = (issue: AuditIssue, operation: OperationItem): Miss
         orderId: operation.id,
         tradeDateTime: operation.date?.toISOString(),
         lots,
+        lotSize,
         price,
         amount,
         reason: `broker sell exists, but local trades table has no matching orderId; issue ${issue.type}, ledger ${issue.ledgerLots}, broker ${issue.brokerLots}`
@@ -106,7 +110,7 @@ const issueScanFrom = (issue: AuditIssue, fallbackFrom: Date) => {
 };
 
 export default class BrokerMissingSellImportService {
-    private static async getBrokerSellCandidates(issue: AuditIssue, from: Date, to: Date, missingLots: number) {
+    private static async getBrokerSellCandidates(issue: AuditIssue, from: Date, to: Date, missingLots: number, lotSize: number) {
         const candidates: MissingBrokerSellCandidate[] = [];
         const seenOrderIds = new Set<string>();
         const fromDay = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
@@ -137,7 +141,7 @@ export default class BrokerMissingSellImportService {
             }
 
             for (const candidate of operations
-                .map(operation => operationToCandidate(issue, operation))
+                .map(operation => operationToCandidate(issue, operation, lotSize))
                 .filter((item): item is MissingBrokerSellCandidate => Boolean(item))) {
                 if (seenOrderIds.has(candidate.orderId)) continue;
                 seenOrderIds.add(candidate.orderId);
@@ -155,6 +159,8 @@ export default class BrokerMissingSellImportService {
 
     static async importMissingSells(config: RobotConfig, options: { apply?: boolean; from?: Date; to?: Date } = {}): Promise<MissingBrokerSellImportResult> {
         const audit = await AccountingAuditService.getLedgerBrokerAudit(config);
+        const shares = await InstrumentsService.getShares();
+        const instruments = shares?.instruments ?? [];
         const issues = audit.issues.filter(issue => (
             (issue.type === 'ledger-overstates-broker' || issue.type === 'ledger-ghost')
             && toNumber(issue.ledgerLots) > toNumber(issue.brokerLots)
@@ -176,7 +182,13 @@ export default class BrokerMissingSellImportService {
             const missingLots = Math.max(0, toNumber(issue.ledgerLots) - toNumber(issue.brokerLots));
             if (missingLots <= 0) continue;
 
-            const brokerCandidates = await this.getBrokerSellCandidates(issue, issueScanFrom(issue, from), to, missingLots);
+            const instrument = instruments.find(item =>
+                item.uid === issue.instrumentUid
+                || item.figi === issue.figi
+                || item.ticker === issue.ticker
+            );
+            const lotSize = Math.max(1, Math.trunc(toNumber(instrument?.lot) || 1));
+            const brokerCandidates = await this.getBrokerSellCandidates(issue, issueScanFrom(issue, from), to, missingLots, lotSize);
             const orderIds = brokerCandidates.map(candidate => candidate.orderId).filter(Boolean);
             const existing = orderIds.length > 0
                 ? await TradesModel.findAll({
@@ -217,7 +229,7 @@ export default class BrokerMissingSellImportService {
                     accountId: candidate.accountId,
                     ticker: candidate.ticker,
                     name: candidate.name,
-                    lot: String(1),
+                    lot: String(candidate.lotSize),
                     orderId: candidate.orderId,
                     orderType: 'broker-import',
                     status: FILL_STATUS,

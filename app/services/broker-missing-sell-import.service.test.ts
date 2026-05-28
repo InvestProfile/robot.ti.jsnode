@@ -1,13 +1,15 @@
-import { afterEach, describe, it } from 'node:test';
+import { afterEach, beforeEach, describe, it } from 'node:test';
 import assert from 'node:assert';
 import { TradesModel } from '../models/trades.model';
 import { RobotConfig } from '../config/robot.config';
 import AccountingAuditService from './accounting-audit.service';
 import BrokerMissingSellImportService from './broker-missing-sell-import.service';
+import InstrumentsService from './instruments.service';
 import OperationsService from './operations.service';
 import { OperationState, OperationType } from 'tinkoff-sdk-grpc-js/dist/generated/operations';
 
 const originalAudit = AccountingAuditService.getLedgerBrokerAudit;
+const originalShares = InstrumentsService.getShares;
 const originalOperations = OperationsService.getOperationsByCursorItems;
 const originalFindAll = TradesModel.findAll;
 const originalCreate = TradesModel.create;
@@ -31,6 +33,7 @@ const operation = {
 
 afterEach(() => {
     (AccountingAuditService.getLedgerBrokerAudit as unknown) = originalAudit;
+    (InstrumentsService.getShares as unknown) = originalShares;
     (OperationsService.getOperationsByCursorItems as unknown) = originalOperations;
     (TradesModel.findAll as unknown) = originalFindAll;
     (TradesModel.create as unknown) = originalCreate;
@@ -53,6 +56,12 @@ const mockMismatch = () => {
 };
 
 describe('BrokerMissingSellImportService', () => {
+    beforeEach(() => {
+        (InstrumentsService.getShares as unknown) = async () => ({
+            instruments: [{ uid: 'uid-1', figi: 'figi-1', ticker: 'VKCO', lot: 1 }]
+        });
+    });
+
     it('finds missing broker sell operations without writing in dry-run mode', async () => {
         mockMismatch();
         let createCalls = 0;
@@ -133,5 +142,34 @@ describe('BrokerMissingSellImportService', () => {
         assert.strictEqual(result.checkedIssues, 1);
         assert.strictEqual(result.candidates.length, 1);
         assert.match(result.candidates[0].reason, /ledger-ghost/);
+    });
+
+    it('converts broker operation quantity to lots using instrument lot size', async () => {
+        (InstrumentsService.getShares as unknown) = async () => ({
+            instruments: [{ uid: 'uid-1', figi: 'figi-1', ticker: 'VKCO', lot: 10 }]
+        });
+        mockMismatch();
+        (OperationsService.getOperationsByCursorItems as unknown) = async () => [{
+            ...operation,
+            quantity: 10,
+            quantityDone: 10,
+            payment: { currency: 'rub', units: 481, nano: 700000000 },
+            price: { currency: 'rub', units: 48, nano: 170000000 }
+        }];
+        (TradesModel.findAll as unknown) = async () => [];
+
+        const created: Record<string, unknown>[] = [];
+        (TradesModel.create as unknown) = async (data: Record<string, unknown>) => {
+            created.push(data);
+            return data;
+        };
+
+        const result = await BrokerMissingSellImportService.importMissingSells(config, { apply: true });
+
+        assert.strictEqual(result.imported.length, 1);
+        assert.strictEqual(result.imported[0].lots, 1);
+        assert.strictEqual(result.imported[0].lotSize, 10);
+        assert.strictEqual(created[0].lotsExecuted, 1);
+        assert.strictEqual(created[0].lot, '10');
     });
 });
