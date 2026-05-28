@@ -44,6 +44,7 @@ const endpoints = {
   robotPositions: '/api/robot-positions',
   trades: '/api/trades?limit=80',
   tradePnl: '/api/trade-pnl?limit=500',
+  accountingAudit: '/api/accounting-audit',
   orderSafety: '/api/order-safety?limit=80',
   protectiveStops: '/api/protective-stops'
 };
@@ -57,7 +58,7 @@ const endpointGroups = {
   evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
   sell: ['sellBrain', 'positions', 'robotPositions'],
-  trades: ['trades', 'tradePnl', 'robotPositions', 'decisions', 'orderSafety', 'protectiveStops'],
+  trades: ['trades', 'tradePnl', 'robotPositions', 'accountingAudit', 'decisions', 'orderSafety', 'protectiveStops'],
   logs: ['decisions', 'trades', 'robotPositions', 'orderSafety', 'protectiveStops']
 };
 
@@ -2530,6 +2531,40 @@ function OpenLots({ rows, loading }) {
   );
 }
 
+function AccountingAudit({ audit, loading }) {
+  const summary = audit?.summary || {};
+  const issues = audit?.issues || [];
+
+  return (
+    <Card title="Расхождения учета" icon={ShieldCheck} className="wide" help="Сравнение robot-owned ledger с реальным брокерским портфелем. Ghost означает: робот считает лоты открытыми, но у брокера такой позиции уже нет. Такие строки нельзя использовать для стопов и продаж, пока accounting не очищен.">
+      <StageStrip
+        items={[
+          { label: 'Проверено', value: summary.checkedLedgerPositions ?? EMPTY, detail: 'открытых ledger-позиций' },
+          { label: 'У брокера', value: summary.brokerPositions ?? EMPTY, detail: 'позиций на торговых счетах' },
+          { label: 'Проблемы', value: summary.issues ?? 0, tone: summary.issues ? 'bad' : 'good', detail: summary.issues ? 'нужен accounting-аудит' : 'расхождений нет' },
+          { label: 'Ghost', value: summary.ghosts ?? 0, tone: summary.ghosts ? 'bad' : 'good', detail: 'ledger есть, брокера нет' },
+          { label: 'Lots mismatch', value: summary.quantityMismatches ?? 0, tone: summary.quantityMismatches ? 'warn' : 'good', detail: 'ledger больше брокера' }
+        ]}
+      />
+      <Table
+        columns={[
+          { key: 'type', label: 'Тип', width: '150px', render: (row) => <Pill tone={row.severity === 'high' ? 'bad' : 'warn'}>{row.type}</Pill> },
+          { key: 'ticker', label: 'Тикер', width: '120px', render: (row) => <><strong>{row.ticker || EMPTY}</strong><div className="muted">{row.name}</div></> },
+          { key: 'accountAlias', label: 'Счет', width: '135px', render: (row) => <TextCell>{row.accountAlias || row.accountId}</TextCell> },
+          { key: 'ledgerLots', label: 'Ledger', width: '90px', className: 'right', render: (row) => money(row.ledgerLots) },
+          { key: 'brokerLots', label: 'Broker', width: '90px', className: 'right', render: (row) => money(row.brokerLots) },
+          { key: 'averagePrice', label: 'Avg', width: '90px', className: 'right', render: (row) => money(row.averagePrice) },
+          { key: 'lastTradeAt', label: 'Last trade', width: '150px', render: (row) => time(row.lastTradeAt) },
+          { key: 'reason', label: 'Причина', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+        ]}
+        rows={issues}
+        empty="Ledger совпадает с брокерским портфелем"
+        loading={loading}
+      />
+    </Card>
+  );
+}
+
 function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
   const [filters, setFilters] = useState({ side: 'all', status: 'all', ledger: 'all', ticker: '', pnl: 'all', sort: 'newest' });
   const rows = buildTradeRows(data);
@@ -2544,6 +2579,7 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
   const roundTrips = data.tradePnl?.roundTrips || [];
   const unmatchedSells = data.tradePnl?.unmatchedSells || [];
   const openLots = data.tradePnl?.openLots || [];
+  const accountingIssues = data.accountingAudit?.summary?.issues || 0;
   const roundTripMatchesPnl = (row) => {
     const pnl = Number(row.pnlRub);
     if (filters.pnl === 'profit') return Number.isFinite(pnl) && pnl > 0;
@@ -2595,6 +2631,7 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
             { label: 'Фильтр', value: filteredRows.length, detail: 'строк сейчас видно' },
             { label: 'Round-trip P/L', value: `${money(realizedNetPnlRub)} RUB`, tone: realizedNetPnlRub >= 0 ? 'good' : 'bad', detail: `gross ${money(realizedGrossPnlRub)}, fees ${money(commissionRub)}` },
             { label: 'Matching', value: percent(tradePnlSummary.matchingQuality), tone: tradePnlSummary.unmatchedSells ? 'warn' : 'good', detail: `${tradePnlSummary.unmatchedSells || 0} sell без пары` },
+            { label: 'Accounting audit', value: accountingIssues, tone: accountingIssues ? 'bad' : 'good', detail: accountingIssues ? 'расхождения ledger/broker' : 'ledger и брокер сходятся' },
             { label: 'Open robot lots', value: money(tradePnlSummary.openLots || 0), detail: `${tradePnlSummary.openPositions || 0} позиций` }
           ]}
         />
@@ -2671,6 +2708,8 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
       <UnmatchedSells rows={unmatchedSells} loading={loadingKeys.tradePnl} />
 
       <OpenLots rows={openLots} loading={loadingKeys.tradePnl} />
+
+      <AccountingAudit audit={data.accountingAudit} loading={loadingKeys.accountingAudit} />
 
       <Card title="Ledger робота" icon={Bot} className="wide" help="Внутренние события robot-owned ledger: из них робот понимает, какие лоты купил сам и какие может продавать.">
         <Table

@@ -45,6 +45,7 @@ import TradeBudgetService from '../services/trade-budget.service';
 import ProfileManagementService from '../services/profile-management.service';
 import MarketDataService from '../services/marketData.service';
 import ProtectiveStopService from '../services/protective-stop.service';
+import AccountingAuditService from '../services/accounting-audit.service';
 import { isOpenOrderStatus, isRejectedOrderStatus } from '../utils/order-status';
 
 type AccountMode = 'trade' | 'observe';
@@ -1650,6 +1651,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/trade-pnl') {
         json(res, 200, await getTradePnlPayload(url, config));
+        return;
+    }
+
+    if (url.pathname === '/api/accounting-audit') {
+        json(res, 200, await AccountingAuditService.getLedgerBrokerAudit(config));
         return;
     }
 

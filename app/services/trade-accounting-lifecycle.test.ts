@@ -7,6 +7,7 @@ import OperationsService from './operations.service';
 import TradesService from './trades.service';
 import TradePnlService from './trade-pnl.service';
 import RobotPositionLedgerService from './robot-position-ledger.service';
+import AccountingAuditService from './accounting-audit.service';
 import { RobotConfig } from '../config/robot.config';
 
 type PlainTrade = Record<string, unknown>;
@@ -256,5 +257,63 @@ describe('trade accounting lifecycle safety', () => {
         assert.strictEqual(ledger.summary.events, 1);
         assert.deepStrictEqual(ledger.events.map(event => event.ticker), ['GOOD']);
         assert.deepStrictEqual(ledger.items.map(item => item.ticker), ['GOOD']);
+    });
+
+    it('reports robot ledger positions that are absent from broker portfolio', async () => {
+        setTrades([
+            {
+                id: 1,
+                accountId: 'acc-1',
+                ticker: 'GOOD',
+                figi: 'good-figi',
+                instrumentUid: 'good-uid',
+                direction: '1',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                lotsExecuted: 1,
+                executedPriceUnits: 100,
+                totalAmountUnits: 100,
+                lot: 1,
+                tradeDateTime: '2026-05-20T09:00:00.000Z'
+            },
+            {
+                id: 2,
+                accountId: 'acc-1',
+                ticker: 'GHOST',
+                figi: 'ghost-figi',
+                instrumentUid: 'ghost-uid',
+                direction: '1',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                lotsExecuted: 2,
+                executedPriceUnits: 50,
+                totalAmountUnits: 100,
+                lot: 1,
+                tradeDateTime: '2026-05-20T10:00:00.000Z'
+            }
+        ]);
+        (InstrumentsService.getShares as unknown) = async () => ({
+            instruments: [
+                { uid: 'good-uid', figi: 'good-figi', ticker: 'GOOD', name: 'Good', lot: 1 },
+                { uid: 'ghost-uid', figi: 'ghost-figi', ticker: 'GHOST', name: 'Ghost', lot: 1 }
+            ]
+        });
+        (OperationsService.getPortfolio as unknown) = async () => ({
+            positions: [
+                {
+                    figi: 'good-figi',
+                    instrumentUid: 'good-uid',
+                    quantityLots: { units: 1, nano: 0 },
+                    currentPrice: { units: 110, nano: 0 }
+                }
+            ]
+        });
+
+        const audit = await AccountingAuditService.getLedgerBrokerAudit(config);
+
+        assert.strictEqual(audit.summary.checkedLedgerPositions, 2);
+        assert.strictEqual(audit.summary.ghosts, 1);
+        assert.strictEqual(audit.summary.issues, 1);
+        assert.strictEqual(audit.issues[0].ticker, 'GHOST');
+        assert.strictEqual(audit.issues[0].ledgerLots, 2);
+        assert.strictEqual(audit.issues[0].brokerLots, 0);
     });
 });
