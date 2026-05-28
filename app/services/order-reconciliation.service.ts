@@ -12,6 +12,19 @@ const moneyParts = (value: unknown) => {
     };
 };
 
+const moneyValue = (units: unknown, nano: unknown) => {
+    const value = Number(units ?? 0) + Number(nano ?? 0) * 1e-9;
+    return Number.isFinite(value) ? value : 0;
+};
+
+const hasExecutionDetails = (data: Record<string, unknown>) => {
+    const lotsExecuted = Number(data.lotsExecuted ?? 0);
+    const executedPrice = moneyValue(data.executedPriceUnits, data.executedPriceNano);
+    const totalAmount = moneyValue(data.totalAmountUnits, data.totalAmountNano);
+
+    return lotsExecuted > 0 && (executedPrice > 0 || totalAmount > 0);
+};
+
 export default class OrderReconciliationService {
     private static async getOrderState(accountId: string, orderId: string, clientOrderId?: string) {
         if (clientOrderId) {
@@ -95,7 +108,7 @@ export default class OrderReconciliationService {
             const currentStatus = data.status ? String(data.status) : undefined;
 
             if (!accountId || (!orderId && !clientOrderId)) continue;
-            if (isFinalOrderStatus(currentStatus)) {
+            if (isFinalOrderStatus(currentStatus) && hasExecutionDetails(data)) {
                 skippedFinal += 1;
                 continue;
             }

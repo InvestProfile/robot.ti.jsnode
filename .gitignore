@@ -1,5 +1,6 @@
 .idea
 .vscode/
+docs/.obsidian/
 build
 .DS_Store
 
