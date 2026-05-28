@@ -19,9 +19,9 @@ Last updated: 2026-05-28.
 - Added net P/L support using broker report commissions where matched.
 - Added protective stop handling for robot-owned positions.
 
-## Open Issue: Protective Stop Orders
+## Protective Stop Orders
 
-`PostStopOrder` returned `INVALID_ARGUMENT: 30099` for protective stop-loss orders.
+`PostStopOrder` previously returned `INVALID_ARGUMENT: 30099` for some protective stop-loss orders.
 
 Changes already made:
 
@@ -30,13 +30,13 @@ Changes already made:
 - Failed protective stop attempts are throttled for 30 minutes per account/instrument.
 - Safe diagnostics are logged without secrets.
 - Sync skips stale protective stops when current price is already at or below the calculated stop.
+- Sync now skips robot-ledger positions that are absent from the broker portfolio (`currentPrice` missing/zero), because stop orders against absent positions produced `30099`.
 
-Next observation:
+Current observation:
 
-- Wait for the next real new buy.
-- Check logs for `Protective stop checked`.
-- If it appears without `Protective stop placement failed`, the latest fix worked.
-- If `30099` returns, inspect the logged diagnostics and verify whether the instrument supports stop orders or whether account/trading status blocks stop placement.
+- Fresh real buys received active protective stops.
+- After skipping absent broker positions, logs showed `active sell stops already cover ...` without new `30099` spam.
+- There are still historical/ledger mismatches to audit separately: some old robot-owned ledger positions are no longer present in the broker portfolio.
 
 ## Recent Server Commands
 
@@ -53,4 +53,3 @@ Check logs:
 ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no igorjan94.ru \
   'docker logs --since 10m robot_ti_jsnode 2>&1 | grep -Ei "Protective stop|PostStopOrder|INVALID_ARGUMENT|RESOURCE_EXHAUSTED" || true'
 ```
-
