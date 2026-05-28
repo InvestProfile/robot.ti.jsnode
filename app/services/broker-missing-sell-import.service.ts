@@ -100,13 +100,11 @@ export default class BrokerMissingSellImportService {
     private static async getBrokerSellCandidates(issue: AuditIssue, from: Date, to: Date, missingLots: number) {
         const candidates: MissingBrokerSellCandidate[] = [];
         const seenOrderIds = new Set<string>();
-        let cursorTo = new Date(to);
+        const fromDay = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
+        let cursorTo = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), to.getUTCDate()));
 
-        while (cursorTo > from) {
-            const cursorFrom = new Date(Math.max(
-                from.getTime(),
-                cursorTo.getTime() - 24 * 60 * 60 * 1000
-            ));
+        while (cursorTo > fromDay) {
+            const cursorFrom = new Date(cursorTo.getTime() - 24 * 60 * 60 * 1000);
             let operations: OperationItem[] = [];
             try {
                 operations = await OperationsService.getOperationsByCursorItems(issue.accountId, cursorFrom, cursorTo, {
