@@ -49,7 +49,7 @@ const endpoints = {
 };
 
 const endpointGroups = {
-  core: ['status', 'limits', 'performance', 'paper', 'socialCollector'],
+  core: ['status', 'limits', 'performance', 'paper', 'socialCollector', 'market', 'orderSafety'],
   overview: ['market', 'orderSafety'],
   buy: ['dailyBuyList', 'preview', 'buyRecommendations', 'buyScan'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
@@ -138,8 +138,8 @@ const signalTone = (value) => {
 
 const cls = (...names) => names.filter(Boolean).join(' ');
 
-const Pill = ({ tone = 'neutral', children }) => (
-  <span className={cls('pill', tone)}>{children}</span>
+const Pill = ({ tone = 'neutral', children, className, title }) => (
+  <span className={cls('pill', tone, className)} title={title}>{children}</span>
 );
 
 const signedNumber = (value) => {
@@ -187,6 +187,15 @@ const sortByNumber = (rows, getter, direction = 'desc') => {
 };
 
 const normalizeSearch = (value) => String(value || '').trim().toUpperCase();
+
+const splitErrors = (value) => String(value || '').split('; ').filter(Boolean);
+
+const compactError = (value) => {
+  const items = splitErrors(value);
+  if (!items.length) return '';
+  if (items.length <= 2) return items.join('; ');
+  return `${items.slice(0, 2).join('; ')}; +${items.length - 2} еще`;
+};
 
 const ScoreBreakdown = ({ analysis }) => {
   const factors = analysis?.factors || {};
@@ -340,11 +349,19 @@ const summarizeBlockers = (rows) => {
 
 const Reason = ({ children }) => {
   const text = String(children || EMPTY);
-  if (text.length <= 90) return <span className="reason-short" title={text}>{text}</span>;
+  const label = classifyBlocker(text);
+  if (text.length <= 90) {
+    return (
+      <span className="reason-short" title={text}>
+        {label !== text && label !== EMPTY ? <b>{label}</b> : null}
+        <span>{text}</span>
+      </span>
+    );
+  }
 
   return (
     <details className="reason-cell" title={text}>
-      <summary>{shortReason(text)}</summary>
+      <summary>{label !== text && label !== EMPTY ? label : shortReason(text)}</summary>
       <p>{text}</p>
     </details>
   );
@@ -374,36 +391,59 @@ const TextCell = ({ children, className }) => {
   return <span className={cls('text-cell', className)} title={String(value)}>{value}</span>;
 };
 
-const Table = ({ columns, rows, empty = 'Нет данных', loading = false, className, rowClassName }) => (
-  <div className="table-wrap">
-    {loading && rows?.length ? <div className="table-loading">Обновляю...</div> : null}
-    <table className={className}>
-      <colgroup>
-        {columns.map((column) => <col key={column.key} style={column.width ? { width: column.width } : undefined} />)}
-      </colgroup>
-      <thead>
-        <tr>{columns.map((column) => <th key={column.key} className={column.className}>{column.label}</th>)}</tr>
-      </thead>
-      <tbody>
-        {rows?.length ? rows.map((row, index) => (
-          <tr key={row.id || `${row.ticker || row.accountId || 'row'}-${index}`} className={rowClassName ? rowClassName(row) : undefined}>
-            {columns.map((column) => (
-              <td key={column.key} className={column.className}>
-                {column.render ? column.render(row) : cellValue(row[column.key])}
-              </td>
+const Table = ({ columns, rows, empty = 'Нет данных', loading = false, className, rowClassName }) => {
+  const hasRows = Boolean(rows?.length);
+
+  return (
+    <div className="table-wrap">
+      {loading && hasRows ? <div className="table-loading">Обновляю...</div> : null}
+      {hasRows ? (
+        <table className={className}>
+          <colgroup>
+            {columns.map((column) => <col key={column.key} style={column.width ? { width: column.width } : undefined} />)}
+          </colgroup>
+          <thead>
+            <tr>{columns.map((column) => <th key={column.key} className={column.className}>{column.label}</th>)}</tr>
+          </thead>
+          <tbody>
+            {rows.map((row, index) => (
+              <tr key={row.id || `${row.ticker || row.accountId || 'row'}-${index}`} className={rowClassName ? rowClassName(row) : undefined}>
+                {columns.map((column) => (
+                  <td key={column.key} className={column.className}>
+                    {column.render ? column.render(row) : cellValue(row[column.key])}
+                  </td>
+                ))}
+              </tr>
             ))}
-          </tr>
-        )) : (
-          <tr><td colSpan={columns.length} className="empty">{loading ? 'Загрузка...' : empty}</td></tr>
-        )}
-      </tbody>
-    </table>
-  </div>
-);
+          </tbody>
+        </table>
+      ) : null}
+      {!hasRows ? <div className="empty-table-state">{loading ? 'Загрузка...' : empty}</div> : null}
+    </div>
+  );
+};
 
 const FilterSummary = ({ visible, total, label = 'строк' }) => (
   <div className="filter-summary">
     <span>{visible} / {total} {label}</span>
+  </div>
+);
+
+const ControlGroup = ({ label, value, children }) => (
+  <div className="control-group">
+    <div className="control-group-label">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+    <div className="control-group-options">{children}</div>
+  </div>
+);
+
+const OperatorTile = ({ label, value, detail, tone = 'neutral' }) => (
+  <div className={cls('operator-tile', tone)}>
+    <span>{label}</span>
+    <strong>{value}</strong>
+    <small>{detail}</small>
   </div>
 );
 
@@ -535,6 +575,73 @@ const socialCollectorText = (social) => {
   if (social.health?.staleProfiles > 0) return `idle, ${social.health.staleProfiles} stale`;
   return 'fresh';
 };
+
+function OperatorBar({ data, loading, error }) {
+  const status = data.status;
+  const config = status?.config || {};
+  const blockers = getReadiness(data);
+  const tradeLimit = getTradeLimit(data);
+  const orderSafety = data.orderSafety?.summary || {};
+  const market = data.market;
+  const social = data.socialCollector;
+  const dryRun = status ? Boolean(config.dryRun) : true;
+  const liveActions = config.liveAllowedActions || [];
+  const unknownOrders = Number(orderSafety.unknown || 0);
+  const staleLimit = Number(orderSafety.staleLimit || 0);
+  const openOrders = Number(orderSafety.open || 0);
+  const limitBlocked = tradeLimit && (Number(tradeLimit.ordersLeft) <= 0 || Number(tradeLimit.rubLeft) <= 0);
+  const socialNeedsAuth = Number(social?.health?.pendingAuth || 0) > 0;
+  const marketBlocked = market && !market.passed;
+  const apiErrors = splitErrors(error).length;
+  const mainBlocker = apiErrors
+    ? 'API error'
+    : unknownOrders
+    ? 'unknown orders'
+    : staleLimit
+      ? 'stale limits'
+      : blockers[0] || (limitBlocked ? 'daily limit' : marketBlocked ? 'market' : EMPTY);
+
+  return (
+    <section className="operator-bar" aria-label="Операционный статус">
+      <OperatorTile
+        label="Режим"
+        value={status ? dryRun ? 'DRY RUN' : 'LIVE' : 'WAIT'}
+        detail={status ? `actions: ${liveActions.join(', ') || EMPTY}` : 'ждем /api/status'}
+        tone={status ? dryRun ? 'warn' : 'good' : 'neutral'}
+      />
+      <OperatorTile
+        label="Главный блокер"
+        value={loading && !status && !apiErrors ? 'loading' : mainBlocker}
+        detail={apiErrors ? `${apiErrors} API endpoints failed` : blockers.length ? blockers.join(', ') : 'критичных стопоров не видно'}
+        tone={apiErrors || mainBlocker === 'unknown orders' || mainBlocker === 'stale limits' ? 'bad' : mainBlocker === EMPTY ? 'good' : 'warn'}
+      />
+      <OperatorTile
+        label="Заявки"
+        value={`${openOrders} open / ${unknownOrders} unknown`}
+        detail={staleLimit ? `${staleLimit} stale limit` : `${orderSafety.pending || 0} pending`}
+        tone={unknownOrders || staleLimit ? 'bad' : openOrders ? 'warn' : 'good'}
+      />
+      <OperatorTile
+        label="Дневной лимит"
+        value={tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)}` : EMPTY}
+        detail={tradeLimit ? `${money(tradeLimit.cashRub)} RUB cash` : 'лимиты загружаются'}
+        tone={limitBlocked ? 'bad' : tradeLimit ? 'good' : 'neutral'}
+      />
+      <OperatorTile
+        label="Рынок"
+        value={market ? market.passed ? 'PASS' : 'BLOCK' : 'WAIT'}
+        detail={market?.reason || 'market regime loading'}
+        tone={market ? market.passed ? 'good' : 'bad' : 'neutral'}
+      />
+      <OperatorTile
+        label="Пульс"
+        value={socialCollectorText(social)}
+        detail={`${social?.health?.activeProfiles || 0}/${social?.config?.configuredProfiles || 0} profiles`}
+        tone={socialNeedsAuth ? 'bad' : social?.health?.staleProfiles ? 'warn' : social ? 'good' : 'neutral'}
+      />
+    </section>
+  );
+}
 
 const stageTone = (blocked, warning = false) => {
   if (blocked) return 'bad';
@@ -1691,7 +1798,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
         <Stat label="Мин. бумаг" value={minDiversificationPositions} title="Пока бумаг меньше этого числа, робот старается не докупать уже имеющиеся тикеры." />
         <Stat label="Осталось сегодня" value={tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : '-'} />
       </div>
-      <div className="control-row">
+      <ControlGroup label="Заявка" value={`${money(maxOrderRub)} RUB`}>
         {orderButtons.map((value) => (
           <button
             key={value}
@@ -1702,8 +1809,8 @@ function RiskControls({ data, onRiskSettingsChange }) {
             buy до {value}
           </button>
         ))}
-      </div>
-      <div className="control-row">
+      </ControlGroup>
+      <ControlGroup label="Частота" value={`${maxDailyOrders} заявок`}>
         {orderCountButtons.map((value) => (
           <button
             key={value}
@@ -1714,8 +1821,8 @@ function RiskControls({ data, onRiskSettingsChange }) {
             {value} заявок
           </button>
         ))}
-      </div>
-      <div className="control-row">
+      </ControlGroup>
+      <ControlGroup label="Деньги" value={`${money(maxDailyRub)} RUB / день`}>
         {dailyRubButtons.map((value) => (
           <button
             key={value}
@@ -1726,8 +1833,8 @@ function RiskControls({ data, onRiskSettingsChange }) {
             день {value}
           </button>
         ))}
-      </div>
-      <div className="control-row">
+      </ControlGroup>
+      <ControlGroup label="Концентрация" value={`${money(maxPositionSharePercent)}%`}>
         {positionShareButtons.map((value) => (
           <button
             key={value}
@@ -1738,8 +1845,8 @@ function RiskControls({ data, onRiskSettingsChange }) {
             бумага {value}%
           </button>
         ))}
-      </div>
-      <div className="control-row">
+      </ControlGroup>
+      <ControlGroup label="Диверсификация" value={`${minDiversificationPositions} бумаг`}>
         {diversificationButtons.map((value) => (
           <button
             key={value}
@@ -1757,7 +1864,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
         >
           диверсификация {diversificationFirst ? 'on' : 'off'}
         </button>
-      </div>
+      </ControlGroup>
     </Card>
   );
 }
@@ -1813,34 +1920,34 @@ function SellControls({ data, onSellSettingsChange }) {
         <Stat label="Trail min profit" value={`${money(trailingStopMinProfitPercent)}%`} />
         <Stat label="Hold winner" value={`${money(sellHoldWinnerMinProfitPercent)}% / ${money(sellHoldWinnerMaxDrawdownPercent)}%`} />
       </div>
-      <div className="control-row">
+      <ControlGroup label="Stop-loss" value={`${money(stopLossPercent)}%`}>
         {stopLossButtons.map((value) => (
           <button key={value} className={cls('mini-button', value === stopLossPercent && 'active')} onClick={() => onSellSettingsChange(payload({ stopLossPercent: value }))}>
             stop {value}%
           </button>
         ))}
-      </div>
-      <div className="control-row">
+      </ControlGroup>
+      <ControlGroup label="Trailing" value={`${money(trailingStopPercent)}%`}>
         {trailingButtons.map((value) => (
           <button key={value} className={cls('mini-button', value === trailingStopPercent && 'active')} onClick={() => onSellSettingsChange(payload({ trailingStopPercent: value }))}>
             trail {value}%
           </button>
         ))}
-      </div>
-      <div className="control-row">
+      </ControlGroup>
+      <ControlGroup label="Старт trailing" value={`${money(trailingStopMinProfitPercent)}%`}>
         {profitButtons.map((value) => (
           <button key={value} className={cls('mini-button', value === trailingStopMinProfitPercent && 'active')} onClick={() => onSellSettingsChange(payload({ trailingStopMinProfitPercent: value, sellHoldWinnerMinProfitPercent: Math.max(sellHoldWinnerMinProfitPercent, value) }))}>
             min profit {value}%
           </button>
         ))}
-      </div>
-      <div className="control-row">
+      </ControlGroup>
+      <ControlGroup label="Winner drawdown" value={`${money(sellHoldWinnerMaxDrawdownPercent)}%`}>
         {drawdownButtons.map((value) => (
           <button key={value} className={cls('mini-button', value === sellHoldWinnerMaxDrawdownPercent && 'active')} onClick={() => onSellSettingsChange(payload({ sellHoldWinnerMaxDrawdownPercent: value }))}>
             winner dd {value}%
           </button>
         ))}
-      </div>
+      </ControlGroup>
     </Card>
   );
 }
@@ -1962,6 +2069,25 @@ const orderStatusTone = (status) => {
   if (status === 'LOCAL_SUBMIT_UNKNOWN') return 'bad';
   if (status === 'LOCAL_PENDING_SUBMIT' || status === 'EXECUTION_REPORT_STATUS_NEW' || status === 'EXECUTION_REPORT_STATUS_PARTIALLYFILL') return 'warn';
   return 'neutral';
+};
+
+const orderStatusLabel = (status) => {
+  const value = display(status);
+  const known = {
+    EXECUTION_REPORT_STATUS_FILL: 'filled',
+    EXECUTION_REPORT_STATUS_PARTIALLYFILL: 'partial',
+    EXECUTION_REPORT_STATUS_NEW: 'new',
+    EXECUTION_REPORT_STATUS_CANCELLED: 'cancelled',
+    EXECUTION_REPORT_STATUS_REJECTED: 'rejected',
+    LOCAL_PENDING_SUBMIT: 'pending',
+    LOCAL_SUBMIT_UNKNOWN: 'unknown',
+    LOCAL_POST_REJECTED: 'rejected',
+    LOCAL_VALIDATION_FAILED: 'invalid'
+  };
+  if (known[value]) return known[value];
+  if (value.startsWith('EXECUTION_REPORT_STATUS_')) return value.replace('EXECUTION_REPORT_STATUS_', '').toLowerCase();
+  if (value.startsWith('LOCAL_')) return value.replace('LOCAL_', '').toLowerCase().replaceAll('_', ' ');
+  return value;
 };
 
 const isCriticalDecision = (row) => (
@@ -2248,8 +2374,8 @@ function OrderSafety({ data, loading, onCancelStaleLimits }) {
           { key: 'ticker', label: 'Тикер', width: '100px', render: (row) => <><strong>{row.ticker || row.figi || EMPTY}</strong><div className="muted">{row.name}</div></> },
           { key: 'direction', label: 'Side', width: '80px', render: (row) => <Pill tone={String(row.direction) === '1' ? 'good' : 'bad'}>{String(row.direction) === '1' ? 'buy' : String(row.direction) === '2' ? 'sell' : display(row.direction)}</Pill> },
           { key: 'orderType', label: 'Type', width: '115px', render: (row) => <TextCell>{String(row.orderType || EMPTY).replace('ORDER_TYPE_', '').toLowerCase()}</TextCell> },
-          { key: 'status', label: 'Status', width: '175px', render: (row) => <Pill tone={orderStatusTone(row.status)}>{display(row.status)}</Pill> },
-          { key: 'staleLimitReason', label: 'Stale', width: '115px', render: (row) => row.staleLimitReason ? <Pill tone="bad">{row.staleLimitReason}</Pill> : <Pill tone="good">ok</Pill> },
+          { key: 'status', label: 'Status', width: '118px', render: (row) => <Pill tone={orderStatusTone(row.status)} className="order-status-badge" title={display(row.status)}>{orderStatusLabel(row.status)}</Pill> },
+          { key: 'staleLimitReason', label: 'Stale', width: '95px', render: (row) => row.staleLimitReason ? <Pill tone="bad" className="table-pill">{row.staleLimitReason}</Pill> : <span className="stale-ok" title="Не stale">ok</span> },
           { key: 'orderAgeMs', label: 'Age', width: '85px', className: 'right', render: (row) => duration(row.orderAgeMs) },
           { key: 'priceDriftPercent', label: 'Drift', width: '85px', className: 'right', render: (row) => percent(row.priceDriftPercent) },
           { key: 'lotsRequested', label: 'Req', width: '70px', className: 'right', render: (row) => money(row.lotsRequested) },
@@ -2872,15 +2998,16 @@ function App() {
         <header className="topbar">
           <div>
             <h1>{active.label}</h1>
-            <p>{loading ? `Загрузка API: ${Object.values(loadingKeys).filter(Boolean).length}` : error || `Обновлено ${updatedAt ? updatedAt.toLocaleTimeString('ru-RU') : EMPTY}`}</p>
+            <p>{loading ? `Загрузка API: ${Object.values(loadingKeys).filter(Boolean).length}` : error ? `Ошибка API: ${splitErrors(error).length}` : `Обновлено ${updatedAt ? updatedAt.toLocaleTimeString('ru-RU') : EMPTY}`}</p>
           </div>
           <button className="icon-button" onClick={() => void reload()} title="Обновить">
             <RefreshCw size={18} />
             Обновить
           </button>
         </header>
-        {error ? <div className="error-banner"><AlertTriangle size={18} />{error}</div> : null}
+        {error ? <div className="error-banner" title={error}><AlertTriangle size={18} />{compactError(error)}</div> : null}
         {actionError ? <div className="error-banner"><AlertTriangle size={18} />{actionError}</div> : null}
+        <OperatorBar data={data} loading={loading} error={error} />
         {content}
       </main>
     </div>
