@@ -30,6 +30,7 @@
     "cleanup:decisions": "npm run build && node build/reports/cleanup-decisions.report.js",
     "preflight": "npm run build && node build/reports/preflight.report.js",
     "preflight:live": "npm run build && node build/reports/preflight.report.js --live",
+    "accounting:import-missing-sells": "npm run build && node build/reports/import-missing-broker-sells.report.js",
     "ui:dev": "vite --host 0.0.0.0",
     "ui:build": "vite build",
     "ui:preview": "vite preview --host 0.0.0.0",
