@@ -8,7 +8,7 @@ import OperationsService from './operations.service';
 
 const SELL_DIRECTION = '2';
 const FILL_STATUS = 'EXECUTION_REPORT_STATUS_FILL';
-const LOOKBACK_DAYS = 14;
+const LOOKBACK_DAYS = 31;
 
 type AuditIssue = {
     type: string;
@@ -20,6 +20,7 @@ type AuditIssue = {
     instrumentUid?: string;
     ledgerLots: number;
     brokerLots: number;
+    lastTradeAt?: string;
 };
 
 export type MissingBrokerSellCandidate = {
@@ -92,8 +93,16 @@ const operationToCandidate = (issue: AuditIssue, operation: OperationItem): Miss
         lots,
         price,
         amount,
-        reason: `broker sell exists, but local trades table has no matching orderId; ledger ${issue.ledgerLots}, broker ${issue.brokerLots}`
+        reason: `broker sell exists, but local trades table has no matching orderId; issue ${issue.type}, ledger ${issue.ledgerLots}, broker ${issue.brokerLots}`
     };
+};
+
+const issueScanFrom = (issue: AuditIssue, fallbackFrom: Date) => {
+    const lastTradeAt = issue.lastTradeAt ? new Date(issue.lastTradeAt) : undefined;
+    if (!lastTradeAt || Number.isNaN(lastTradeAt.getTime())) return fallbackFrom;
+
+    const fromBeforeLastLocalTrade = new Date(lastTradeAt.getTime() - 24 * 60 * 60 * 1000);
+    return fromBeforeLastLocalTrade > fallbackFrom ? fromBeforeLastLocalTrade : fallbackFrom;
 };
 
 export default class BrokerMissingSellImportService {
@@ -147,7 +156,7 @@ export default class BrokerMissingSellImportService {
     static async importMissingSells(config: RobotConfig, options: { apply?: boolean; from?: Date; to?: Date } = {}): Promise<MissingBrokerSellImportResult> {
         const audit = await AccountingAuditService.getLedgerBrokerAudit(config);
         const issues = audit.issues.filter(issue => (
-            issue.type === 'ledger-overstates-broker'
+            (issue.type === 'ledger-overstates-broker' || issue.type === 'ledger-ghost')
             && toNumber(issue.ledgerLots) > toNumber(issue.brokerLots)
             && Boolean(issue.accountId)
             && Boolean(issue.instrumentUid || issue.figi)
@@ -167,7 +176,7 @@ export default class BrokerMissingSellImportService {
             const missingLots = Math.max(0, toNumber(issue.ledgerLots) - toNumber(issue.brokerLots));
             if (missingLots <= 0) continue;
 
-            const brokerCandidates = await this.getBrokerSellCandidates(issue, from, to, missingLots);
+            const brokerCandidates = await this.getBrokerSellCandidates(issue, issueScanFrom(issue, from), to, missingLots);
             const orderIds = brokerCandidates.map(candidate => candidate.orderId).filter(Boolean);
             const existing = orderIds.length > 0
                 ? await TradesModel.findAll({

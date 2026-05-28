@@ -109,4 +109,29 @@ describe('BrokerMissingSellImportService', () => {
         assert.strictEqual(result.candidates.length, 0);
         assert.strictEqual(result.imported.length, 0);
     });
+
+    it('finds missing broker sells for ledger ghost positions', async () => {
+        (AccountingAuditService.getLedgerBrokerAudit as unknown) = async () => ({
+            issues: [{
+                type: 'ledger-ghost',
+                accountId: 'acc-1',
+                accountAlias: 'trade',
+                ticker: 'VKCO',
+                name: 'VK',
+                figi: 'figi-1',
+                instrumentUid: 'uid-1',
+                ledgerLots: 1,
+                brokerLots: 0,
+                lastTradeAt: '2026-05-25T12:00:00.000Z'
+            }]
+        });
+        (OperationsService.getOperationsByCursorItems as unknown) = async () => [operation];
+        (TradesModel.findAll as unknown) = async () => [];
+
+        const result = await BrokerMissingSellImportService.importMissingSells(config);
+
+        assert.strictEqual(result.checkedIssues, 1);
+        assert.strictEqual(result.candidates.length, 1);
+        assert.match(result.candidates[0].reason, /ledger-ghost/);
+    });
 });
