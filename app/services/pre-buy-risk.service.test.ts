@@ -10,6 +10,7 @@ const originalFindAll = TradesModel.findAll;
 
 const config = {
     buyAddOnMinProfitPercent: 1,
+    buyReentryAfterSellMinGainPercent: 1,
     liquidityRiskEnabled: false,
     liquidityRiskEnforced: false,
     sectorRiskEnabled: false,
@@ -76,6 +77,49 @@ describe('PreBuyRiskService', () => {
 
         assert.strictEqual(result.passed, true);
         assert.deepStrictEqual(result.blockingReasons, []);
+    });
+
+    it('blocks same-day re-entry after sell until price confirms above last exit', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([{
+            accountId: 'acc-1',
+            figi: 'figi-1',
+            instrumentId: 'uid-1',
+            ticker: 'SBER',
+            direction: '2',
+            status: 'EXECUTION_REPORT_STATUS_FILL',
+            lotsExecuted: 1,
+            totalAmountUnits: '100',
+            totalAmountNano: '0',
+            createdAt: new Date()
+        }]);
+
+        const result = await PreBuyRiskService.evaluate(baseInput, config);
+
+        assert.strictEqual(result.passed, false);
+        assert.ok(result.blockingReasons.some(reason => reason.includes('re-entry blocked after same-day sell')));
+        assert.ok(result.checks.some(check => check.key === 'post-sell-price-confirmation' && check.status === 'block'));
+    });
+
+    it('allows same-day re-entry after sell when price moves far enough above exit', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([{
+            accountId: 'acc-1',
+            figi: 'figi-1',
+            instrumentId: 'uid-1',
+            ticker: 'SBER',
+            direction: '2',
+            status: 'EXECUTION_REPORT_STATUS_FILL',
+            lotsExecuted: 1,
+            totalAmountUnits: '98',
+            totalAmountNano: '0',
+            createdAt: new Date()
+        }]);
+
+        const result = await PreBuyRiskService.evaluate(baseInput, config);
+
+        assert.strictEqual(result.passed, true);
+        assert.ok(result.checks.some(check => check.key === 'post-sell-price-confirmation' && check.status === 'pass'));
     });
 
     it('blocks add-on buy when existing robot position is not profitable enough', async () => {

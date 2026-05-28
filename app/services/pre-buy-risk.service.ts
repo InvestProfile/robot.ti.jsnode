@@ -1,9 +1,12 @@
 import { RobotConfig } from '../config/robot.config';
 import { Op } from 'sequelize';
 import { TradeDecisionModel } from '../models/trade-decision.model';
+import { TradesModel } from '../models/trades.model';
 import { DailyCandle } from '../strategies/trade-signal';
 import MarketDataService from './marketData.service';
 import SellPolicyService from './sell-policy.service';
+import TradesService from './trades.service';
+import { isIgnoredAccountingOrderStatus } from '../utils/order-status';
 
 type OrderBookMetrics = NonNullable<Awaited<ReturnType<typeof MarketDataService.getOrderBookMetrics>>>;
 
@@ -68,6 +71,25 @@ const getAvgDailyTurnoverRub = (candles: DailyCandle[] | undefined, lot: number)
 };
 
 const BUY_SIGNAL_SOURCES = ['score-buy', 'watchlist-buy', 'trend-follow-buy'];
+const SELL_DIRECTION = '2';
+
+const sameInstrument = (data: Record<string, unknown>, figi?: string, instrumentUid?: string, ticker?: string) =>
+    Boolean(
+        (instrumentUid && (data.instrumentUid === instrumentUid || data.instrumentId === instrumentUid || data.uid === instrumentUid))
+        || (figi && data.figi === figi)
+        || (ticker && String(data.ticker || '').toUpperCase() === ticker.toUpperCase())
+    );
+
+const lotsFromTrade = (data: Record<string, unknown>) => {
+    const executed = Number(data.lotsExecuted ?? 0);
+    if (Number.isFinite(executed) && executed > 0) return executed;
+
+    const requested = Number(data.lotsRequested ?? 0);
+    if (Number.isFinite(requested) && requested > 0) return requested;
+
+    const quantity = Number(data.quantity ?? 0);
+    return Number.isFinite(quantity) && quantity > 0 ? quantity : 0;
+};
 
 export default class PreBuyRiskService {
     private static getStartOfToday() {
@@ -114,6 +136,39 @@ export default class PreBuyRiskService {
         return count > 0;
     }
 
+    static async getLatestSellToday(input: Pick<PreBuyRiskInput, 'accountId' | 'figi' | 'instrumentUid' | 'ticker'>) {
+        if (!input.accountId || (!input.figi && !input.instrumentUid && !input.ticker)) return undefined;
+
+        const trades = await TradesModel.findAll({
+            where: {
+                accountId: input.accountId,
+                direction: SELL_DIRECTION,
+                createdAt: {
+                    [Op.gte]: this.getStartOfToday()
+                }
+            } as any,
+            order: [['createdAt', 'DESC']],
+            limit: 100
+        });
+
+        for (const trade of trades) {
+            const data = trade.get({ plain: true }) as Record<string, unknown>;
+            if (!sameInstrument(data, input.figi, input.instrumentUid, input.ticker)) continue;
+            if (isIgnoredAccountingOrderStatus(data.status ? String(data.status) : undefined)) continue;
+
+            const lots = lotsFromTrade(data);
+            const amount = TradesService.amountFromTrade(data);
+            if (lots <= 0 || amount === undefined) continue;
+
+            return {
+                at: data.tradeDateTime || data.createdAt,
+                lotValueRub: amount / lots
+            };
+        }
+
+        return undefined;
+    }
+
     static async evaluate(input: PreBuyRiskInput, config: RobotConfig): Promise<PreBuyRiskResult> {
         const checks: PreBuyRiskCheck[] = [];
         const warnings: string[] = [];
@@ -154,6 +209,7 @@ export default class PreBuyRiskService {
         }
 
         const addOnMinProfitPercent = Number(config.buyAddOnMinProfitPercent ?? 0);
+        const reentryAfterSellMinGainPercent = Number(config.buyReentryAfterSellMinGainPercent ?? 0);
         let robotOwnedLots: number | undefined;
         let robotAverageLotCostRub: number | undefined;
         let robotProfitPercent: number | undefined;
@@ -176,6 +232,30 @@ export default class PreBuyRiskService {
                     enforced: true,
                     value: robotProfitPercent,
                     limit: addOnMinProfitPercent
+                });
+            }
+        }
+
+        if (reentryAfterSellMinGainPercent > 0 && (!robotOwnedLots || robotOwnedLots <= 0)) {
+            const latestSell = await this.getLatestSellToday(input);
+            const currentLotValueRub = Number(input.currentPrice) * Math.max(1, Number(input.lot || 1));
+            const requiredLotValueRub = latestSell?.lotValueRub
+                ? latestSell.lotValueRub * (1 + reentryAfterSellMinGainPercent / 100)
+                : undefined;
+
+            if (
+                latestSell
+                && requiredLotValueRub
+                && Number.isFinite(currentLotValueRub)
+                && currentLotValueRub > 0
+            ) {
+                addCheck({
+                    key: 'post-sell-price-confirmation',
+                    status: currentLotValueRub >= requiredLotValueRub ? 'pass' : 'block',
+                    reason: `re-entry blocked after same-day sell: current lot ${formatRub(currentLotValueRub)} < required ${formatRub(requiredLotValueRub)} (${formatPercent(reentryAfterSellMinGainPercent)} above last sell)`,
+                    enforced: true,
+                    value: currentLotValueRub,
+                    limit: requiredLotValueRub
                 });
             }
         }
