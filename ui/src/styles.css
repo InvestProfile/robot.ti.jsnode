@@ -949,8 +949,30 @@ tbody tr:hover td {
   overflow-wrap: anywhere;
 }
 
+.execution-cell {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.execution-cell.compact {
+  gap: 4px;
+}
+
+.execution-cell span:not(.pill) {
+  min-width: 0;
+  color: #93a1b2;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 .decision-table {
   min-width: 1060px;
+}
+
+.buy-preview-table {
+  min-width: 1420px;
 }
 
 .trade-review-table {

@@ -299,6 +299,7 @@ const shortReason = (value) => {
 
 const classifyBlocker = (reason) => {
   const text = String(reason || '').toLowerCase();
+  if (text.includes('re-entry blocked after same-day sell')) return 'вход после выхода';
   if (text.includes('already in portfolio')) return 'уже в портфеле';
   if (text.includes('concentration')) return 'лимит позиции';
   if (text.includes('diversification')) return 'сначала диверсификация';
@@ -315,13 +316,42 @@ const classifyBlocker = (reason) => {
   return reason || EMPTY;
 };
 
+const getRiskCheck = (risk, key) => risk?.checks?.find((check) => check.key === key);
+
+const PostSellConfirmation = ({ risk }) => {
+  const check = getRiskCheck(risk, 'post-sell-price-confirmation');
+  if (!check) {
+    return (
+      <div className="execution-cell compact" title="Сегодня по этому тикеру не было выхода робота, подтверждение нового входа не требуется.">
+        <Pill tone="neutral">N/A</Pill>
+        <span>не требуется</span>
+      </div>
+    );
+  }
+
+  const tone = check.status === 'block' ? 'bad' : check.status === 'pass' ? 'good' : 'warn';
+  const label = check.status === 'block' ? 'BLOCK' : check.status === 'pass' ? 'OK' : 'WATCH';
+  const detail = check.status === 'pass' ? 'цена подтвердила вход' : classifyBlocker(check.reason);
+
+  return (
+    <div className="execution-cell compact" title={check.reason}>
+      <Pill tone={tone}>{label}</Pill>
+      <span>{detail}</span>
+    </div>
+  );
+};
+
 const PreBuyRisk = ({ risk }) => {
   if (!risk) return <span className="muted">-</span>;
 
-  const failed = risk.checks?.filter((check) => check.status === 'block' || check.status === 'warn' || check.status === 'unknown') || [];
-  const tone = risk.blockingReasons?.length ? 'bad' : failed.length ? 'warn' : 'good';
-  const label = risk.blockingReasons?.length ? 'BLOCK' : failed.length ? 'WATCH' : 'OK';
-  const title = [...(risk.blockingReasons || []), ...(risk.warnings || [])].join('\n') || 'Проверки ликвидности и сектора пройдены';
+  const failed = risk.checks?.filter((check) => check.key !== 'post-sell-price-confirmation' && (check.status === 'block' || check.status === 'warn' || check.status === 'unknown')) || [];
+  const visibleReasons = [
+    ...(risk.blockingReasons || []).filter((reason) => classifyBlocker(reason) !== 'вход после выхода'),
+    ...(risk.warnings || [])
+  ];
+  const tone = visibleReasons.length ? 'bad' : failed.length ? 'warn' : 'good';
+  const label = visibleReasons.length ? 'BLOCK' : failed.length ? 'WATCH' : 'OK';
+  const title = visibleReasons.join('\n') || 'Проверки ликвидности, сектора и концентрации пройдены';
   const detail = failed.length
     ? failed.slice(0, 2).map((check) => classifyBlocker(check.reason)).join(', ')
     : `${percent(risk.spreadPercent)} спред`;
@@ -1059,7 +1089,8 @@ function Buy({ data, loadingKeys }) {
             { key: 'status', label: 'Исполнение', width: '150px', render: (row) => <ExecutionDecision status={row.status} reason={row.reason} /> },
             { key: 'estimatedOrderRub', label: 'Сумма', width: '105px', className: 'right', render: (row) => money(row.estimatedOrderRub) },
             { key: 'projectedPositionSharePercent', label: 'Доля', width: '92px', className: 'right', render: (row) => percent(row.projectedPositionSharePercent) },
-            { key: 'preBuyRisk', label: 'Ликвидн./сектор', width: '180px', render: (row) => <PreBuyRisk risk={row.preBuyRisk} /> },
+            { key: 'postSellConfirmation', label: 'После выхода', width: '165px', render: (row) => <PostSellConfirmation risk={row.preBuyRisk} /> },
+            { key: 'preBuyRisk', label: 'Риск-фильтр', width: '180px', render: (row) => <PreBuyRisk risk={row.preBuyRisk} /> },
             { key: 'brokerQuote', label: 'Брокер', width: '105px', className: 'right', render: (row) => row.brokerQuote ? money(row.brokerQuote.totalOrderAmount) : '-' },
             { key: 'reason', label: 'Причина', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
           ]}
