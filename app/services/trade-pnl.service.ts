@@ -41,6 +41,10 @@ interface DecisionMatch {
     createdAt?: unknown;
 }
 
+interface RoundTripPnlOptions {
+    includeCommissions?: boolean;
+}
+
 const toNumber = (value: unknown) => {
     const number = Number(value ?? 0);
     return Number.isFinite(number) ? number : 0;
@@ -553,7 +557,8 @@ const flattenOpenLots = (openBuys: Map<string, OpenBuy[]>, config: RobotConfig):
     .sort((a, b) => new Date(b.entryAt).getTime() - new Date(a.entryAt).getTime());
 
 export default class TradePnlService {
-    static async getRoundTripPnl(config: RobotConfig, limit = 500) {
+    static async getRoundTripPnl(config: RobotConfig, limit = 500, options: RoundTripPnlOptions = {}) {
+        const includeCommissions = options.includeCommissions !== false;
         const safeLimit = Math.min(Math.max(Number.isFinite(limit) ? limit : 500, 1), 2_000);
         const trades = await TradesModel.findAll({
             where: {
@@ -578,7 +583,9 @@ export default class TradePnlService {
             limit: 20_000
         });
         const decisionIndex = buildDecisionIndex(decisions.map(decision => decision.get({ plain: true }) as Record<string, unknown>));
-        const commissionByOrderId = await buildCommissionByOrderId(config.accountIds, rows);
+        const commissionByOrderId = includeCommissions
+            ? await buildCommissionByOrderId(config.accountIds, rows)
+            : new Map<string, number>();
         const openBuys = new Map<string, OpenBuy[]>();
         const roundTrips = [];
         let ignoredTrades = 0;
