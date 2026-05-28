@@ -21,6 +21,7 @@ export interface OperationsCursorOptions {
     withoutCommissions?: boolean;
     withoutTrades?: boolean;
     withoutOvernights?: boolean;
+    fallbackToBrokerReport?: boolean;
 }
 
 const withTimeout = async <T>(promise: Promise<T>, milliseconds: number, label: string) => {
@@ -106,7 +107,7 @@ export default class OperationsService {
                     cursor = response.hasNext ? response.nextCursor : '';
                 } while (cursor);
             } catch (error) {
-                if (!options.figi) throw error;
+                if (!options.figi || !options.fallbackToBrokerReport) throw error;
 
                 const response = await withTimeout(
                     TInvestApiCacheService.withRetry(() => operations.getOperations({

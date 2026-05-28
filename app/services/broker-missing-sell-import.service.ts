@@ -107,15 +107,27 @@ export default class BrokerMissingSellImportService {
                 from.getTime(),
                 cursorTo.getTime() - 24 * 60 * 60 * 1000
             ));
-            const operations = await OperationsService.getOperationsByCursorItems(issue.accountId, cursorFrom, cursorTo, {
-                instrumentId: issue.instrumentUid || issue.figi,
-                figi: issue.figi,
-                operationTypes: [OperationType.OPERATION_TYPE_SELL],
-                state: OperationState.OPERATION_STATE_EXECUTED,
-                withoutCommissions: false,
-                withoutTrades: false,
-                withoutOvernights: true
-            });
+            let operations: OperationItem[] = [];
+            try {
+                operations = await OperationsService.getOperationsByCursorItems(issue.accountId, cursorFrom, cursorTo, {
+                    instrumentId: issue.instrumentUid || issue.figi,
+                    figi: issue.figi,
+                    operationTypes: [OperationType.OPERATION_TYPE_SELL],
+                    state: OperationState.OPERATION_STATE_EXECUTED,
+                    withoutCommissions: false,
+                    withoutTrades: false,
+                    withoutOvernights: true,
+                    fallbackToBrokerReport: false
+                });
+            } catch (error) {
+                console.warn('Broker sell daily window failed:', {
+                    accountId: issue.accountId,
+                    ticker: issue.ticker,
+                    from: cursorFrom.toISOString(),
+                    to: cursorTo.toISOString(),
+                    error: error instanceof Error ? error.message : String(error)
+                });
+            }
 
             for (const candidate of operations
                 .map(operation => operationToCandidate(issue, operation))
