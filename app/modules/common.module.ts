@@ -19,6 +19,7 @@ import PositionStateService from '../services/position-state.service';
 import ProtectiveStopService from '../services/protective-stop.service';
 import RobotPositionLedgerService from '../services/robot-position-ledger.service';
 import StrategyEngine from '../strategies/strategy-engine';
+import StopLossStrategy from '../strategies/stop-loss.strategy';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
 import { normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
 import { isRejectedOrderStatus } from '../utils/order-status';
@@ -221,6 +222,12 @@ const placeProtectiveStopForBuy = async (input: {
     if (!input.config.protectiveStopsEnabled) return;
 
     try {
+        const stopPlan = await StopLossStrategy.calculateEffectiveStop({
+            accountId: input.accountId,
+            ticker: input.ticker,
+            instrumentUid: input.instrumentUid
+        }, input.config);
+
         const result = await ProtectiveStopService.placeStopLoss({
             accountId: input.accountId,
             figi: input.figi,
@@ -229,13 +236,14 @@ const placeProtectiveStopForBuy = async (input: {
             quantityLots: input.quantityLots,
             entryPrice: input.entryPrice,
             currentPrice: input.currentPrice,
-            stopLossPercent: input.config.stopLossPercent
+            stopLossPercent: stopPlan.effectiveStopPercent
         });
 
         console.log('Protective stop checked:', {
             accountId: input.accountId,
             ticker: input.ticker,
             name: input.name,
+            stopPlan,
             result
         });
     } catch (error) {

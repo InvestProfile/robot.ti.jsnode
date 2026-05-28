@@ -3,7 +3,11 @@ import MarketDataService from '../services/marketData.service';
 import { PositionStrategyInput, TradeSignal } from './trade-signal';
 
 export default class StopLossStrategy {
-    private static async getAverageDailyRangePercent(input: PositionStrategyInput, config: RobotConfig) {
+    private static async getAverageDailyRangePercent(input: {
+        accountId?: string;
+        ticker?: string;
+        instrumentUid: string;
+    }, config: RobotConfig) {
         if (config.stopLossVolatilityMultiplier <= 0) return undefined;
 
         try {
@@ -32,11 +36,11 @@ export default class StopLossStrategy {
         }
     }
 
-    static async evaluate(input: PositionStrategyInput, config: RobotConfig): Promise<TradeSignal | undefined> {
-        if (!Number.isFinite(input.averagePrice) || input.averagePrice <= 0) return undefined;
-        if (!Number.isFinite(input.currentPrice) || input.currentPrice <= 0) return undefined;
-
-        const lossPercent = ((input.averagePrice - input.currentPrice) / input.averagePrice) * 100;
+    static async calculateEffectiveStop(input: {
+        accountId?: string;
+        ticker?: string;
+        instrumentUid: string;
+    }, config: RobotConfig) {
         const averageDailyRangePercent = await this.getAverageDailyRangePercent(input, config);
         const volatilityStopPercent = averageDailyRangePercent !== undefined
             ? averageDailyRangePercent * config.stopLossVolatilityMultiplier
@@ -45,6 +49,20 @@ export default class StopLossStrategy {
         const effectiveStopPercent = config.stopLossMaxPercent > 0
             ? Math.min(config.stopLossMaxPercent, uncappedStopPercent)
             : uncappedStopPercent;
+
+        return {
+            effectiveStopPercent,
+            averageDailyRangePercent,
+            volatilityStopPercent
+        };
+    }
+
+    static async evaluate(input: PositionStrategyInput, config: RobotConfig): Promise<TradeSignal | undefined> {
+        if (!Number.isFinite(input.averagePrice) || input.averagePrice <= 0) return undefined;
+        if (!Number.isFinite(input.currentPrice) || input.currentPrice <= 0) return undefined;
+
+        const lossPercent = ((input.averagePrice - input.currentPrice) / input.averagePrice) * 100;
+        const { effectiveStopPercent, averageDailyRangePercent } = await this.calculateEffectiveStop(input, config);
 
         if (lossPercent < effectiveStopPercent) return undefined;
 

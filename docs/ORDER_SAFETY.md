@@ -46,6 +46,7 @@ Current implementation:
 - Uses `StopOrdersService.PostStopOrder`.
 - Rounds sell stop price down to `minPriceIncrement`.
 - Uses market stop-loss request shape: `stopPrice` set, `price` omitted.
+- Uses the same adaptive stop-loss percent as `StopLossStrategy`: base `ROBOT_STOP_LOSS_PERCENT`, widened by average daily range, capped by `ROBOT_STOP_LOSS_MAX_PERCENT`.
 - Skips stale stop creation when current price is already at/below calculated stop.
 - Cools down failed attempts for 30 minutes per account/instrument.
 - Logs diagnostics without secrets when stop placement fails.
@@ -66,4 +67,3 @@ Important:
 - Gross P/L is before commissions.
 - Net P/L subtracts matched commissions.
 - If broker report matching is incomplete, net P/L can still be optimistic.
-
