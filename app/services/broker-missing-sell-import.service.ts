@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import { BrokerReport } from 'tinkoff-sdk-grpc-js/dist/generated/operations';
+import { OperationItem, OperationState, OperationType } from 'tinkoff-sdk-grpc-js/dist/generated/operations';
 import { RobotConfig } from '../config/robot.config';
 import { TradesModel } from '../models/trades.model';
 import { quotationToNumber } from '../utils/money';
@@ -66,33 +66,33 @@ const moneyParts = (value: number) => {
     };
 };
 
-const brokerReportDirectionIsSell = (direction: unknown) => {
-    const value = String(direction ?? '').toLowerCase();
-    return value.includes('sell') || value.includes('прод');
+const operationLots = (operation: OperationItem) => {
+    const done = toNumber(operation.quantityDone);
+    if (done > 0) return done;
+
+    return Math.max(0, toNumber(operation.quantity));
 };
 
-const brokerReportToCandidate = (issue: AuditIssue, row: BrokerReport): MissingBrokerSellCandidate | undefined => {
-    const lots = toNumber(row.quantity);
-    const price = absMoney(quotationToNumber(row.price));
-    const amount = absMoney(quotationToNumber(row.totalOrderAmount)) ?? absMoney(quotationToNumber(row.orderAmount));
+const operationToCandidate = (issue: AuditIssue, operation: OperationItem): MissingBrokerSellCandidate | undefined => {
+    const lots = operationLots(operation);
+    const price = absMoney(quotationToNumber(operation.price));
+    const amount = absMoney(quotationToNumber(operation.payment));
 
-    if (!row.orderId || lots <= 0 || !price || !amount) return undefined;
-    if (!brokerReportDirectionIsSell(row.direction)) return undefined;
-    if (issue.figi && row.figi && row.figi !== issue.figi) return undefined;
+    if (!operation.id || lots <= 0 || !price || !amount) return undefined;
 
     return {
         accountId: issue.accountId,
         accountAlias: issue.accountAlias,
-        ticker: row.ticker || issue.ticker,
-        name: row.name || issue.name,
-        figi: row.figi || issue.figi,
-        instrumentUid: issue.instrumentUid,
-        orderId: row.orderId,
-        tradeDateTime: row.tradeDatetime?.toISOString(),
+        ticker: operation.ticker || issue.ticker,
+        name: operation.name || issue.name,
+        figi: operation.figi || issue.figi,
+        instrumentUid: operation.instrumentUid || issue.instrumentUid,
+        orderId: operation.id,
+        tradeDateTime: operation.date?.toISOString(),
         lots,
         price,
         amount,
-        reason: `broker report sell exists, but local trades table has no matching orderId; ledger ${issue.ledgerLots}, broker ${issue.brokerLots}`
+        reason: `broker sell exists, but local trades table has no matching orderId; ledger ${issue.ledgerLots}, broker ${issue.brokerLots}`
     };
 };
 
@@ -107,10 +107,18 @@ export default class BrokerMissingSellImportService {
                 from.getTime(),
                 cursorTo.getTime() - 24 * 60 * 60 * 1000
             ));
-            const rows = await OperationsService.getBrokerReportRows(issue.accountId, cursorFrom, cursorTo);
+            const operations = await OperationsService.getOperationsByCursorItems(issue.accountId, cursorFrom, cursorTo, {
+                instrumentId: issue.instrumentUid || issue.figi,
+                figi: issue.figi,
+                operationTypes: [OperationType.OPERATION_TYPE_SELL],
+                state: OperationState.OPERATION_STATE_EXECUTED,
+                withoutCommissions: false,
+                withoutTrades: false,
+                withoutOvernights: true
+            });
 
-            for (const candidate of (rows as BrokerReport[])
-                .map(row => brokerReportToCandidate(issue, row))
+            for (const candidate of operations
+                .map(operation => operationToCandidate(issue, operation))
                 .filter((item): item is MissingBrokerSellCandidate => Boolean(item))) {
                 if (seenOrderIds.has(candidate.orderId)) continue;
                 seenOrderIds.add(candidate.orderId);
