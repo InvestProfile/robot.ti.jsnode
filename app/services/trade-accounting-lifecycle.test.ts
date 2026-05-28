@@ -22,7 +22,8 @@ const originalGetOperationsByCursorItems = OperationsService.getOperationsByCurs
 
 const config = {
     accountIds: ['acc-1'],
-    accountAliases: { 'acc-1': 'Trade' }
+    accountAliases: { 'acc-1': 'Trade' },
+    stopLossPercent: 3
 } as unknown as RobotConfig;
 
 const asModel = (row: PlainTrade) => ({
@@ -198,6 +199,39 @@ describe('trade accounting lifecycle safety', () => {
         assert.strictEqual(pnl.closedRoundTrips[0].grossPnlRub, 20);
         assert.strictEqual(pnl.closedRoundTrips[0].commissionRub, 3.75);
         assert.strictEqual(pnl.closedRoundTrips[0].netPnlRub, 16.25);
+    });
+
+    it('labels broker-side protective stop fills when no sell decision is available', async () => {
+        setTrades([
+            {
+                id: 2,
+                accountId: 'acc-1',
+                ticker: 'STOP',
+                direction: '2',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                lotsExecuted: 1,
+                executedPriceUnits: 96,
+                totalAmountUnits: 96,
+                tradeDateTime: '2026-05-20T10:00:00.000Z'
+            },
+            {
+                id: 1,
+                accountId: 'acc-1',
+                ticker: 'STOP',
+                direction: '1',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                lotsExecuted: 1,
+                executedPriceUnits: 100,
+                totalAmountUnits: 100,
+                tradeDateTime: '2026-05-20T09:00:00.000Z'
+            }
+        ]);
+        (TradeDecisionModel.findAll as unknown) = async () => [];
+
+        const pnl = await TradePnlService.getRoundTripPnl(config, 50, { includeCommissions: false });
+
+        assert.strictEqual(pnl.closedRoundTrips[0].exitSignalSource, 'broker-stop-loss');
+        assert.match(String(pnl.closedRoundTrips[0].exitDecisionReason), /inferred broker protective stop/);
     });
 
     it('falls back to operations cursor commissions when broker report has no matching order id', async () => {

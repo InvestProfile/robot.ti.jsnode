@@ -123,6 +123,10 @@ const diagnosis = (group: ExitGroup) => {
     const avgRange = average(group.avgRanges);
     const avgTrailingProfit = average(group.trailingProfits);
 
+    if (group.key === 'broker-stop-loss' || group.key.endsWith(':broker-stop-loss')) {
+        return 'broker protective stop fill';
+    }
+
     if (group.key === 'stop-loss' || group.key.endsWith(':stop-loss')) {
         if (group.count >= 3 && group.netPnlRub < 0 && avgStop !== undefined && avgRange !== undefined && avgRange > avgStop * 0.75) {
             return 'watch: stop is close to normal daily range';
@@ -173,8 +177,8 @@ const printSection = (title: string, groups: ExitGroup[]) => {
 const printWorstTrades = (rows: RoundTrip[]) => {
     console.log('Worst Recent Exits');
     console.log('------------------');
-    console.log('Exit time             Ticker  Source         Net RUB   Net%     Fees    Reason');
-    console.log('-------------------  ------  -------------  --------  -------  ------  ----------------------------------------');
+    console.log('Exit time             Ticker  Source              Net RUB   Net%     Fees    Reason');
+    console.log('-------------------  ------  ------------------  --------  -------  ------  ----------------------------------------');
     for (const row of rows
         .slice()
         .sort((a, b) => (toNumber(a.netPnlRub ?? a.grossPnlRub) ?? 0) - (toNumber(b.netPnlRub ?? b.grossPnlRub) ?? 0))
@@ -182,7 +186,7 @@ const printWorstTrades = (rows: RoundTrip[]) => {
         console.log([
             String(row.exitAt || '-').slice(0, 19).replace('T', ' ').padEnd(19),
             tickerLabel(row).padEnd(6),
-            sourceLabel(row.exitSignalSource).padEnd(13),
+            sourceLabel(row.exitSignalSource).padEnd(18),
             format(toNumber(row.netPnlRub ?? row.grossPnlRub)).padStart(8),
             `${format(toNumber(row.netPnlPercent ?? row.pnlPercent))}%`.padStart(7),
             format(toNumber(row.commissionRub)).padStart(6),
@@ -224,6 +228,7 @@ const main = async () => {
     console.log('- Default mode is fast and avoids broker commission API calls; pass --net for exact net P/L.');
     console.log('- Stop% and Range% are parsed from sell decision reasons when available.');
     console.log('- If stop-loss losses cluster where daily range is close to stop, that ticker may need a wider volatility stop or a stricter entry filter.');
+    console.log('- broker-stop-loss means a broker-side protective stop filled without a nearby robot sell decision.');
     console.log('- If trailing-stop exits with tiny Avg%, trailing min profit is probably too low for that ticker.');
 };
 

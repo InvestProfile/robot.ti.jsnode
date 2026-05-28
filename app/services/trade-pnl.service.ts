@@ -187,6 +187,24 @@ const decisionRelevance = (direction: string, decision: Record<string, unknown>)
     return 0;
 };
 
+const inferBrokerExitDecision = (
+    config: RobotConfig,
+    pnlPercent: number | undefined
+): DecisionMatch | undefined => {
+    if (pnlPercent === undefined || !Number.isFinite(pnlPercent)) return undefined;
+
+    const stopLossPercent = Number(config.stopLossPercent);
+    if (!Number.isFinite(stopLossPercent) || stopLossPercent <= 0) return undefined;
+
+    const brokerStopThreshold = -Math.max(1, stopLossPercent * 0.8);
+    if (pnlPercent > brokerStopThreshold) return undefined;
+
+    return {
+        signalSource: 'broker-stop-loss',
+        reason: `inferred broker protective stop: sell fill has no matching decision and closed near stop-loss (${pnlPercent.toFixed(2)}%, configured ${stopLossPercent.toFixed(2)}%)`
+    };
+};
+
 const sourceLabel = (value: unknown) => String(value || 'unknown');
 
 const parseScore = (value: unknown) => {
@@ -695,6 +713,7 @@ export default class TradePnlService {
             const netPnlRub = grossPnlRub - commissionRub;
             const pnlPercent = entryAmount > 0 ? grossPnlRub / entryAmount * 100 : undefined;
             const netPnlPercent = entryAmount > 0 ? netPnlRub / entryAmount * 100 : undefined;
+            const matchedExitDecision = exitDecision ?? inferBrokerExitDecision(config, pnlPercent);
 
             roundTrips.push({
                 id: `round-${row.id}`,
@@ -720,11 +739,11 @@ export default class TradePnlService {
                 status: remainingSellLots > 0 ? 'partial' : 'closed',
                 reason: entries.length > 1 ? `Matched ${entries.length} buy trades by FIFO.` : 'Matched buy -> sell by FIFO.',
                 entrySignalSource: entries[0]?.signalSource,
-                exitSignalSource: exitDecision?.signalSource,
+                exitSignalSource: matchedExitDecision?.signalSource,
                 entryDecisionReason: entries[0]?.decisionReason,
-                exitDecisionReason: exitDecision?.reason,
+                exitDecisionReason: matchedExitDecision?.reason,
                 entryDecisionId: entries[0]?.decisionId,
-                exitDecisionId: exitDecision?.id,
+                exitDecisionId: matchedExitDecision?.id,
                 entryTradeIds: entries.map(entry => entry.id),
                 exitTradeId: row.id
             });
