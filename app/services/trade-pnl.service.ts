@@ -6,6 +6,7 @@ import TradesService from './trades.service';
 import { isIgnoredAccountingOrderStatus } from '../utils/order-status';
 import OperationsService from './operations.service';
 import { quotationToNumber } from '../utils/money';
+import { OperationItem, OperationState, OperationType } from 'tinkoff-sdk-grpc-js/dist/generated/operations';
 
 const BUY_DIRECTION = '1';
 const SELL_DIRECTION = '2';
@@ -247,12 +248,133 @@ const moneyValueToRub = (value: unknown) => {
     return amount !== undefined && Number.isFinite(amount) ? Math.abs(amount) : 0;
 };
 
+const tradeInstrumentId = (row: Record<string, unknown>) => String(row.instrumentId || row.instrumentUid || row.uid || row.figi || '');
+
 const getOrderKeys = (row: Record<string, unknown>) => [
     row.orderId,
     row.clientOrderId
 ]
     .map(value => value === undefined || value === null ? '' : String(value))
     .filter(Boolean);
+
+const operationTypeForTrade = (row: Record<string, unknown>) => {
+    const direction = directionFromTrade(row);
+    if (direction === BUY_DIRECTION) return OperationType.OPERATION_TYPE_BUY;
+    if (direction === SELL_DIRECTION) return OperationType.OPERATION_TYPE_SELL;
+    return undefined;
+};
+
+const operationCommissionRub = (operation: OperationItem) => {
+    const directCommission = moneyValueToRub(operation.commission);
+    if (directCommission > 0) return directCommission;
+
+    return (operation.childOperations ?? [])
+        .reduce((sum, child) => sum + moneyValueToRub(child.payment), 0);
+};
+
+const operationTimestamp = (operation: OperationItem) => {
+    const timestamp = operation.date ? new Date(operation.date).getTime() : 0;
+    return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const operationQuantity = (operation: OperationItem) => Math.max(0, Number(operation.quantityDone || operation.quantity || 0));
+
+const operationPaymentRub = (operation: OperationItem) => moneyValueToRub(operation.payment);
+
+const isAmountClose = (left: number, right: number) => {
+    if (!Number.isFinite(left) || !Number.isFinite(right) || left <= 0 || right <= 0) return true;
+    return Math.abs(left - right) <= Math.max(1, Math.max(left, right) * 0.02);
+};
+
+const buildFallbackCommissionByOrderId = async (
+    accountIds: string[],
+    rows: Record<string, unknown>[],
+    existing: Map<string, number>
+) => {
+    const fallback = new Map<string, number>();
+    const candidates = rows
+        .filter(row => !isIgnoredAccountingOrderStatus(row.status ? String(row.status) : undefined))
+        .filter(row => getOrderKeys(row).length > 0)
+        .filter(row => getOrderKeys(row).every(key => !existing.has(key)))
+        .filter(row => accountIds.includes(String(row.accountId || '')))
+        .filter(row => tradeInstrumentId(row) || row.figi);
+
+    if (candidates.length === 0) return fallback;
+
+    const groups = new Map<string, Record<string, unknown>[]>();
+    for (const row of candidates) {
+        const accountId = String(row.accountId || '');
+        const instrumentId = tradeInstrumentId(row);
+        const key = `${accountId}:${instrumentId || row.figi}`;
+        const group = groups.get(key) ?? [];
+        group.push(row);
+        groups.set(key, group);
+    }
+
+    await Promise.all([...groups.values()].map(async groupRows => {
+        const accountId = String(groupRows[0].accountId || '');
+        const instrumentId = tradeInstrumentId(groupRows[0]);
+        const figi = groupRows[0].figi ? String(groupRows[0].figi) : undefined;
+        const timestamps = groupRows.map(tradeTimestamp).filter(timestamp => timestamp > 0);
+        if (!accountId || timestamps.length === 0) return;
+
+        const from = new Date(Math.min(...timestamps) - 60 * 60 * 1000);
+        const to = new Date(Math.max(...timestamps) + 60 * 60 * 1000);
+
+        let operations: OperationItem[] = [];
+        try {
+            operations = await OperationsService.getOperationsByCursorItems(accountId, from, to, {
+                instrumentId,
+                figi,
+                operationTypes: [OperationType.OPERATION_TYPE_BUY, OperationType.OPERATION_TYPE_SELL],
+                state: OperationState.OPERATION_STATE_EXECUTED,
+                withoutCommissions: false,
+                withoutTrades: false,
+                withoutOvernights: true,
+                fallbackToBrokerReport: true
+            });
+        } catch (error) {
+            console.warn('Trade P/L commission fallback fetch failed:', {
+                accountId,
+                instrumentId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+            return;
+        }
+
+        const usedOperationIds = new Set<string>();
+        for (const row of groupRows.sort((a, b) => tradeTimestamp(a) - tradeTimestamp(b))) {
+            const orderKeys = getOrderKeys(row);
+            const type = operationTypeForTrade(row);
+            if (!type || orderKeys.some(key => fallback.has(key) || existing.has(key))) continue;
+
+            const directMatch = operations.find(operation => !usedOperationIds.has(operation.id) && orderKeys.includes(operation.id));
+            const tradeLots = lotsFromTrade(row);
+            const tradeRub = tradeAmount(row, tradeLots) ?? 0;
+            const timestamp = tradeTimestamp(row);
+            const matchedOperation = directMatch ?? operations
+                .filter(operation => !usedOperationIds.has(operation.id))
+                .filter(operation => operation.type === type)
+                .filter(operation => operationCommissionRub(operation) > 0)
+                .filter(operation => Math.abs(operationTimestamp(operation) - timestamp) <= 30 * 60 * 1000)
+                .filter(operation => operationQuantity(operation) === 0 || operationQuantity(operation) === tradeLots)
+                .filter(operation => isAmountClose(operationPaymentRub(operation), tradeRub))
+                .sort((left, right) => Math.abs(operationTimestamp(left) - timestamp) - Math.abs(operationTimestamp(right) - timestamp))[0];
+
+            if (!matchedOperation) continue;
+
+            const commissionRub = operationCommissionRub(matchedOperation);
+            if (commissionRub <= 0) continue;
+
+            usedOperationIds.add(matchedOperation.id);
+            for (const key of orderKeys) {
+                fallback.set(key, commissionRub);
+            }
+        }
+    }));
+
+    return fallback;
+};
 
 const buildCommissionByOrderId = async (
     accountIds: string[],
@@ -290,6 +412,11 @@ const buildCommissionByOrderId = async (
             });
         }
     }));
+
+    const fallback = await buildFallbackCommissionByOrderId(accountIds, rowsWithOrderKeys, commissionByOrderId);
+    for (const [key, value] of fallback.entries()) {
+        if (!commissionByOrderId.has(key)) commissionByOrderId.set(key, value);
+    }
 
     return commissionByOrderId;
 };

@@ -9,6 +9,7 @@ import TradePnlService from './trade-pnl.service';
 import RobotPositionLedgerService from './robot-position-ledger.service';
 import AccountingAuditService from './accounting-audit.service';
 import { RobotConfig } from '../config/robot.config';
+import { OperationState, OperationType } from 'tinkoff-sdk-grpc-js/dist/generated/operations';
 
 type PlainTrade = Record<string, unknown>;
 
@@ -17,6 +18,7 @@ const originalDecisionFindAll = TradeDecisionModel.findAll;
 const originalGetShares = InstrumentsService.getShares;
 const originalGetPortfolio = OperationsService.getPortfolio;
 const originalGetBrokerReportRows = OperationsService.getBrokerReportRows;
+const originalGetOperationsByCursorItems = OperationsService.getOperationsByCursorItems;
 
 const config = {
     accountIds: ['acc-1'],
@@ -34,6 +36,7 @@ const setTrades = (rows: PlainTrade[]) => {
 
 beforeEach(() => {
     (OperationsService.getBrokerReportRows as unknown) = async () => [];
+    (OperationsService.getOperationsByCursorItems as unknown) = async () => [];
 });
 
 afterEach(() => {
@@ -42,6 +45,7 @@ afterEach(() => {
     (InstrumentsService.getShares as unknown) = originalGetShares;
     (OperationsService.getPortfolio as unknown) = originalGetPortfolio;
     (OperationsService.getBrokerReportRows as unknown) = originalGetBrokerReportRows;
+    (OperationsService.getOperationsByCursorItems as unknown) = originalGetOperationsByCursorItems;
 });
 
 describe('trade accounting lifecycle safety', () => {
@@ -194,6 +198,72 @@ describe('trade accounting lifecycle safety', () => {
         assert.strictEqual(pnl.closedRoundTrips[0].grossPnlRub, 20);
         assert.strictEqual(pnl.closedRoundTrips[0].commissionRub, 3.75);
         assert.strictEqual(pnl.closedRoundTrips[0].netPnlRub, 16.25);
+    });
+
+    it('falls back to operations cursor commissions when broker report has no matching order id', async () => {
+        setTrades([
+            {
+                id: 2,
+                accountId: 'acc-1',
+                ticker: 'GOOD',
+                figi: 'figi-good',
+                instrumentUid: 'uid-good',
+                direction: '2',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                orderId: 'local-sell-order',
+                lotsExecuted: 1,
+                executedPriceUnits: 120,
+                totalAmountUnits: 120,
+                tradeDateTime: '2026-05-20T10:00:00.000Z'
+            },
+            {
+                id: 1,
+                accountId: 'acc-1',
+                ticker: 'GOOD',
+                figi: 'figi-good',
+                instrumentUid: 'uid-good',
+                direction: '1',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                orderId: 'local-buy-order',
+                lotsExecuted: 1,
+                executedPriceUnits: 100,
+                totalAmountUnits: 100,
+                tradeDateTime: '2026-05-20T09:00:00.000Z'
+            }
+        ]);
+        (TradeDecisionModel.findAll as unknown) = async () => [];
+        (OperationsService.getBrokerReportRows as unknown) = async () => [];
+        (OperationsService.getOperationsByCursorItems as unknown) = async () => [
+            {
+                id: 'broker-buy-operation',
+                date: new Date('2026-05-20T09:00:03.000Z'),
+                type: OperationType.OPERATION_TYPE_BUY,
+                state: OperationState.OPERATION_STATE_EXECUTED,
+                quantity: 1,
+                quantityDone: 1,
+                payment: { units: -100, nano: 0 },
+                commission: { units: -1, nano: 0 },
+                childOperations: []
+            },
+            {
+                id: 'broker-sell-operation',
+                date: new Date('2026-05-20T10:00:02.000Z'),
+                type: OperationType.OPERATION_TYPE_SELL,
+                state: OperationState.OPERATION_STATE_EXECUTED,
+                quantity: 1,
+                quantityDone: 1,
+                payment: { units: 120, nano: 0 },
+                commission: { units: -2, nano: -500000000 },
+                childOperations: []
+            }
+        ];
+
+        const pnl = await TradePnlService.getRoundTripPnl(config, 50);
+
+        assert.strictEqual(pnl.summary.realizedGrossPnlRub, 20);
+        assert.strictEqual(pnl.summary.commissionRub, 3.5);
+        assert.strictEqual(pnl.summary.realizedNetPnlRub, 16.5);
+        assert.strictEqual(pnl.summary.accounting, 'net');
     });
 
     it('keeps rejected and unknown orders out of robot ledger positions and events', async () => {
