@@ -10,7 +10,7 @@ const delay = (milliseconds: number) => new Promise(resolve => setTimeout(resolv
 const BROKER_REPORT_CACHE_TTL_MS = 15 * 60 * 1000;
 const BROKER_REPORT_TIMEOUT_MS = 90 * 1000;
 const OPERATIONS_CURSOR_CACHE_TTL_MS = 2 * 60 * 1000;
-const OPERATIONS_CURSOR_TIMEOUT_MS = 30 * 1000;
+const OPERATIONS_CURSOR_TIMEOUT_MS = 60 * 1000;
 
 export interface OperationsCursorOptions {
     instrumentId?: string;
