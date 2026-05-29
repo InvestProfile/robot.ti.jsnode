@@ -39,6 +39,13 @@ let circuitBreakerOpen = false;
 let circuitBreakerReason: string | undefined;
 let isBuySignalJournalRunning = false;
 let isPaperTradingRunning = false;
+let protectiveStopLastSyncStartedAt: string | undefined;
+let protectiveStopLastSyncFinishedAt: string | undefined;
+let protectiveStopLastResyncAt: string | undefined;
+let protectiveStopLastResyncReason: string | undefined;
+let protectiveStopLastError: string | undefined;
+let protectiveStopLastChecked = 0;
+let protectiveStopLastResynced = 0;
 
 export interface TradingProcess {
     stop: () => void;
@@ -51,7 +58,16 @@ export const getTradingRuntimeState = () => ({
     lastTickError,
     consecutiveTickErrors,
     circuitBreakerOpen,
-    circuitBreakerReason
+    circuitBreakerReason,
+    protectiveStops: {
+        lastSyncStartedAt: protectiveStopLastSyncStartedAt,
+        lastSyncFinishedAt: protectiveStopLastSyncFinishedAt,
+        lastResyncAt: protectiveStopLastResyncAt,
+        lastResyncReason: protectiveStopLastResyncReason,
+        lastError: protectiveStopLastError,
+        checked: protectiveStopLastChecked,
+        resynced: protectiveStopLastResynced
+    }
 });
 
 const findInstrument = (
@@ -246,6 +262,8 @@ const placeProtectiveStopForBuy = async (input: {
             stopPlan,
             result
         });
+
+        return result;
     } catch (error) {
         console.error('Protective stop placement failed:', {
             accountId: input.accountId,
@@ -253,6 +271,7 @@ const placeProtectiveStopForBuy = async (input: {
             name: input.name,
             error: getErrorMessage(error)
         });
+        throw error;
     }
 };
 
@@ -286,8 +305,18 @@ const cancelProtectiveStopsAfterSell = async (input: {
     }
 };
 
-const ensureProtectiveStopsForOpenRobotPositions = async (config: RobotConfig) => {
-    if (!config.protectiveStopsEnabled || config.dryRun || !config.liveAllowedActions.includes('sell')) return;
+export const ensureProtectiveStopsForOpenRobotPositions = async (config: RobotConfig, reason = 'automatic') => {
+    if (!config.protectiveStopsEnabled || config.dryRun || !config.liveAllowedActions.includes('sell')) return {
+        checked: 0,
+        resynced: 0,
+        skipped: true,
+        reason: 'protective stops disabled, dry-run, or live sell disabled'
+    };
+
+    protectiveStopLastSyncStartedAt = new Date().toISOString();
+    protectiveStopLastError = undefined;
+    let checked = 0;
+    let resynced = 0;
 
     try {
         const ledger = await RobotPositionLedgerService.getLedger(config);
@@ -301,7 +330,8 @@ const ensureProtectiveStopsForOpenRobotPositions = async (config: RobotConfig) =
         );
 
         for (const item of openItems) {
-            await placeProtectiveStopForBuy({
+            checked += 1;
+            const result = await placeProtectiveStopForBuy({
                 config,
                 accountId: String(item.accountId),
                 figi: String(item.figi),
@@ -312,9 +342,36 @@ const ensureProtectiveStopsForOpenRobotPositions = async (config: RobotConfig) =
                 entryPrice: Number(item.averagePrice),
                 currentPrice: Number(item.currentPrice)
             });
+            const cancelledStops = Number(result?.resync?.cancelled ?? 0);
+            if (cancelledStops > 0) {
+                resynced += 1;
+                protectiveStopLastResyncAt = new Date().toISOString();
+                protectiveStopLastResyncReason = `${reason}: ${String(item.ticker || item.figi || item.instrumentUid)} ${String(result?.resync?.reason || '')}`;
+            }
         }
+
+        protectiveStopLastChecked = checked;
+        protectiveStopLastResynced = resynced;
+        protectiveStopLastSyncFinishedAt = new Date().toISOString();
+
+        return {
+            checked,
+            resynced,
+            skipped: false,
+            reason
+        };
     } catch (error) {
+        protectiveStopLastError = getErrorMessage(error);
+        protectiveStopLastSyncFinishedAt = new Date().toISOString();
         console.error('Protective stop sync failed:', getErrorMessage(error));
+
+        return {
+            checked,
+            resynced,
+            skipped: false,
+            reason,
+            error: getErrorMessage(error)
+        };
     }
 };
 

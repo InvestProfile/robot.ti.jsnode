@@ -5,7 +5,7 @@ import { chmod, chown, mkdir, readFile, rename, stat, writeFile } from 'fs/promi
 import { OrderIdType } from 'tinkoff-sdk-grpc-js/dist/generated/orders';
 import { getEnv } from '../config/env.config';
 import { getRobotConfig, RobotConfig } from '../config/robot.config';
-import { getTradingRuntimeState } from '../modules/common.module';
+import { ensureProtectiveStopsForOpenRobotPositions, getTradingRuntimeState } from '../modules/common.module';
 import { TradeDecisionModel } from '../models/trade-decision.model';
 import BuySignalEvaluatorService from '../services/buy-signal-evaluator.service';
 import OperationsService from '../services/operations.service';
@@ -1202,6 +1202,32 @@ const handleCancelStaleLimitOrders = async (req: IncomingMessage, res: ServerRes
     }
 };
 
+const handleProtectiveStopResync = async (req: IncomingMessage, res: ServerResponse) => {
+    if (req.headers['x-robot-admin-action'] !== 'protective-stops-resync') {
+        json(res, 403, { ok: false, error: 'missing x-robot-admin-action header' });
+        return;
+    }
+
+    try {
+        const body = await readJsonBody(req, 4096);
+        if (body.confirm !== 'RESYNC_PROTECTIVE_STOPS') {
+            json(res, 400, { ok: false, error: 'confirmation RESYNC_PROTECTIVE_STOPS is required' });
+            return;
+        }
+
+        const baseConfig = getRobotConfig();
+        const config = await RuntimeConfigService.getEffectiveConfig(baseConfig);
+        const result = await ensureProtectiveStopsForOpenRobotPositions(config, 'manual');
+
+        json(res, 200, {
+            ok: !result.error,
+            result
+        });
+    } catch (error) {
+        json(res, 400, { ok: false, error: error instanceof Error ? error.message : String(error) });
+    }
+};
+
 const getSnapshotsPayload = async (url: URL) => {
     const requestedLimit = Number(url.searchParams.get('limit') ?? 50);
     const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 50, 1), 500);
@@ -1650,6 +1676,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (req.method === 'POST' && url.pathname === '/api/admin/cancel-stale-limit-orders') {
         await handleCancelStaleLimitOrders(req, res);
+        return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/admin/protective-stops-resync') {
+        await handleProtectiveStopResync(req, res);
         return;
     }
 

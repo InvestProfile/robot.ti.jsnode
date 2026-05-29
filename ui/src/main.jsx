@@ -42,7 +42,7 @@ const endpoints = {
   analystForecasts: '/api/analyst-forecasts',
   techAnalysis: '/api/tech-analysis',
   robotPositions: '/api/robot-positions',
-  trades: '/api/trades?limit=80',
+  trades: '/api/trades?limit=200',
   tradePnl: '/api/trade-pnl?limit=500',
   accountingAudit: '/api/accounting-audit',
   orderSafety: '/api/order-safety?limit=80',
@@ -2525,10 +2525,12 @@ const protectiveStopTone = (status) => {
   return 'neutral';
 };
 
-function ProtectiveStops({ data, loading }) {
+function ProtectiveStops({ data, loading, onResync }) {
   const summary = data.protectiveStops?.summary || {};
   const stops = data.protectiveStops?.stops || [];
   const uncovered = data.protectiveStops?.uncoveredPositions || [];
+  const runtime = data.status?.runtime?.protectiveStops || {};
+  const needsResync = Number(summary.tooTight || 0) + Number(summary.tooWide || 0) + Number(summary.uncoveredPositions || 0);
 
   return (
     <Card title="Защитные стопы брокера" icon={ShieldCheck} className="wide" help="Активные брокерские stop-loss заявки и сравнение с текущим adaptive stop робота. Too tight означает, что стоп стоит ближе к цене входа, чем текущий расчет робота; too wide - дальше.">
@@ -2539,9 +2541,19 @@ function ProtectiveStops({ data, loading }) {
           { label: 'Too tight', value: summary.tooTight ?? 0, tone: summary.tooTight ? 'bad' : 'good', detail: 'может резать шум' },
           { label: 'Too wide', value: summary.tooWide ?? 0, tone: summary.tooWide ? 'warn' : 'good', detail: 'риск больше расчета' },
           { label: 'Uncovered', value: summary.uncoveredPositions ?? 0, tone: summary.uncoveredPositions ? 'bad' : 'good', detail: 'robot-лоты без стопа' },
-          { label: 'Errors', value: summary.errors ?? 0, tone: summary.errors ? 'bad' : 'good', detail: 'ошибки API стопов' }
+          { label: 'Errors', value: summary.errors ?? 0, tone: summary.errors ? 'bad' : 'good', detail: 'ошибки API стопов' },
+          { label: 'Auto sync', value: runtime.lastSyncFinishedAt ? time(runtime.lastSyncFinishedAt) : EMPTY, tone: runtime.lastError ? 'bad' : 'good', detail: runtime.lastResyncAt ? `resync ${time(runtime.lastResyncAt)}` : `${runtime.checked ?? 0} checked, ${runtime.resynced ?? 0} resynced` }
         ]}
       />
+      <div className="control-row">
+        <button className="mini-button" onClick={onResync} disabled={loading} title="Принудительно синхронизировать защитные стопы: робот отменит drift/over-cover стопы и выставит актуальные adaptive stop-loss.">
+          Resync protective stops
+        </button>
+        <span className={needsResync ? 'bad' : 'muted'}>
+          {needsResync ? `${needsResync} стопов/позиций требуют внимания` : 'drift не найден'}
+        </span>
+        {runtime.lastResyncReason ? <span className="muted" title={runtime.lastResyncReason}>{runtime.lastResyncReason}</span> : null}
+      </div>
       <Table
         className="protective-stops-table"
         columns={[
@@ -2704,7 +2716,7 @@ function AccountingAudit({ audit, loading }) {
   );
 }
 
-function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
+function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange, onProtectiveStopResync }) {
   const [filters, setFilters] = useState({ side: 'all', status: 'all', ledger: 'all', ticker: '', pnl: 'all', sort: 'newest' });
   const rows = buildTradeRows(data);
   const robotEvents = data.robotPositions?.events || [];
@@ -2727,7 +2739,7 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
     return true;
   };
   const filteredRoundTrips = sortRoundTrips(roundTrips.filter((row) => {
-    if (filters.ticker && !String(row.ticker || '').toUpperCase().includes(filters.ticker)) return false;
+    if (filters.ticker && !String(row.ticker || '').toUpperCase().includes(filters.ticker.toUpperCase())) return false;
     if (filters.side === 'buy') return false;
     if (!roundTripMatchesPnl(row)) return false;
     return true;
@@ -2747,7 +2759,7 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
     if (filters.side !== 'all' && row.side !== filters.side) return false;
     if (filters.status !== 'all' && row.status !== filters.status) return false;
     if (filters.ledger !== 'all' && row.ledgerStatus !== filters.ledger) return false;
-    if (filters.ticker && !String(row.ticker || '').toUpperCase().includes(filters.ticker)) return false;
+    if (filters.ticker && !String(row.ticker || '').toUpperCase().includes(filters.ticker.toUpperCase())) return false;
     if (filters.pnl === 'profit' && !(Number.isFinite(pnl) && pnl > 0)) return false;
     if (filters.pnl === 'loss' && !(Number.isFinite(pnl) && pnl < 0)) return false;
     if (filters.pnl === 'empty' && Number.isFinite(pnl)) return false;
@@ -2755,7 +2767,7 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
   }), filters.sort);
   const filteredRobotEvents = robotEvents.filter((row) => {
     if (filters.side !== 'all' && row.direction !== filters.side) return false;
-    if (filters.ticker && !String(row.ticker || '').toUpperCase().includes(filters.ticker)) return false;
+    if (filters.ticker && !String(row.ticker || '').toUpperCase().includes(filters.ticker.toUpperCase())) return false;
     return true;
   });
 
@@ -2782,7 +2794,7 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
 
       <ExecutionOverview data={data} loading={loadingKeys.orderSafety} className="wide" onOrderTypeChange={onOrderTypeChange} />
 
-      <ProtectiveStops data={data} loading={loadingKeys.protectiveStops} />
+      <ProtectiveStops data={data} loading={loadingKeys.protectiveStops} onResync={onProtectiveStopResync} />
 
       <Card title="Round-trip P/L" icon={LineChart} className="wide" help="Закрытые пары buy -> sell по FIFO. Net P/L вычитает комиссии брокера, биржи и клиринга, если они найдены в broker report по orderId.">
         <Table
@@ -3141,6 +3153,35 @@ function App() {
     await reload();
   };
 
+  const resyncProtectiveStops = async () => {
+    setActionError('');
+    const confirmation = window.prompt('Чтобы пересинхронизировать защитные стопы у брокера, введи RESYNC');
+    if (confirmation !== 'RESYNC') {
+      setActionError('Protective stop resync was not confirmed');
+      return;
+    }
+
+    const response = await fetch('/api/admin/protective-stops-resync', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-robot-admin-action': 'protective-stops-resync'
+      },
+      body: JSON.stringify({
+        confirm: 'RESYNC_PROTECTIVE_STOPS'
+      })
+    });
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.ok) {
+      setActionError(payload.error || payload.result?.error || `HTTP ${response.status}`);
+      return;
+    }
+
+    window.alert(`Protective stop resync: ${payload.result?.checked || 0} checked, ${payload.result?.resynced || 0} resynced`);
+    await reload();
+  };
+
   const content = {
     overview: <Overview data={data} loadingKeys={loadingKeys} onMarketRegimeChange={updateMarketRegime} />,
     buy: <Buy data={data} loadingKeys={loadingKeys} />,
@@ -3149,7 +3190,7 @@ function App() {
     evidence: <Evidence data={data} loadingKeys={loadingKeys} />,
     accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} onLiveSellToggle={updateLiveSell} onRiskSettingsChange={updateRiskSettings} onSellSettingsChange={updateSellSettings} />,
     sell: <Sell data={data} loadingKeys={loadingKeys} />,
-    trades: <Trades data={data} loadingKeys={loadingKeys} onCancelStaleLimits={cancelStaleLimitOrders} onOrderTypeChange={updateOrderType} />,
+    trades: <Trades data={data} loadingKeys={loadingKeys} onCancelStaleLimits={cancelStaleLimitOrders} onOrderTypeChange={updateOrderType} onProtectiveStopResync={resyncProtectiveStops} />,
     logs: <Logs data={data} loadingKeys={loadingKeys} onCancelStaleLimits={cancelStaleLimitOrders} />
   }[active.id];
 

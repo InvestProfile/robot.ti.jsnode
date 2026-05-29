@@ -16,6 +16,7 @@ import InstrumentsService from './instruments.service';
 
 const envVariables = getEnv();
 const FAILED_STOP_RETRY_COOLDOWN_MS = 30 * 60 * 1000;
+const STOP_DRIFT_RESYNC_PERCENT = 0.5;
 const failedStopAttempts = new Map<string, { failedAt: number; reason: string }>();
 
 const roundSellStopPrice = (price: number, minPriceIncrement?: number) => {
@@ -93,15 +94,40 @@ export default class ProtectiveStopService {
             };
         }
 
-        let activeLots = await this.getActiveSellStopLots(input.accountId, input.instrumentUid);
+        const rawStopPrice = entryPrice * (1 - stopLossPercent / 100);
+        const shares = await InstrumentsService.getShares();
+        const instrument = shares?.instruments?.find(item =>
+            item.uid === input.instrumentUid || item.figi === input.figi
+        );
+        const minPriceIncrement = quotationToNumber(instrument?.minPriceIncrement);
+        const stopPrice = roundSellStopPrice(rawStopPrice, minPriceIncrement);
+
+        const activeStops = await this.getActiveSellStops(input.accountId, input.instrumentUid);
+        let activeLots = activeStops.reduce((sum, stop) => sum + Math.max(0, Number(stop.lotsRequested ?? 0)), 0);
         let resync: { reason: string; cancelled: number; failed: number } | undefined;
-        if (activeLots > quantity) {
+        const driftedStops = activeStops
+            .map(stop => {
+                const activeStopPrice = quotationToNumber(stop.stopPrice);
+                if (!Number.isFinite(activeStopPrice) || !activeStopPrice || activeStopPrice <= 0 || stopPrice <= 0) return undefined;
+                const driftPercent = (activeStopPrice / stopPrice - 1) * 100;
+                return Math.abs(driftPercent) > STOP_DRIFT_RESYNC_PERCENT
+                    ? {
+                        activeStopPrice,
+                        driftPercent
+                    }
+                    : undefined;
+            })
+            .filter((value): value is { activeStopPrice: number; driftPercent: number } => value !== undefined);
+
+        if (activeLots > quantity || driftedStops.length > 0) {
             const cancelResult = await this.cancelActiveSellStopsForInstrument(input.accountId, input.instrumentUid);
             if (cancelResult.failed > 0) {
                 throw new Error(`protective stop resync failed: active sell stops cover ${activeLots}/${quantity} lots, cancelled ${cancelResult.cancelled}, failed ${cancelResult.failed}`);
             }
             resync = {
-                reason: `active sell stops over-cover ${activeLots}/${quantity} lots`,
+                reason: activeLots > quantity
+                    ? `active sell stops over-cover ${activeLots}/${quantity} lots`
+                    : `active sell stop price drift ${driftedStops.map(stop => stop.driftPercent.toFixed(2)).join(', ')}% from expected ${stopPrice.toFixed(4)}`,
                 cancelled: cancelResult.cancelled,
                 failed: cancelResult.failed
             };
@@ -116,13 +142,6 @@ export default class ProtectiveStopService {
             };
         }
 
-        const rawStopPrice = entryPrice * (1 - stopLossPercent / 100);
-        const shares = await InstrumentsService.getShares();
-        const instrument = shares?.instruments?.find(item =>
-            item.uid === input.instrumentUid || item.figi === input.figi
-        );
-        const minPriceIncrement = quotationToNumber(instrument?.minPriceIncrement);
-        const stopPrice = roundSellStopPrice(rawStopPrice, minPriceIncrement);
         const currentPrice = Number(input.currentPrice);
         if (
             Number.isFinite(currentPrice)
