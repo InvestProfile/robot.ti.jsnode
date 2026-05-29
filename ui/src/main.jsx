@@ -2468,6 +2468,7 @@ function ExecutionOverview({ data, loading, className, onOrderTypeChange }) {
   const config = data.status?.config || {};
   const summary = data.orderSafety?.summary || {};
   const protectiveStops = data.protectiveStops?.summary || {};
+  const protectiveDrift = Number(protectiveStops.tooTight || 0) + Number(protectiveStops.tooWide || 0) + Number(protectiveStops.uncoveredPositions || 0);
   const orderType = config.orderType || EMPTY;
   const buyOrderType = config.buyOrderType || orderType;
   const sellOrderType = config.sellOrderType || orderType;
@@ -2486,7 +2487,7 @@ function ExecutionOverview({ data, loading, className, onOrderTypeChange }) {
           { label: 'Sell type', value: sellOrderType, tone: sellOrderType === 'market' ? 'good' : 'warn', detail: sellOrderType === 'market' ? 'аварийный выход исполняется быстрее' : 'limit sell может не исполниться' },
           { label: 'Open', value: summary.open ?? 0, tone: summary.open ? 'warn' : 'good', detail: openAge !== EMPTY ? `старейшая ${openAge}` : 'нет открытых' },
           { label: 'Pending limit', value: summary.pendingLimit ?? 0, tone: summary.pendingLimit ? 'warn' : 'good', detail: 'limit-заявки ждут исполнения' },
-          { label: 'Protective stops', value: protectiveStops.active ?? 0, tone: protectiveStops.errors ? 'bad' : protectiveStops.active ? 'good' : 'warn', detail: protectiveStops.enabled ? 'broker stop-loss active' : 'disabled' },
+          { label: 'Protective stops', value: protectiveStops.active ?? 0, tone: protectiveStops.errors || protectiveDrift ? 'warn' : protectiveStops.active ? 'good' : 'warn', detail: protectiveStops.enabled ? `ok ${protectiveStops.ok || 0}, drift ${protectiveDrift}` : 'disabled' },
           { label: 'Stale limit', value: summary.staleLimit ?? 0, tone: summary.staleLimit ? 'bad' : 'good', detail: summary.stalePolicy ? `${duration(summary.stalePolicy.maxAgeMs)} / ${percent(summary.stalePolicy.maxPriceDriftPercent)}` : 'policy loading' },
           { label: 'Unknown', value: summary.unknown ?? 0, tone: summary.unknown ? 'bad' : 'good', detail: summary.unknown ? 'повторы заблокированы' : 'нет неизвестных' },
           { label: 'Market / Limit', value: `${summary.market || 0} / ${summary.limit || 0}`, detail: `${summary.checked || 0} последних заявок` },
@@ -2513,6 +2514,61 @@ function ExecutionOverview({ data, loading, className, onOrderTypeChange }) {
         </div>
       ) : null}
       {loading ? <div className="muted">Обновляю исполнение...</div> : null}
+    </Card>
+  );
+}
+
+const protectiveStopTone = (status) => {
+  if (status === 'ok') return 'good';
+  if (status === 'too-tight' || status === 'no-ledger') return 'bad';
+  if (status === 'too-wide') return 'warn';
+  return 'neutral';
+};
+
+function ProtectiveStops({ data, loading }) {
+  const summary = data.protectiveStops?.summary || {};
+  const stops = data.protectiveStops?.stops || [];
+  const uncovered = data.protectiveStops?.uncoveredPositions || [];
+
+  return (
+    <Card title="Защитные стопы брокера" icon={ShieldCheck} className="wide" help="Активные брокерские stop-loss заявки и сравнение с текущим adaptive stop робота. Too tight означает, что стоп стоит ближе к цене входа, чем текущий расчет робота; too wide - дальше.">
+      <StageStrip
+        items={[
+          { label: 'Active', value: summary.active ?? 0, tone: summary.active ? 'good' : 'warn', detail: summary.enabled ? 'stop-orders у брокера' : 'disabled' },
+          { label: 'OK', value: summary.ok ?? 0, tone: 'good', detail: 'рядом с adaptive stop' },
+          { label: 'Too tight', value: summary.tooTight ?? 0, tone: summary.tooTight ? 'bad' : 'good', detail: 'может резать шум' },
+          { label: 'Too wide', value: summary.tooWide ?? 0, tone: summary.tooWide ? 'warn' : 'good', detail: 'риск больше расчета' },
+          { label: 'Uncovered', value: summary.uncoveredPositions ?? 0, tone: summary.uncoveredPositions ? 'bad' : 'good', detail: 'robot-лоты без стопа' },
+          { label: 'Errors', value: summary.errors ?? 0, tone: summary.errors ? 'bad' : 'good', detail: 'ошибки API стопов' }
+        ]}
+      />
+      <Table
+        className="protective-stops-table"
+        columns={[
+          { key: 'ticker', label: 'Тикер', width: '120px', render: (row) => <><strong>{row.ticker || row.figi || EMPTY}</strong><div className="muted">{row.name}</div></> },
+          { key: 'accountAlias', label: 'Счет', width: '130px', render: (row) => <TextCell>{row.accountAlias || row.accountId}</TextCell> },
+          { key: 'driftStatus', label: 'Drift', width: '105px', render: (row) => <Pill tone={protectiveStopTone(row.driftStatus)}>{row.driftStatus || EMPTY}</Pill> },
+          { key: 'lotsRequested', label: 'Stop lots', width: '86px', className: 'right', render: (row) => money(row.lotsRequested) },
+          { key: 'ledgerLots', label: 'Ledger', width: '78px', className: 'right', render: (row) => money(row.ledgerLots) },
+          { key: 'stopPrice', label: 'Broker stop', width: '105px', className: 'right', render: (row) => money(row.stopPrice) },
+          { key: 'expectedStopPrice', label: 'Adaptive stop', width: '112px', className: 'right', render: (row) => money(row.expectedStopPrice) },
+          { key: 'effectiveStopPercent', label: 'Stop %', width: '86px', className: 'right', render: (row) => percent(row.stopPlan?.effectiveStopPercent) },
+          { key: 'averageDailyRangePercent', label: 'Avg range', width: '92px', className: 'right', render: (row) => percent(row.stopPlan?.averageDailyRangePercent) },
+          { key: 'driftPercent', label: 'Drift %', width: '80px', className: 'right', render: (row) => percent(row.driftPercent) },
+          { key: 'createDate', label: 'Создан', width: '145px', render: (row) => time(row.createDate) },
+          { key: 'stopOrderId', label: 'Stop id', render: (row) => <TextCell>{row.stopOrderId}</TextCell> }
+        ]}
+        rows={stops}
+        empty="Активных защитных стопов нет"
+        loading={loading}
+      />
+      {uncovered.length ? (
+        <div className="audit-callout">
+          <Pill tone="bad">{uncovered.length} без стопа</Pill>
+          <span>{uncovered.slice(0, 5).map((row) => row.ticker || row.figi).join(', ')}</span>
+          <strong>Нужно проверить постановку protective stop.</strong>
+        </div>
+      ) : null}
     </Card>
   );
 }
@@ -2725,6 +2781,8 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange }) {
       </TradeReview>
 
       <ExecutionOverview data={data} loading={loadingKeys.orderSafety} className="wide" onOrderTypeChange={onOrderTypeChange} />
+
+      <ProtectiveStops data={data} loading={loadingKeys.protectiveStops} />
 
       <Card title="Round-trip P/L" icon={LineChart} className="wide" help="Закрытые пары buy -> sell по FIFO. Net P/L вычитает комиссии брокера, биржи и клиринга, если они найдены в broker report по orderId.">
         <Table

@@ -47,6 +47,7 @@ import MarketDataService from '../services/marketData.service';
 import ProtectiveStopService from '../services/protective-stop.service';
 import AccountingAuditService from '../services/accounting-audit.service';
 import { isOpenOrderStatus, isRejectedOrderStatus } from '../utils/order-status';
+import StopLossStrategy from '../strategies/stop-loss.strategy';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -939,29 +940,89 @@ const getOrderSafetyPayload = async (url: URL, config: RobotConfig) => {
 const getProtectiveStopsPayload = async (config: RobotConfig) => {
     const stops = [];
     const errors = [];
+    const ledger = await RobotPositionLedgerService.getLedger(config);
+    const ledgerItems = (ledger.items || []).filter(item => Number(item.lots ?? 0) > 0);
+    const ledgerByAccountAndInstrument = new Map(
+        ledgerItems.flatMap(item => {
+            const accountId = String(item.accountId || '');
+            const entries: Array<[string, Record<string, unknown>]> = [];
+            if (accountId && item.instrumentUid) entries.push([`${accountId}:${item.instrumentUid}`, item]);
+            if (accountId && item.figi) entries.push([`${accountId}:${item.figi}`, item]);
+            return entries;
+        })
+    );
+    const activeLotsByAccountAndInstrument = new Map<string, number>();
 
     for (const account of getAllAccounts(config)) {
         try {
             const accountStops = await ProtectiveStopService.getActiveStops(account.accountId);
-            stops.push(...accountStops.map(stop => ({
-                accountId: account.accountId,
-                accountAlias: config.accountAliases[account.accountId],
-                accountMode: account.mode,
-                stopOrderId: stop.stopOrderId,
-                figi: stop.figi,
-                instrumentUid: stop.instrumentUid,
-                ticker: stop.ticker,
-                direction: stop.direction,
-                orderType: stop.orderType,
-                status: stop.status,
-                exchangeOrderType: stop.exchangeOrderType,
-                lotsRequested: stop.lotsRequested,
-                price: quotationToNumber(stop.price),
-                stopPrice: quotationToNumber(stop.stopPrice),
-                createDate: stop.createDate,
-                activationDateTime: stop.activationDateTime,
-                expirationTime: stop.expirationTime
-            })));
+            for (const stop of accountStops) {
+                const instrumentUid = String(stop.instrumentUid || '');
+                const figi = String(stop.figi || '');
+                const ledgerItem = ledgerByAccountAndInstrument.get(`${account.accountId}:${instrumentUid}`)
+                    ?? ledgerByAccountAndInstrument.get(`${account.accountId}:${figi}`);
+                const lotsRequested = Number(stop.lotsRequested ?? 0);
+                if (instrumentUid) {
+                    const key = `${account.accountId}:${instrumentUid}`;
+                    activeLotsByAccountAndInstrument.set(key, (activeLotsByAccountAndInstrument.get(key) ?? 0) + lotsRequested);
+                }
+                if (figi) {
+                    const key = `${account.accountId}:${figi}`;
+                    activeLotsByAccountAndInstrument.set(key, (activeLotsByAccountAndInstrument.get(key) ?? 0) + lotsRequested);
+                }
+
+                const averagePrice = Number(ledgerItem?.averagePrice);
+                const stopPrice = quotationToNumber(stop.stopPrice);
+                let stopPlan;
+                let expectedStopPrice;
+                let driftPercent;
+                let driftStatus = ledgerItem ? 'unknown' : 'no-ledger';
+
+                if (ledgerItem && Number.isFinite(averagePrice) && averagePrice > 0 && instrumentUid) {
+                    stopPlan = await StopLossStrategy.calculateEffectiveStop({
+                        accountId: account.accountId,
+                        ticker: String(ledgerItem.ticker || stop.ticker || ''),
+                        instrumentUid
+                    }, config);
+                    expectedStopPrice = averagePrice * (1 - stopPlan.effectiveStopPercent / 100);
+
+                    const numericStopPrice = Number(stopPrice);
+                    if (Number.isFinite(numericStopPrice) && numericStopPrice > 0 && expectedStopPrice > 0) {
+                        driftPercent = (numericStopPrice / expectedStopPrice - 1) * 100;
+                        if (Math.abs(driftPercent) <= 0.5) {
+                            driftStatus = 'ok';
+                        } else {
+                            driftStatus = driftPercent > 0 ? 'too-tight' : 'too-wide';
+                        }
+                    }
+                }
+
+                stops.push({
+                    accountId: account.accountId,
+                    accountAlias: config.accountAliases[account.accountId],
+                    accountMode: account.mode,
+                    stopOrderId: stop.stopOrderId,
+                    figi: stop.figi,
+                    instrumentUid: stop.instrumentUid,
+                    ticker: stop.ticker || ledgerItem?.ticker,
+                    name: ledgerItem?.name,
+                    direction: stop.direction,
+                    orderType: stop.orderType,
+                    status: stop.status,
+                    exchangeOrderType: stop.exchangeOrderType,
+                    lotsRequested: stop.lotsRequested,
+                    ledgerLots: ledgerItem?.lots,
+                    price: quotationToNumber(stop.price),
+                    stopPrice,
+                    expectedStopPrice,
+                    stopPlan,
+                    driftPercent,
+                    driftStatus,
+                    createDate: stop.createDate,
+                    activationDateTime: stop.activationDateTime,
+                    expirationTime: stop.expirationTime
+                });
+            }
         } catch (error) {
             errors.push({
                 accountId: account.accountId,
@@ -971,13 +1032,30 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
         }
     }
 
+    const uncoveredPositions = ledgerItems.filter(item => {
+        const accountId = String(item.accountId || '');
+        const instrumentUid = String(item.instrumentUid || '');
+        const figi = String(item.figi || '');
+        const activeLots = Math.max(
+            activeLotsByAccountAndInstrument.get(`${accountId}:${instrumentUid}`) ?? 0,
+            activeLotsByAccountAndInstrument.get(`${accountId}:${figi}`) ?? 0
+        );
+        return activeLots < Number(item.lots ?? 0);
+    });
+
     return {
         summary: {
             enabled: config.protectiveStopsEnabled,
             active: stops.length,
+            ok: stops.filter(stop => stop.driftStatus === 'ok').length,
+            tooTight: stops.filter(stop => stop.driftStatus === 'too-tight').length,
+            tooWide: stops.filter(stop => stop.driftStatus === 'too-wide').length,
+            noLedger: stops.filter(stop => stop.driftStatus === 'no-ledger').length,
+            uncoveredPositions: uncoveredPositions.length,
             errors: errors.length
         },
         stops,
+        uncoveredPositions,
         errors
     };
 };
