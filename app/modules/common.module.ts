@@ -323,7 +323,6 @@ export const ensureProtectiveStopsForOpenRobotPositions = async (config: RobotCo
         const openItems = (ledger.items || []).filter(item =>
             Number(item.lots ?? 0) > 0
             && Number(item.averagePrice ?? 0) > 0
-            && Number(item.currentPrice ?? 0) > 0
             && item.accountId
             && item.figi
             && item.instrumentUid
