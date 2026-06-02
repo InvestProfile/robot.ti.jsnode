@@ -44,6 +44,7 @@ const MAX_DAILY_RUB_KEY = 'maxDailyRub';
 const MAX_POSITION_SHARE_KEY = 'maxPositionSharePercent';
 const MIN_DIVERSIFICATION_POSITIONS_KEY = 'minDiversificationPositions';
 const DIVERSIFICATION_FIRST_KEY = 'diversificationFirst';
+const SECTOR_PERFORMANCE_RISK_ENFORCED_KEY = 'sectorPerformanceRiskEnforced';
 const STOP_LOSS_PERCENT_KEY = 'stopLossPercent';
 const TRAILING_STOP_PERCENT_KEY = 'trailingStopPercent';
 const TRAILING_STOP_MIN_PROFIT_PERCENT_KEY = 'trailingStopMinProfitPercent';
@@ -264,7 +265,8 @@ export default class RuntimeConfigService {
                         MAX_DAILY_RUB_KEY,
                         MAX_POSITION_SHARE_KEY,
                         MIN_DIVERSIFICATION_POSITIONS_KEY,
-                        DIVERSIFICATION_FIRST_KEY
+                        DIVERSIFICATION_FIRST_KEY,
+                        SECTOR_PERFORMANCE_RISK_ENFORCED_KEY
                     ]
                 }
             } as any
@@ -276,6 +278,7 @@ export default class RuntimeConfigService {
         const maxPositionSharePercent = byKey.get(MAX_POSITION_SHARE_KEY);
         const minDiversificationPositions = byKey.get(MIN_DIVERSIFICATION_POSITIONS_KEY);
         const diversificationFirst = byKey.get(DIVERSIFICATION_FIRST_KEY);
+        const sectorPerformanceRiskEnforced = byKey.get(SECTOR_PERFORMANCE_RISK_ENFORCED_KEY);
 
         return {
             maxOrderRub: capRuntimeNumber(maxOrderRub, baseConfig.maxOrderRub, baseConfig.maxRuntimeOrderRub),
@@ -285,7 +288,10 @@ export default class RuntimeConfigService {
             minDiversificationPositions: capRuntimeNumber(minDiversificationPositions, baseConfig.minDiversificationPositions, 100, { integer: true }),
             diversificationFirst: diversificationFirst === undefined
                 ? baseConfig.diversificationFirst
-                : ['1', 'true', 'yes', 'on'].includes(String(diversificationFirst).trim().toLowerCase())
+                : ['1', 'true', 'yes', 'on'].includes(String(diversificationFirst).trim().toLowerCase()),
+            sectorPerformanceRiskEnforced: sectorPerformanceRiskEnforced === undefined
+                ? baseConfig.sectorPerformanceRiskEnforced
+                : ['1', 'true', 'yes', 'on'].includes(String(sectorPerformanceRiskEnforced).trim().toLowerCase())
         };
     }
 
@@ -296,6 +302,7 @@ export default class RuntimeConfigService {
         maxPositionSharePercent?: number;
         minDiversificationPositions?: number;
         diversificationFirst?: boolean;
+        sectorPerformanceRiskEnforced?: boolean;
     }, updatedBy = 'web') {
         const baseConfig = getRobotConfig();
         const maxOrderRub = capRuntimeNumber(input.maxOrderRub, baseConfig.maxOrderRub, baseConfig.maxRuntimeOrderRub);
@@ -306,6 +313,9 @@ export default class RuntimeConfigService {
         const diversificationFirst = typeof input.diversificationFirst === 'boolean'
             ? input.diversificationFirst
             : baseConfig.diversificationFirst;
+        const sectorPerformanceRiskEnforced = typeof input.sectorPerformanceRiskEnforced === 'boolean'
+            ? input.sectorPerformanceRiskEnforced
+            : baseConfig.sectorPerformanceRiskEnforced;
 
         await RuntimeSettingModel.upsert({
             key: MAX_ORDER_RUB_KEY,
@@ -337,6 +347,11 @@ export default class RuntimeConfigService {
             value: String(diversificationFirst),
             updatedBy
         });
+        await RuntimeSettingModel.upsert({
+            key: SECTOR_PERFORMANCE_RISK_ENFORCED_KEY,
+            value: String(sectorPerformanceRiskEnforced),
+            updatedBy
+        });
 
         return {
             maxOrderRub,
@@ -344,7 +359,8 @@ export default class RuntimeConfigService {
             maxDailyRub,
             maxPositionSharePercent,
             minDiversificationPositions,
-            diversificationFirst
+            diversificationFirst,
+            sectorPerformanceRiskEnforced
         };
     }
 

@@ -512,6 +512,9 @@ const handleRiskSettingsUpdate = async (req: IncomingMessage, res: ServerRespons
         const diversificationFirst = payload.diversificationFirst === undefined
             ? currentConfig.diversificationFirst
             : payload.diversificationFirst;
+        const sectorPerformanceRiskEnforced = payload.sectorPerformanceRiskEnforced === undefined
+            ? currentConfig.sectorPerformanceRiskEnforced
+            : payload.sectorPerformanceRiskEnforced;
 
         if (!Number.isFinite(maxOrderRub) || maxOrderRub < 0 || maxOrderRub > baseConfig.maxRuntimeOrderRub) {
             json(res, 400, { ok: false, error: `maxOrderRub must be 0..${baseConfig.maxRuntimeOrderRub}` });
@@ -543,13 +546,19 @@ const handleRiskSettingsUpdate = async (req: IncomingMessage, res: ServerRespons
             return;
         }
 
+        if (typeof sectorPerformanceRiskEnforced !== 'boolean') {
+            json(res, 400, { ok: false, error: 'sectorPerformanceRiskEnforced must be boolean' });
+            return;
+        }
+
         const settings = await RuntimeConfigService.setRiskSettings({
             maxOrderRub,
             maxDailyOrders,
             maxDailyRub,
             maxPositionSharePercent,
             minDiversificationPositions,
-            diversificationFirst
+            diversificationFirst,
+            sectorPerformanceRiskEnforced
         }, 'web-dashboard');
         invalidatePreviewCache();
         const config = await RuntimeConfigService.getEffectiveConfig(getRobotConfig());

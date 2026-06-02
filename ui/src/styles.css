@@ -1036,7 +1036,16 @@ tbody tr:hover td {
 }
 
 .buy-preview-table {
-  min-width: 1420px;
+  min-width: 1780px;
+}
+
+.buy-preview-table th,
+.buy-preview-table td {
+  vertical-align: top;
+}
+
+.buy-preview-table .reason {
+  min-width: 340px;
 }
 
 .trade-review-table {

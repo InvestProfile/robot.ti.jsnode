@@ -1351,7 +1351,7 @@ function Buy({ data, loadingKeys }) {
             { key: 'postSellConfirmation', label: 'После выхода', width: '165px', render: (row) => <PostSellConfirmation risk={row.preBuyRisk} /> },
             { key: 'preBuyRisk', label: 'Риск-фильтр', width: '180px', render: (row) => <PreBuyRisk risk={row.preBuyRisk} /> },
             { key: 'brokerQuote', label: 'Брокер', width: '105px', className: 'right', render: (row) => row.brokerQuote ? money(row.brokerQuote.totalOrderAmount) : '-' },
-            { key: 'reason', label: 'Причина', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
+            { key: 'reason', label: 'Причина', width: '360px', className: 'reason', render: (row) => <CompactReason>{row.reason}</CompactReason> }
           ]}
           rows={filteredPreviews}
           empty="Нет кандидатов под выбранные фильтры"
@@ -2076,6 +2076,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
   const maxPositionSharePercent = Number(config.maxPositionSharePercent || 0);
   const minDiversificationPositions = Number(config.minDiversificationPositions || 0);
   const diversificationFirst = config.diversificationFirst !== false;
+  const sectorPerformanceRiskEnforced = config.sectorPerformanceRiskEnforced === true;
   const riskPayload = (patch) => ({
     maxOrderRub,
     maxDailyOrders,
@@ -2083,6 +2084,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
     maxPositionSharePercent,
     minDiversificationPositions,
     diversificationFirst,
+    sectorPerformanceRiskEnforced,
     ...patch
   });
   const orderButtons = [500, 1000, 1500, 2500, 5000, 10000, 25000, 50000, 100000]
@@ -2102,6 +2104,7 @@ function RiskControls({ data, onRiskSettingsChange }) {
         <Stat label="Бюджет дня" value={`${money(maxDailyRub)} RUB`} title={`Hard cap: ${money(config.maxRuntimeDailyRub)} RUB`} />
         <Stat label="Лимит позиции" value={`${money(maxPositionSharePercent)}%`} title="Максимальная доля одной бумаги после новой покупки." />
         <Stat label="Мин. бумаг" value={minDiversificationPositions} title="Пока бумаг меньше этого числа, робот старается не докупать уже имеющиеся тикеры." />
+        <Stat label="Секторный P/L" value={sectorPerformanceRiskEnforced ? 'enforced' : 'observe'} tone={sectorPerformanceRiskEnforced ? 'bad' : 'neutral'} title="Когда enforced, сектор с плохой статистикой round-trip сделок реально блокирует buy. В observe робот только показывает предупреждение." />
         <Stat label="Осталось сегодня" value={tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : '-'} />
       </div>
       <ControlGroup label="Заявка" value={`${money(maxOrderRub)} RUB`}>
@@ -2169,6 +2172,22 @@ function RiskControls({ data, onRiskSettingsChange }) {
           title="Когда включено, робот сначала расширяет набор бумаг, а уже потом докупает существующие тикеры."
         >
           диверсификация {diversificationFirst ? 'on' : 'off'}
+        </button>
+      </ControlGroup>
+      <ControlGroup label="Секторный P/L" value={sectorPerformanceRiskEnforced ? 'enforced' : 'observe'}>
+        <button
+          className={cls('mini-button', !sectorPerformanceRiskEnforced && 'active')}
+          onClick={() => onRiskSettingsChange(riskPayload({ sectorPerformanceRiskEnforced: false }))}
+          title="Показывать плохие сектора в предпросмотре, но не блокировать покупку."
+        >
+          observe
+        </button>
+        <button
+          className={cls('mini-button danger', sectorPerformanceRiskEnforced && 'active')}
+          onClick={() => onRiskSettingsChange(riskPayload({ sectorPerformanceRiskEnforced: true }))}
+          title="Реально блокировать покупку, если сектор показал слабую статистику round-trip сделок."
+        >
+          enforce
         </button>
       </ControlGroup>
     </Card>
