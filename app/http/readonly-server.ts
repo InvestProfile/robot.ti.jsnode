@@ -793,9 +793,14 @@ const getPositionsPayload = async (config: RobotConfig, accountIdFilter: string 
                 instrumentUid: position.instrumentUid,
                 ticker: instrument?.ticker,
                 name: instrument?.name,
+                sector: instrument?.sector,
                 quantityLots: position.quantityLots?.units,
+                lot: instrument?.lot,
                 averagePrice,
                 currentPrice,
+                valueRub: currentPrice && position.quantityLots?.units
+                    ? currentPrice * Number(position.quantityLots.units) * Number(instrument?.lot || 1)
+                    : undefined,
                 profitPercent: averagePrice && currentPrice ? (currentPrice / averagePrice - 1) * 100 : undefined
             });
         }
@@ -832,7 +837,88 @@ const getTradesPayload = async (url: URL) => {
 
 const getTradePnlPayload = async (url: URL, config: RobotConfig) => {
     const requestedLimit = Number(url.searchParams.get('limit') ?? 500);
-    return await TradePnlService.getRoundTripPnl(config, requestedLimit);
+    const payload = await TradePnlService.getRoundTripPnl(config, requestedLimit);
+    return await enrichTradePnlWithSectors(payload);
+};
+
+const summarizeSectorPnl = (rows: Record<string, unknown>[]) => {
+    const groups = new Map<string, {
+        key: string;
+        count: number;
+        wins: number;
+        losses: number;
+        pnlRub: number;
+        averagePnlRub?: number;
+        winRate?: number;
+    }>();
+
+    for (const row of rows) {
+        const pnl = Number(row.netPnlRub ?? row.pnlRub);
+        if (!Number.isFinite(pnl)) continue;
+        const key = String(row.sector || 'unknown');
+        const group = groups.get(key) ?? { key, count: 0, wins: 0, losses: 0, pnlRub: 0 };
+        group.count += 1;
+        group.pnlRub += pnl;
+        if (pnl > 0) group.wins += 1;
+        if (pnl < 0) group.losses += 1;
+        groups.set(key, group);
+    }
+
+    return [...groups.values()]
+        .map(group => ({
+            ...group,
+            averagePnlRub: group.count > 0 ? group.pnlRub / group.count : undefined,
+            winRate: group.count > 0 ? group.wins / group.count * 100 : undefined
+        }))
+        .sort((a, b) => Math.abs(b.pnlRub) - Math.abs(a.pnlRub));
+};
+
+const enrichTradePnlWithSectors = async (payload: any) => {
+    try {
+        const shares = await InstrumentsService.getShares();
+        const instruments = shares?.instruments ?? [];
+        const byUid = new Map(instruments.map(instrument => [String(instrument.uid || ''), instrument]));
+        const byFigi = new Map(instruments.map(instrument => [String(instrument.figi || ''), instrument]));
+        const byTicker = new Map(instruments.map(instrument => [String(instrument.ticker || '').toUpperCase(), instrument]));
+        const sectorFor = (row: Record<string, unknown>) => {
+            const instrument = byUid.get(String(row.instrumentId || ''))
+                ?? byUid.get(String(row.instrumentUid || ''))
+                ?? byFigi.get(String(row.figi || ''))
+                ?? byTicker.get(String(row.ticker || '').toUpperCase());
+            return instrument?.sector || undefined;
+        };
+        const attach = (row: Record<string, unknown>) => ({
+            ...row,
+            sector: row.sector || sectorFor(row)
+        });
+
+        const roundTrips = (payload.roundTrips || []).map(attach);
+        const closedRoundTrips = (payload.closedRoundTrips || []).map(attach);
+        const diagnostics = (payload.diagnostics || []).map(attach);
+
+        return {
+            ...payload,
+            roundTrips,
+            closedRoundTrips,
+            diagnostics,
+            breakdowns: {
+                ...(payload.breakdowns || {}),
+                bySector: summarizeSectorPnl(closedRoundTrips)
+            }
+        };
+    } catch (error) {
+        return {
+            ...payload,
+            diagnostics: [
+                ...(payload.diagnostics || []),
+                {
+                    id: 'sector-enrichment-error',
+                    diagnoses: ['sector:unavailable'],
+                    note: error instanceof Error ? error.message : String(error)
+                }
+            ]
+        };
+    }
 };
 
 const orderPriceFromRow = (row: Record<string, unknown>) => {

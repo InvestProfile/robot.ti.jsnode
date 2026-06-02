@@ -52,7 +52,7 @@ const endpoints = {
 
 const endpointGroups = {
   core: ['status', 'limits', 'performance', 'paper', 'socialCollector', 'market', 'orderSafety'],
-  overview: ['market', 'orderSafety', 'snapshots'],
+  overview: ['market', 'orderSafety', 'snapshots', 'positions'],
   buy: ['dailyBuyList', 'preview', 'buyRecommendations', 'buyScan'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   socialProfiles: ['socialProfiles'],
@@ -862,9 +862,48 @@ const buildPnlChart = (data) => {
       baseTotalRub: first.totalRub,
       hourlySlope,
       samples: points.length,
-      account: last.accountAlias || last.accountId
+      account: last.accountAlias || last.accountId,
+      fromAt: first.at,
+      toAt: last.at
     }
   };
+};
+
+const buildSectorExposure = (data) => {
+  const positions = data.positions?.positions || [];
+  const groups = new Map();
+
+  positions
+    .filter((position) => position.accountMode === 'trade')
+    .forEach((position) => {
+      const key = position.sector || 'unknown';
+      const valueRub = Number(position.valueRub);
+      const profitPercent = Number(position.profitPercent);
+      const group = groups.get(key) ?? {
+        sector: key,
+        positions: 0,
+        valueRub: 0,
+        weightedProfit: 0,
+        tickers: []
+      };
+      group.positions += 1;
+      if (Number.isFinite(valueRub)) group.valueRub += valueRub;
+      if (Number.isFinite(valueRub) && Number.isFinite(profitPercent)) {
+        group.weightedProfit += valueRub * profitPercent;
+      }
+      if (position.ticker) group.tickers.push(position.ticker);
+      groups.set(key, group);
+    });
+
+  const totalValueRub = [...groups.values()].reduce((sum, group) => sum + group.valueRub, 0);
+
+  return [...groups.values()]
+    .map((group) => ({
+      ...group,
+      sharePercent: totalValueRub > 0 ? group.valueRub / totalValueRub * 100 : undefined,
+      avgProfitPercent: group.valueRub > 0 ? group.weightedProfit / group.valueRub : undefined
+    }))
+    .sort((a, b) => Number(b.valueRub || 0) - Number(a.valueRub || 0));
 };
 
 function PnlForecastChart({ data }) {
@@ -897,13 +936,16 @@ function PnlForecastChart({ data }) {
   const actualTone = Number(chart.stats?.currentPnlRub || 0) >= 0 ? 'good' : 'bad';
 
   return (
-    <Card title="P/L траектория" icon={LineChart} className="wide" help="Фактическая линия строится по snapshots торгового счета. Пунктир вперед - простая визуальная экстраполяция последних точек на несколько часов, не прогноз рынка и не торговый сигнал.">
+    <Card title="P/L траектория" icon={LineChart} className="wide" help="Фактическая линия строится по snapshots торгового счета. P/L окна - это изменение от первой точки в загруженном окне, а не доходность от внесенного капитала. Пунктир вперед - декоративная экстраполяция, не торговый сигнал.">
       <div className="pnl-chart-head">
         <div className="stats compact">
-          <Stat label="Текущий P/L" value={`${money(chart.stats?.currentPnlRub)} RUB`} tone={actualTone} />
-          <Stat label="Счет" value={`${money(chart.stats?.totalRub)} RUB`} />
+          <Stat label="P/L окна" value={`${money(chart.stats?.currentPnlRub)} RUB`} tone={actualTone} title={`От ${money(chart.stats?.baseTotalRub)} RUB в первой точке окна`} />
+          <Stat label="Сейчас на счете" value={`${money(chart.stats?.totalRub)} RUB`} />
           <Stat label="Тренд/час" value={`${money(chart.stats?.hourlySlope)} RUB`} tone={Number(chart.stats?.hourlySlope || 0) >= 0 ? 'good' : 'bad'} />
           <Stat label="Точек" value={chart.stats?.samples ?? EMPTY} title={chart.stats?.account || ''} />
+        </div>
+        <div className="muted">
+          Окно: {time(chart.stats?.fromAt)} - {time(chart.stats?.toAt)}. База окна: {money(chart.stats?.baseTotalRub)} RUB.
         </div>
       </div>
       <div className="pnl-chart">
@@ -921,6 +963,28 @@ function PnlForecastChart({ data }) {
           <span>forecast +4h</span>
         </div>
       </div>
+    </Card>
+  );
+}
+
+function SectorExposureCard({ data, loading }) {
+  const sectors = buildSectorExposure(data);
+  const top = sectors.slice(0, 8);
+
+  return (
+    <Card title="Сектора портфеля" icon={BarChart3} className="wide" help="Оценочная экспозиция торгового счета по секторам: currentPrice * lots * lotSize. Это не бухгалтерский P/L, а карта перекоса портфеля.">
+      <Table
+        columns={[
+          { key: 'sector', label: 'Сектор', render: (row) => <><strong>{row.sector}</strong><div className="muted">{row.tickers.slice(0, 8).join(', ')}</div></> },
+          { key: 'positions', label: 'Позиций', width: '82px', className: 'right', render: (row) => money(row.positions) },
+          { key: 'valueRub', label: 'Exposure', width: '110px', className: 'right', render: (row) => money(row.valueRub) },
+          { key: 'sharePercent', label: 'Доля', width: '90px', className: 'right', render: (row) => percent(row.sharePercent) },
+          { key: 'avgProfitPercent', label: 'Текущий P/L', width: '110px', className: 'right', render: (row) => <span className={Number(row.avgProfitPercent || 0) >= 0 ? 'good' : 'bad'}>{percent(row.avgProfitPercent)}</span> }
+        ]}
+        rows={top}
+        empty="На торговом счете нет секторных позиций"
+        loading={loading}
+      />
     </Card>
   );
 }
@@ -990,7 +1054,7 @@ const filterBuyPreviews = (rows, filters) => {
   return sortByNumber(filtered, (row) => row.scoreAnalysis?.score ?? row.score, 'desc');
 };
 
-function Overview({ data, onMarketRegimeChange }) {
+function Overview({ data, loadingKeys, onMarketRegimeChange }) {
   const blockers = getReadiness(data);
   const status = data.status;
   const social = data.socialCollector;
@@ -1104,6 +1168,8 @@ function Overview({ data, onMarketRegimeChange }) {
       <ExecutionOverview data={data} className="wide" />
 
       <PnlForecastChart data={data} />
+
+      <SectorExposureCard data={data} loading={loadingKeys.positions} />
 
       <Card title="Рыночный фильтр" icon={Activity} help="Текущий расчет рынка. Current score - фактическая доля здоровых базовых бумаг. Required score - порог, который можно менять отдельно в блоке настроек.">
         <div className="readiness">
@@ -2965,6 +3031,13 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange, onP
         rows={tradePnlBreakdowns.byTicker}
         loading={loadingKeys.tradePnl}
         help="Сводка по инструментам: какие бумаги робот закрыл в плюс или минус."
+      />
+
+      <PnlBreakdown
+        title="P/L по секторам"
+        rows={tradePnlBreakdowns.bySector}
+        loading={loadingKeys.tradePnl}
+        help="Закрытые пары сгруппированы по сектору инструмента. Это помогает увидеть, какие части рынка робот торгует в плюс, а какие пока режут результат."
       />
 
       <PnlBreakdown
