@@ -40,6 +40,20 @@ export interface ProtectiveStopInput {
 }
 
 export default class ProtectiveStopService {
+    static getLastFailure(accountId: string, instrumentUid: string) {
+        if (!accountId || !instrumentUid) return undefined;
+
+        const failure = failedStopAttempts.get(failedStopKey(accountId, instrumentUid));
+        if (!failure) return undefined;
+
+        const cooldownLeftMs = Math.max(0, FAILED_STOP_RETRY_COOLDOWN_MS - (Date.now() - failure.failedAt));
+        return {
+            failedAt: new Date(failure.failedAt).toISOString(),
+            reason: failure.reason,
+            cooldownLeftMs
+        };
+    }
+
     static async getActiveStops(accountId: string) {
         if (!envVariables.INVEST_TOKEN) throw new Error('INVEST_TOKEN is not defined.');
         if (!accountId) throw new Error('accountId is required for stop order lookup');

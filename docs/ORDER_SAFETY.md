@@ -50,6 +50,7 @@ Current implementation:
 - Skips stale stop creation when current price is already at/below calculated stop.
 - Cools down failed attempts for 30 minutes per account/instrument.
 - Logs diagnostics without secrets when stop placement fails.
+- Dashboard marks uncovered robot positions as `broker rejected` when the latest protective stop attempt was rejected by the broker/API.
 
 Useful log query:
 

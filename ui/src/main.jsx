@@ -2531,6 +2531,7 @@ function ProtectiveStops({ data, loading, onResync }) {
   const uncovered = data.protectiveStops?.uncoveredPositions || [];
   const runtime = data.status?.runtime?.protectiveStops || {};
   const needsResync = Number(summary.tooTight || 0) + Number(summary.tooWide || 0) + Number(summary.uncoveredPositions || 0);
+  const rejected = Number(summary.brokerRejected || 0);
 
   return (
     <Card title="Защитные стопы брокера" icon={ShieldCheck} className="wide" help="Активные брокерские stop-loss заявки и сравнение с текущим adaptive stop робота. Too tight означает, что стоп стоит ближе к цене входа, чем текущий расчет робота; too wide - дальше.">
@@ -2541,6 +2542,7 @@ function ProtectiveStops({ data, loading, onResync }) {
           { label: 'Too tight', value: summary.tooTight ?? 0, tone: summary.tooTight ? 'bad' : 'good', detail: 'может резать шум' },
           { label: 'Too wide', value: summary.tooWide ?? 0, tone: summary.tooWide ? 'warn' : 'good', detail: 'риск больше расчета' },
           { label: 'Uncovered', value: summary.uncoveredPositions ?? 0, tone: summary.uncoveredPositions ? 'bad' : 'good', detail: 'robot-лоты без стопа' },
+          { label: 'Rejected', value: rejected, tone: rejected ? 'bad' : 'good', detail: 'брокер не принял стоп' },
           { label: 'Errors', value: summary.errors ?? 0, tone: summary.errors ? 'bad' : 'good', detail: 'ошибки API стопов' },
           { label: 'Auto sync', value: runtime.lastSyncFinishedAt ? time(runtime.lastSyncFinishedAt) : EMPTY, tone: runtime.lastError ? 'bad' : 'good', detail: runtime.lastResyncAt ? `resync ${time(runtime.lastResyncAt)}` : `${runtime.checked ?? 0} checked, ${runtime.resynced ?? 0} resynced` }
         ]}
@@ -2577,8 +2579,14 @@ function ProtectiveStops({ data, loading, onResync }) {
       {uncovered.length ? (
         <div className="audit-callout">
           <Pill tone="bad">{uncovered.length} без стопа</Pill>
-          <span>{uncovered.slice(0, 5).map((row) => row.ticker || row.figi).join(', ')}</span>
-          <strong>Нужно проверить постановку protective stop.</strong>
+          {rejected ? <Pill tone="bad">{rejected} broker rejected</Pill> : null}
+          <span title={uncovered.map((row) => row.protectiveStopFailure?.reason || '').filter(Boolean).join('\n')}>
+            {uncovered.slice(0, 5).map((row) => {
+              const label = row.ticker || row.figi;
+              return row.protectiveStopFailure ? `${label}: broker rejected` : label;
+            }).join(', ')}
+          </span>
+          <strong>{rejected ? 'Брокер отклонил protective stop, смотри tooltip/логи.' : 'Нужно проверить постановку protective stop.'}</strong>
         </div>
       ) : null}
     </Card>

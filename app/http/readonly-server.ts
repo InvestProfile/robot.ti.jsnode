@@ -1032,7 +1032,18 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
         }
     }
 
-    const uncoveredPositions = ledgerItems.filter(item => {
+    const uncoveredPositions = ledgerItems
+        .filter(item => {
+            const accountId = String(item.accountId || '');
+            const instrumentUid = String(item.instrumentUid || '');
+            const figi = String(item.figi || '');
+            const activeLots = Math.max(
+                activeLotsByAccountAndInstrument.get(`${accountId}:${instrumentUid}`) ?? 0,
+                activeLotsByAccountAndInstrument.get(`${accountId}:${figi}`) ?? 0
+            );
+            return activeLots < Number(item.lots ?? 0);
+        })
+        .map(item => {
         const accountId = String(item.accountId || '');
         const instrumentUid = String(item.instrumentUid || '');
         const figi = String(item.figi || '');
@@ -1040,8 +1051,16 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
             activeLotsByAccountAndInstrument.get(`${accountId}:${instrumentUid}`) ?? 0,
             activeLotsByAccountAndInstrument.get(`${accountId}:${figi}`) ?? 0
         );
-        return activeLots < Number(item.lots ?? 0);
-    });
+            const lastFailure = ProtectiveStopService.getLastFailure(accountId, instrumentUid);
+
+            return {
+                ...item,
+                activeStopLots: activeLots,
+                uncoveredLots: Math.max(0, Number(item.lots ?? 0) - activeLots),
+                protectiveStopFailure: lastFailure,
+                protectiveStopStatus: lastFailure ? 'broker-rejected' : 'uncovered'
+            };
+        });
 
     return {
         summary: {
@@ -1052,6 +1071,7 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
             tooWide: stops.filter(stop => stop.driftStatus === 'too-wide').length,
             noLedger: stops.filter(stop => stop.driftStatus === 'no-ledger').length,
             uncoveredPositions: uncoveredPositions.length,
+            brokerRejected: uncoveredPositions.filter(item => item.protectiveStopStatus === 'broker-rejected').length,
             errors: errors.length
         },
         stops,
