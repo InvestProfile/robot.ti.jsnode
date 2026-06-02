@@ -46,12 +46,13 @@ const endpoints = {
   tradePnl: '/api/trade-pnl?limit=500',
   accountingAudit: '/api/accounting-audit',
   orderSafety: '/api/order-safety?limit=80',
-  protectiveStops: '/api/protective-stops'
+  protectiveStops: '/api/protective-stops',
+  snapshots: '/api/snapshots?limit=300'
 };
 
 const endpointGroups = {
   core: ['status', 'limits', 'performance', 'paper', 'socialCollector', 'market', 'orderSafety'],
-  overview: ['market', 'orderSafety'],
+  overview: ['market', 'orderSafety', 'snapshots'],
   buy: ['dailyBuyList', 'preview', 'buyRecommendations', 'buyScan'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   socialProfiles: ['socialProfiles'],
@@ -818,6 +819,112 @@ function MarketLab({ data, loading }) {
   );
 }
 
+const buildPnlChart = (data) => {
+  const tradeAccountIds = new Set(data.status?.config?.accountIds || []);
+  const rows = (data.snapshots?.snapshots || [])
+    .filter((row) => !tradeAccountIds.size || tradeAccountIds.has(String(row.accountId || '')))
+    .map((row) => ({
+      at: new Date(row.createdAt).getTime(),
+      totalRub: Number(row.totalRub),
+      accountAlias: row.accountAlias,
+      accountId: row.accountId
+    }))
+    .filter((row) => Number.isFinite(row.at) && Number.isFinite(row.totalRub))
+    .sort((a, b) => a.at - b.at);
+
+  if (rows.length < 2) return { rows, points: [], forecast: [], stats: undefined };
+
+  const first = rows[0];
+  const points = rows.map((row) => ({
+    ...row,
+    pnlRub: row.totalRub - first.totalRub
+  }));
+  const last = points[points.length - 1];
+  const lookback = points.slice(-Math.min(12, points.length));
+  const lookbackFirst = lookback[0];
+  const elapsedHours = Math.max(1, (last.at - lookbackFirst.at) / 3_600_000);
+  const rawHourlySlope = (last.pnlRub - lookbackFirst.pnlRub) / elapsedHours;
+  const maxSlope = Math.max(25, Math.abs(last.pnlRub || 0) * 0.2);
+  const hourlySlope = Math.max(-maxSlope, Math.min(maxSlope, rawHourlySlope));
+  const forecast = [1, 2, 3, 4].map((hour) => ({
+    at: last.at + hour * 3_600_000,
+    pnlRub: last.pnlRub + hourlySlope * hour,
+    forecast: true
+  }));
+
+  return {
+    rows,
+    points,
+    forecast,
+    stats: {
+      currentPnlRub: last.pnlRub,
+      totalRub: last.totalRub,
+      baseTotalRub: first.totalRub,
+      hourlySlope,
+      samples: points.length,
+      account: last.accountAlias || last.accountId
+    }
+  };
+};
+
+function PnlForecastChart({ data }) {
+  const chart = buildPnlChart(data);
+  const actual = chart.points || [];
+  const forecast = chart.forecast || [];
+  const series = [...actual, ...forecast];
+
+  if (actual.length < 2) {
+    return (
+      <Card title="P/L траектория" icon={LineChart} className="wide" help="График строится по portfolio snapshots торгового счета. Forecast - декоративная линейная экстраполяция последних точек, не торговый сигнал.">
+        <div className="empty-state">Недостаточно snapshots для графика</div>
+      </Card>
+    );
+  }
+
+  const width = 760;
+  const height = 220;
+  const pad = 28;
+  const minX = Math.min(...series.map((point) => point.at));
+  const maxX = Math.max(...series.map((point) => point.at));
+  const minY = Math.min(...series.map((point) => point.pnlRub), 0);
+  const maxY = Math.max(...series.map((point) => point.pnlRub), 0);
+  const yRange = Math.max(1, maxY - minY);
+  const xRange = Math.max(1, maxX - minX);
+  const x = (point) => pad + ((point.at - minX) / xRange) * (width - pad * 2);
+  const y = (point) => height - pad - ((point.pnlRub - minY) / yRange) * (height - pad * 2);
+  const linePath = (points) => points.map((point, index) => `${index ? 'L' : 'M'} ${x(point).toFixed(1)} ${y(point).toFixed(1)}`).join(' ');
+  const zeroY = y({ at: minX, pnlRub: 0 });
+  const actualTone = Number(chart.stats?.currentPnlRub || 0) >= 0 ? 'good' : 'bad';
+
+  return (
+    <Card title="P/L траектория" icon={LineChart} className="wide" help="Фактическая линия строится по snapshots торгового счета. Пунктир вперед - простая визуальная экстраполяция последних точек на несколько часов, не прогноз рынка и не торговый сигнал.">
+      <div className="pnl-chart-head">
+        <div className="stats compact">
+          <Stat label="Текущий P/L" value={`${money(chart.stats?.currentPnlRub)} RUB`} tone={actualTone} />
+          <Stat label="Счет" value={`${money(chart.stats?.totalRub)} RUB`} />
+          <Stat label="Тренд/час" value={`${money(chart.stats?.hourlySlope)} RUB`} tone={Number(chart.stats?.hourlySlope || 0) >= 0 ? 'good' : 'bad'} />
+          <Stat label="Точек" value={chart.stats?.samples ?? EMPTY} title={chart.stats?.account || ''} />
+        </div>
+      </div>
+      <div className="pnl-chart">
+        <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="P/L chart">
+          <line className="chart-zero" x1={pad} y1={zeroY} x2={width - pad} y2={zeroY} />
+          <path className="chart-area" d={`${linePath(actual)} L ${x(actual[actual.length - 1]).toFixed(1)} ${zeroY.toFixed(1)} L ${x(actual[0]).toFixed(1)} ${zeroY.toFixed(1)} Z`} />
+          <path className={cls('chart-line', actualTone)} d={linePath(actual)} />
+          {forecast.length ? <path className="chart-line forecast" d={linePath([actual[actual.length - 1], ...forecast])} /> : null}
+          {actual.slice(-12).map((point) => (
+            <circle key={`${point.at}-${point.pnlRub}`} className="chart-dot" cx={x(point)} cy={y(point)} r="3" />
+          ))}
+        </svg>
+        <div className="chart-axis">
+          <span>{time(actual[0]?.at)}</span>
+          <span>forecast +4h</span>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function BuyPreviewFilters({ rows, filters, onChange }) {
   const blockers = uniqueValues(rows, (row) => row.status === 'allowed' ? null : classifyBlocker(row.reason));
 
@@ -995,6 +1102,8 @@ function Overview({ data, onMarketRegimeChange }) {
       </Card>
 
       <ExecutionOverview data={data} className="wide" />
+
+      <PnlForecastChart data={data} />
 
       <Card title="Рыночный фильтр" icon={Activity} help="Текущий расчет рынка. Current score - фактическая доля здоровых базовых бумаг. Required score - порог, который можно менять отдельно в блоке настроек.">
         <div className="readiness">
