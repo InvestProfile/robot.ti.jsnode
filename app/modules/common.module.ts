@@ -745,6 +745,14 @@ export const executeTrades = async (
     const tradingStatuses = await marketData.getStatuses(
         portfolio.positions.map(position => position.instrumentUid).filter(Boolean)
     );
+    const ledger = await RobotPositionLedgerService.getLedger(config);
+    const ledgerEntries: Array<[string, { lastTradeAt?: Date | string }]> = [];
+    for (const item of ledger.items || []) {
+        if (item.accountId !== accountId) continue;
+        if (item.instrumentUid) ledgerEntries.push([String(item.instrumentUid), item]);
+        if (item.figi) ledgerEntries.push([String(item.figi), item]);
+    }
+    const ledgerByInstrument = new Map(ledgerEntries);
 
     for (const position of portfolio.positions) {
         const averagePrice = quotationToNumber(position?.averagePositionPrice);
@@ -786,6 +794,7 @@ export const executeTrades = async (
         }
 
         const tradingStatus = tradingStatuses.get(position.instrumentUid);
+        const ledgerItem = ledgerByInstrument.get(position.instrumentUid) ?? ledgerByInstrument.get(position.figi);
         const signal = await StrategyEngine.evaluate({
             accountId,
             figi: position.figi,
@@ -794,7 +803,8 @@ export const executeTrades = async (
             name: instrument?.name,
             averagePrice,
             currentPrice,
-            quantityLots: position.quantityLots?.units
+            quantityLots: position.quantityLots?.units,
+            lastTradeAt: ledgerItem?.lastTradeAt
         }, config);
         const risk = RiskManagerService.evaluateSignal({
             averagePrice,

@@ -63,6 +63,7 @@ Notes:
 
 - `trailing-stop` is evaluated early to update high-water marks, but it is returned after `stop-loss` and `hold-winner`.
 - `stop-loss` is the emergency negative exit.
+- Fresh robot-owned positions use a soft stop-loss grace window: the normal adaptive stop can hold briefly after entry, but a wider hard-stop still exits.
 - `profit-take` uses `ROBOT_MIN_PROFIT_PERCENT`.
 - `hold-winner` can prevent selling a winner too early.
 - `sell-policy` only allows robot-owned lots to be sold.
@@ -75,9 +76,10 @@ Notes:
 - `ROBOT_SELL_HOLD_WINNER_MIN_PROFIT_PERCENT`
 - `ROBOT_STOP_LOSS_PERCENT`
 - `ROBOT_STOP_LOSS_MAX_PERCENT`
+- `ROBOT_STOP_LOSS_GRACE_PERIOD_MS`
+- `ROBOT_STOP_LOSS_GRACE_HARD_MULTIPLIER`
 - `ROBOT_MAX_DAILY_ORDERS`
 - `ROBOT_MAX_DAILY_RUB`
 - `ROBOT_MAX_ORDER_RUB`
 - `ROBOT_MAX_POSITION_SHARE_PERCENT`
 - `ROBOT_BUY_ADD_ON_MIN_PROFIT_PERCENT`
-

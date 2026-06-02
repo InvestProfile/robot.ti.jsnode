@@ -11,6 +11,8 @@ const config = {
     stopLossVolatilityDays: 14,
     stopLossVolatilityMultiplier: 1,
     stopLossMaxPercent: 8,
+    stopLossGracePeriodMs: 30 * 60 * 1000,
+    stopLossGraceHardMultiplier: 1.5,
     maxLotsPerOrder: 10
 } as unknown as RobotConfig;
 
@@ -77,5 +79,46 @@ describe('StopLossStrategy', () => {
         }, config);
         assert.strictEqual(signal?.source, 'stop-loss');
         assert.match(signal?.reason ?? '', /adaptive stop 5.00%/);
+    });
+
+    it('holds a fresh position when only the soft stop is reached', async () => {
+        (MarketDataService.getDailyCandles as unknown) = async () => [
+            { high: 101, low: 100, close: 100 },
+            { high: 102, low: 100, close: 100 }
+        ];
+
+        const signal = await StopLossStrategy.evaluate({
+            accountId: 'acc-1',
+            ticker: 'NEW',
+            instrumentUid: 'uid-1',
+            averagePrice: 100,
+            currentPrice: 96.8,
+            quantityLots: 1,
+            lastTradeAt: new Date(Date.now() - 5 * 60 * 1000)
+        }, config);
+
+        assert.strictEqual(signal?.action, 'hold');
+        assert.strictEqual(signal?.source, 'stop-loss');
+        assert.match(signal?.reason ?? '', /soft stop grace/);
+    });
+
+    it('sells a fresh position when the hard stop is reached', async () => {
+        (MarketDataService.getDailyCandles as unknown) = async () => [
+            { high: 101, low: 100, close: 100 },
+            { high: 102, low: 100, close: 100 }
+        ];
+
+        const signal = await StopLossStrategy.evaluate({
+            accountId: 'acc-1',
+            ticker: 'HARD',
+            instrumentUid: 'uid-1',
+            averagePrice: 100,
+            currentPrice: 95.4,
+            quantityLots: 1,
+            lastTradeAt: new Date(Date.now() - 5 * 60 * 1000)
+        }, config);
+
+        assert.strictEqual(signal?.action, 'sell');
+        assert.strictEqual(signal?.source, 'stop-loss');
     });
 });

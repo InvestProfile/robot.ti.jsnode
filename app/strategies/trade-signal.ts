@@ -22,6 +22,7 @@ export interface PositionStrategyInput {
     averagePrice: number;
     currentPrice: number;
     quantityLots?: number;
+    lastTradeAt?: Date | string;
 }
 
 export interface BuyStrategyInput {

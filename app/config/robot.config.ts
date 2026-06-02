@@ -185,6 +185,8 @@ export interface RobotConfig {
     stopLossVolatilityDays: number;
     stopLossVolatilityMultiplier: number;
     stopLossMaxPercent: number;
+    stopLossGracePeriodMs: number;
+    stopLossGraceHardMultiplier: number;
     trailingStopPercent: number;
     trailingStopMinProfitPercent: number;
     trailingStopVolatilityDays: number;
@@ -304,8 +306,10 @@ export const getRobotConfig = (): RobotConfig => {
         stopLossVolatilityDays: Math.max(2, Math.trunc(parseNumber(env.ROBOT_STOP_LOSS_VOLATILITY_DAYS, 14))),
         stopLossVolatilityMultiplier: Math.max(0, parseNumber(env.ROBOT_STOP_LOSS_VOLATILITY_MULTIPLIER, 1)),
         stopLossMaxPercent: Math.max(0, parseNumber(env.ROBOT_STOP_LOSS_MAX_PERCENT, 8)),
+        stopLossGracePeriodMs: Math.max(0, parseNumber(env.ROBOT_STOP_LOSS_GRACE_PERIOD_MS, 30 * 60 * 1000)),
+        stopLossGraceHardMultiplier: Math.max(1, parseNumber(env.ROBOT_STOP_LOSS_GRACE_HARD_MULTIPLIER, 1.5)),
         trailingStopPercent: parseNumber(env.ROBOT_TRAILING_STOP_PERCENT, 2),
-        trailingStopMinProfitPercent: parseNumber(env.ROBOT_TRAILING_STOP_MIN_PROFIT_PERCENT, minProfitPercent),
+        trailingStopMinProfitPercent: parseNumber(env.ROBOT_TRAILING_STOP_MIN_PROFIT_PERCENT, Math.max(1.5, minProfitPercent)),
         trailingStopVolatilityDays: Math.max(2, Math.trunc(parseNumber(env.ROBOT_TRAILING_STOP_VOLATILITY_DAYS, 14))),
         trailingStopVolatilityMultiplier: Math.max(0, parseNumber(env.ROBOT_TRAILING_STOP_VOLATILITY_MULTIPLIER, 1)),
         trailingBaseline: parseTrailingBaseline(env.ROBOT_TRAILING_BASELINE),
