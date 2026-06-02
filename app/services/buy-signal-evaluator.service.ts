@@ -13,6 +13,7 @@ import SocialConsensusService from './social-consensus.service';
 import BuyScoreAdjustmentService from './buy-score-adjustment.service';
 import DailyBuyListService from './daily-buy-list.service';
 import PreBuyRiskService, { PreBuyRiskResult } from './pre-buy-risk.service';
+import SectorPerformanceService from './sector-performance.service';
 
 type SharesResponse = Awaited<ReturnType<typeof InstrumentsService.getShares>>;
 type ShareInstrument = NonNullable<NonNullable<SharesResponse>['instruments']>[number];
@@ -254,6 +255,9 @@ export default class BuySignalEvaluatorService {
             analyst: analystAdjustments.analyst,
             technical: technicalAdjustments.technical
         };
+        const sectorPerformanceBySector = config.sectorPerformanceRiskEnabled
+            ? await SectorPerformanceService.getSectorPerformance(config)
+            : new Map();
         const previews: BuySignalPreview[] = [];
 
         for (const instrument of buyInstruments) {
@@ -360,6 +364,7 @@ export default class BuySignalEvaluatorService {
                 sector: instrument.sector,
                 portfolioValueRub,
                 sectorValueRub: instrument.sector ? (sectorValueBySector.get(instrument.sector) ?? 0) : 0,
+                sectorPerformance: instrument.sector ? sectorPerformanceBySector.get(instrument.sector) : undefined,
                 dailyCandles,
                 orderBookMetrics: orderBookByUid.get(instrument.uid),
                 orderBookError: orderBookErrorByUid.get(instrument.uid)

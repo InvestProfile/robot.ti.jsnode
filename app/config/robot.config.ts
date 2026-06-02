@@ -227,6 +227,12 @@ export interface RobotConfig {
     sectorRiskEnabled: boolean;
     sectorRiskEnforced: boolean;
     maxSectorSharePercent: number;
+    sectorPerformanceRiskEnabled: boolean;
+    sectorPerformanceRiskEnforced: boolean;
+    sectorPerformanceMinClosed: number;
+    sectorPerformanceMinWinRatePercent: number;
+    sectorPerformanceMinPnlRub: number;
+    sectorPerformanceCacheTtlMs: number;
     signalCooldownMs: number;
     signalPriceChangePercent: number;
     buySignalJournalIntervalMs: number;
@@ -351,6 +357,12 @@ export const getRobotConfig = (): RobotConfig => {
         sectorRiskEnabled: parseBoolean(env.ROBOT_SECTOR_RISK_ENABLED, true),
         sectorRiskEnforced: parseBoolean(env.ROBOT_SECTOR_RISK_ENFORCED, false),
         maxSectorSharePercent: Math.max(0, Math.min(100, parseNumber(env.ROBOT_MAX_SECTOR_SHARE_PERCENT, 40))),
+        sectorPerformanceRiskEnabled: parseBoolean(env.ROBOT_SECTOR_PERFORMANCE_RISK_ENABLED, true),
+        sectorPerformanceRiskEnforced: parseBoolean(env.ROBOT_SECTOR_PERFORMANCE_RISK_ENFORCED, false),
+        sectorPerformanceMinClosed: Math.max(1, Math.trunc(parseNumber(env.ROBOT_SECTOR_PERFORMANCE_MIN_CLOSED, 5))),
+        sectorPerformanceMinWinRatePercent: Math.max(0, Math.min(100, parseNumber(env.ROBOT_SECTOR_PERFORMANCE_MIN_WIN_RATE_PERCENT, 35))),
+        sectorPerformanceMinPnlRub: parseNumber(env.ROBOT_SECTOR_PERFORMANCE_MIN_PNL_RUB, -50),
+        sectorPerformanceCacheTtlMs: Math.max(0, parseNumber(env.ROBOT_SECTOR_PERFORMANCE_CACHE_TTL_MS, 15 * 60_000)),
         signalCooldownMs: Math.max(0, parseNumber(env.ROBOT_SIGNAL_COOLDOWN_MS, 30 * 60 * 1000)),
         signalPriceChangePercent: Math.max(0, parseNumber(env.ROBOT_SIGNAL_PRICE_CHANGE_PERCENT, 1)),
         buySignalJournalIntervalMs: Math.max(0, parseNumber(env.ROBOT_BUY_SIGNAL_JOURNAL_INTERVAL_MS, 15 * 60 * 1000)),

@@ -14,7 +14,12 @@ const config = {
     liquidityRiskEnabled: false,
     liquidityRiskEnforced: false,
     sectorRiskEnabled: false,
-    sectorRiskEnforced: false
+    sectorRiskEnforced: false,
+    sectorPerformanceRiskEnabled: false,
+    sectorPerformanceRiskEnforced: false,
+    sectorPerformanceMinClosed: 5,
+    sectorPerformanceMinWinRatePercent: 35,
+    sectorPerformanceMinPnlRub: -50
 } as unknown as RobotConfig;
 
 const baseInput = {
@@ -161,5 +166,57 @@ describe('PreBuyRiskService', () => {
 
         assert.strictEqual(result.passed, true);
         assert.ok(result.checks.some(check => check.key === 'add-on-position-profit' && check.status === 'pass'));
+    });
+
+    it('keeps weak sector performance observe-only by default', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([]);
+
+        const result = await PreBuyRiskService.evaluate({
+            ...baseInput,
+            sector: 'industrials',
+            sectorPerformance: {
+                sector: 'industrials',
+                closed: 9,
+                wins: 0,
+                losses: 9,
+                pnlRub: -147,
+                winRatePercent: 0
+            }
+        }, {
+            ...config,
+            sectorPerformanceRiskEnabled: true,
+            sectorPerformanceRiskEnforced: false
+        } as RobotConfig);
+
+        assert.strictEqual(result.passed, true);
+        assert.ok(result.warnings.some(reason => reason.includes('observe-only: sector industrials performance')));
+        assert.ok(result.checks.some(check => check.key === 'sector-performance' && check.status === 'block' && !check.enforced));
+    });
+
+    it('blocks weak sector performance when sector performance risk is enforced', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([]);
+
+        const result = await PreBuyRiskService.evaluate({
+            ...baseInput,
+            sector: 'it',
+            sectorPerformance: {
+                sector: 'it',
+                closed: 16,
+                wins: 0,
+                losses: 16,
+                pnlRub: -105,
+                winRatePercent: 0
+            }
+        }, {
+            ...config,
+            sectorPerformanceRiskEnabled: true,
+            sectorPerformanceRiskEnforced: true
+        } as RobotConfig);
+
+        assert.strictEqual(result.passed, false);
+        assert.ok(result.blockingReasons.some(reason => reason.includes('sector it performance')));
+        assert.ok(result.checks.some(check => check.key === 'sector-performance' && check.status === 'block' && check.enforced));
     });
 });

@@ -21,6 +21,16 @@ interface PreBuyRiskInput {
     sector?: string;
     portfolioValueRub: number;
     sectorValueRub: number;
+    sectorPerformance?: {
+        sector: string;
+        closed: number;
+        wins: number;
+        losses: number;
+        pnlRub: number;
+        averagePnlRub?: number;
+        winRatePercent?: number;
+        stale?: boolean;
+    };
     dailyCandles?: DailyCandle[];
     orderBookMetrics?: OrderBookMetrics;
     orderBookError?: unknown;
@@ -46,6 +56,7 @@ export interface PreBuyRiskResult {
     avgDailyTurnoverRub?: number;
     sector?: string;
     projectedSectorSharePercent?: number;
+    sectorPerformance?: PreBuyRiskInput['sectorPerformance'];
     robotOwnedLots?: number;
     robotAverageLotCostRub?: number;
     robotProfitPercent?: number;
@@ -359,9 +370,42 @@ export default class PreBuyRiskService {
             }
         }
 
+        if (config.sectorPerformanceRiskEnabled && sector) {
+            const performance = input.sectorPerformance;
+            if (!performance) {
+                addCheck({
+                    key: 'sector-performance',
+                    status: 'unknown',
+                    reason: `sector ${sector} performance is unavailable`,
+                    enforced: config.sectorPerformanceRiskEnforced
+                });
+            } else if (performance.closed < config.sectorPerformanceMinClosed) {
+                addCheck({
+                    key: 'sector-performance',
+                    status: 'warn',
+                    reason: `sector ${sector} has only ${performance.closed}/${config.sectorPerformanceMinClosed} closed pairs`,
+                    enforced: config.sectorPerformanceRiskEnforced,
+                    value: performance.closed,
+                    limit: config.sectorPerformanceMinClosed
+                });
+            } else {
+                const winRate = performance.winRatePercent ?? 0;
+                const weakByPnl = performance.pnlRub <= config.sectorPerformanceMinPnlRub;
+                const weakByWinRate = winRate < config.sectorPerformanceMinWinRatePercent;
+                addCheck({
+                    key: 'sector-performance',
+                    status: weakByPnl || weakByWinRate ? 'block' : 'pass',
+                    reason: `sector ${sector} performance: P/L ${formatRub(performance.pnlRub)}, WR ${formatPercent(winRate)}, closed ${performance.closed}${performance.stale ? ', stale cache' : ''}`,
+                    enforced: config.sectorPerformanceRiskEnforced,
+                    value: performance.pnlRub,
+                    limit: config.sectorPerformanceMinPnlRub
+                });
+            }
+        }
+
         return {
             passed: blockingReasons.length === 0,
-            mode: config.liquidityRiskEnforced || config.sectorRiskEnforced ? 'enforced' : 'observe',
+            mode: config.liquidityRiskEnforced || config.sectorRiskEnforced || config.sectorPerformanceRiskEnforced ? 'enforced' : 'observe',
             warnings,
             blockingReasons,
             checks,
@@ -370,6 +414,7 @@ export default class PreBuyRiskService {
             avgDailyTurnoverRub,
             sector,
             projectedSectorSharePercent,
+            sectorPerformance: input.sectorPerformance,
             robotOwnedLots,
             robotAverageLotCostRub,
             robotProfitPercent
