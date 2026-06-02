@@ -207,6 +207,10 @@ export interface RobotConfig {
     buyAddOnMinProfitPercent: number;
     buyReentryAfterSellMinGainPercent: number;
     buyNegativeTechScoreBuffer: number;
+    buyAntiFomoEnabled: boolean;
+    buyAntiFomoEnforced: boolean;
+    buyAntiFomoMaxMomentumPercent: number;
+    buyAntiFomoMinBelowHighPercent: number;
     buyScoreProfiles: Record<string, BuyScoreProfile>;
     maxOrderRub: number;
     maxDailyOrders: number;
@@ -337,6 +341,10 @@ export const getRobotConfig = (): RobotConfig => {
         buyAddOnMinProfitPercent: Math.max(0, Math.min(20, parseNumber(env.ROBOT_BUY_ADD_ON_MIN_PROFIT_PERCENT, 1))),
         buyReentryAfterSellMinGainPercent: Math.max(0, Math.min(20, parseNumber(env.ROBOT_BUY_REENTRY_AFTER_SELL_MIN_GAIN_PERCENT, 1))),
         buyNegativeTechScoreBuffer: Math.max(0, Math.min(30, parseNumber(env.ROBOT_BUY_NEGATIVE_TECH_SCORE_BUFFER, 10))),
+        buyAntiFomoEnabled: parseBoolean(env.ROBOT_BUY_ANTI_FOMO_ENABLED, true),
+        buyAntiFomoEnforced: parseBoolean(env.ROBOT_BUY_ANTI_FOMO_ENFORCED, true),
+        buyAntiFomoMaxMomentumPercent: Math.max(0, Math.min(30, parseNumber(env.ROBOT_BUY_ANTI_FOMO_MAX_MOMENTUM_PERCENT, 3))),
+        buyAntiFomoMinBelowHighPercent: Math.max(0, Math.min(30, parseNumber(env.ROBOT_BUY_ANTI_FOMO_MIN_BELOW_HIGH_PERCENT, 1))),
         buyScoreProfiles: parseBuyScoreProfiles(env.ROBOT_BUY_SCORE_PROFILES),
         maxOrderRub,
         maxDailyOrders,

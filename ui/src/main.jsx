@@ -301,6 +301,7 @@ const shortReason = (value) => {
 const classifyBlocker = (reason) => {
   const text = String(reason || '').toLowerCase();
   if (text.includes('re-entry blocked after same-day sell')) return 'вход после выхода';
+  if (text.includes('anti-fomo')) return 'покупка на импульсе';
   if (text.includes('already in portfolio')) return 'уже в портфеле';
   if (text.includes('concentration')) return 'лимит позиции';
   if (text.includes('diversification')) return 'сначала диверсификация';

@@ -81,6 +81,28 @@ const getAvgDailyTurnoverRub = (candles: DailyCandle[] | undefined, lot: number)
     return average(values);
 };
 
+const getAntiFomoMetrics = (candles: DailyCandle[] | undefined, currentPrice?: number) => {
+    const validCandles = candles
+        ?.filter(candle =>
+            Number.isFinite(candle.close)
+            && Number.isFinite(candle.high)
+            && candle.close > 0
+            && candle.high > 0
+        ) ?? [];
+    const price = Number(currentPrice);
+
+    if (!Number.isFinite(price) || price <= 0 || validCandles.length < 2) return undefined;
+
+    const previousClose = validCandles[validCandles.length - 2]?.close;
+    const recentHigh = Math.max(...validCandles.map(candle => candle.high));
+    if (!previousClose || !Number.isFinite(recentHigh) || recentHigh <= 0) return undefined;
+
+    return {
+        momentumPercent: (price / previousClose - 1) * 100,
+        belowHighPercent: (recentHigh / price - 1) * 100
+    };
+};
+
 const BUY_SIGNAL_SOURCES = ['score-buy', 'watchlist-buy', 'trend-follow-buy'];
 const SELL_DIRECTION = '2';
 
@@ -271,6 +293,29 @@ export default class PreBuyRiskService {
             }
         }
 
+        if (config.buyAntiFomoEnabled) {
+            const antiFomoMetrics = getAntiFomoMetrics(input.dailyCandles, input.currentPrice);
+            if (!antiFomoMetrics) {
+                addCheck({
+                    key: 'anti-fomo',
+                    status: 'unknown',
+                    reason: 'anti-FOMO metrics are unavailable',
+                    enforced: config.buyAntiFomoEnforced
+                });
+            } else {
+                const momentumTooHot = antiFomoMetrics.momentumPercent > config.buyAntiFomoMaxMomentumPercent;
+                const tooCloseToHigh = antiFomoMetrics.belowHighPercent <= config.buyAntiFomoMinBelowHighPercent;
+                addCheck({
+                    key: 'anti-fomo',
+                    status: momentumTooHot && tooCloseToHigh ? 'block' : 'pass',
+                    reason: `anti-FOMO: momentum ${formatPercent(antiFomoMetrics.momentumPercent)} > ${formatPercent(config.buyAntiFomoMaxMomentumPercent)} and below high ${formatPercent(antiFomoMetrics.belowHighPercent)} <= ${formatPercent(config.buyAntiFomoMinBelowHighPercent)}`,
+                    enforced: config.buyAntiFomoEnforced,
+                    value: antiFomoMetrics.momentumPercent,
+                    limit: config.buyAntiFomoMaxMomentumPercent
+                });
+            }
+        }
+
         let spreadPercent: number | undefined;
         let askLiquidityRub: number | undefined;
 
@@ -405,7 +450,7 @@ export default class PreBuyRiskService {
 
         return {
             passed: blockingReasons.length === 0,
-            mode: config.liquidityRiskEnforced || config.sectorRiskEnforced || config.sectorPerformanceRiskEnforced ? 'enforced' : 'observe',
+            mode: config.liquidityRiskEnforced || config.sectorRiskEnforced || config.sectorPerformanceRiskEnforced || config.buyAntiFomoEnforced ? 'enforced' : 'observe',
             warnings,
             blockingReasons,
             checks,

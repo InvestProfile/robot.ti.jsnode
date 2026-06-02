@@ -31,6 +31,7 @@ Current buy guards:
 - Same-day re-entry after stop-loss is blocked.
 - Weak add-on protection blocks adding to a losing robot-owned position.
 - Negative technical adjustment requires a higher final score.
+- Anti-FOMO blocks buys when the current daily momentum is already hot and the price is too close to the recent high.
 - External analyst/social/technical data may adjust score, but stale positive analyst data should not make the robot more aggressive.
 
 ## Sell Pipeline
@@ -83,3 +84,7 @@ Notes:
 - `ROBOT_MAX_ORDER_RUB`
 - `ROBOT_MAX_POSITION_SHARE_PERCENT`
 - `ROBOT_BUY_ADD_ON_MIN_PROFIT_PERCENT`
+- `ROBOT_BUY_ANTI_FOMO_ENABLED`
+- `ROBOT_BUY_ANTI_FOMO_ENFORCED`
+- `ROBOT_BUY_ANTI_FOMO_MAX_MOMENTUM_PERCENT`
+- `ROBOT_BUY_ANTI_FOMO_MIN_BELOW_HIGH_PERCENT`

@@ -168,6 +168,53 @@ describe('PreBuyRiskService', () => {
         assert.ok(result.checks.some(check => check.key === 'add-on-position-profit' && check.status === 'pass'));
     });
 
+    it('blocks hot same-day momentum when price is already near the recent high', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([]);
+
+        const result = await PreBuyRiskService.evaluate({
+            ...baseInput,
+            currentPrice: 104,
+            dailyCandles: [
+                { close: 98, high: 100, low: 97, volume: 1000 },
+                { close: 100, high: 104.5, low: 99, volume: 1000 }
+            ]
+        }, {
+            ...config,
+            buyAntiFomoEnabled: true,
+            buyAntiFomoEnforced: true,
+            buyAntiFomoMaxMomentumPercent: 3,
+            buyAntiFomoMinBelowHighPercent: 1
+        } as RobotConfig);
+
+        assert.strictEqual(result.passed, false);
+        assert.ok(result.blockingReasons.some(reason => reason.includes('anti-FOMO')));
+        assert.ok(result.checks.some(check => check.key === 'anti-fomo' && check.status === 'block' && check.enforced));
+    });
+
+    it('allows momentum when price is not too close to the recent high', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([]);
+
+        const result = await PreBuyRiskService.evaluate({
+            ...baseInput,
+            currentPrice: 103,
+            dailyCandles: [
+                { close: 98, high: 100, low: 97, volume: 1000 },
+                { close: 100, high: 108, low: 99, volume: 1000 }
+            ]
+        }, {
+            ...config,
+            buyAntiFomoEnabled: true,
+            buyAntiFomoEnforced: true,
+            buyAntiFomoMaxMomentumPercent: 3,
+            buyAntiFomoMinBelowHighPercent: 1
+        } as RobotConfig);
+
+        assert.strictEqual(result.passed, true);
+        assert.ok(result.checks.some(check => check.key === 'anti-fomo' && check.status === 'pass'));
+    });
+
     it('keeps weak sector performance observe-only by default', async () => {
         (TradeDecisionModel.count as unknown) = async () => 0;
         mockTrades([]);
