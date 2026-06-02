@@ -365,6 +365,88 @@ const PreBuyRisk = ({ risk }) => {
   );
 };
 
+const buildSectorFilterRows = (previews) => {
+  const groups = new Map();
+
+  previews.forEach((row) => {
+    const risk = row.preBuyRisk;
+    const check = risk?.checks?.find((item) => item.key === 'sector-performance');
+    const sector = risk?.sector || risk?.sectorPerformance?.sector;
+    if (!sector || !check) return;
+
+    const group = groups.get(sector) ?? {
+      sector,
+      candidates: 0,
+      watch: 0,
+      blocked: 0,
+      passed: 0,
+      tickers: [],
+      status: 'pass',
+      enforced: false,
+      pnlRub: risk.sectorPerformance?.pnlRub,
+      winRatePercent: risk.sectorPerformance?.winRatePercent,
+      closed: risk.sectorPerformance?.closed,
+      reason: check.reason
+    };
+
+    group.candidates += 1;
+    if (row.ticker) group.tickers.push(row.ticker);
+    if (check.enforced) group.enforced = true;
+    if (check.status === 'block' && check.enforced) {
+      group.blocked += 1;
+      group.status = 'block';
+    } else if (check.status === 'block' || check.status === 'warn' || check.status === 'unknown') {
+      group.watch += 1;
+      if (group.status !== 'block') group.status = 'watch';
+    } else {
+      group.passed += 1;
+    }
+    group.reason = check.reason;
+    group.pnlRub = risk.sectorPerformance?.pnlRub ?? group.pnlRub;
+    group.winRatePercent = risk.sectorPerformance?.winRatePercent ?? group.winRatePercent;
+    group.closed = risk.sectorPerformance?.closed ?? group.closed;
+    groups.set(sector, group);
+  });
+
+  return [...groups.values()].sort((a, b) => {
+    const rank = { block: 3, watch: 2, pass: 1 };
+    return (rank[b.status] - rank[a.status]) || Math.abs(Number(b.pnlRub || 0)) - Math.abs(Number(a.pnlRub || 0));
+  });
+};
+
+function SectorFilterCard({ previews, loading }) {
+  const rows = buildSectorFilterRows(previews);
+  const watchRows = rows.filter((row) => row.status === 'watch');
+  const blockedRows = rows.filter((row) => row.status === 'block');
+  const touchedCandidates = rows.reduce((sum, row) => sum + row.candidates, 0);
+  const worst = rows.find((row) => row.status !== 'pass') || rows[0];
+
+  return (
+    <Card title="Секторный фильтр" icon={BarChart3} className="wide" help="Показывает, какие buy-кандидаты попали в сектора с плохой недавней статистикой round-trip сделок. Сейчас это observe-only, если sectorPerformanceRiskEnforced=false.">
+      <div className="stats compact">
+        <Stat label="Режим" value={blockedRows.length ? 'ENFORCED' : 'OBSERVE'} tone={blockedRows.length ? 'bad' : 'warn'} title="ENFORCED означает, что секторный фильтр реально блокирует. OBSERVE только показывает предупреждения." />
+        <Stat label="Кандидатов" value={touchedCandidates || EMPTY} title="Сколько buy-preview строк имеют секторную статистику." />
+        <Stat label="Watch sectors" value={watchRows.length} tone={watchRows.length ? 'warn' : 'good'} />
+        <Stat label="Главный сектор" value={worst?.sector || EMPTY} tone={worst?.status === 'pass' ? 'good' : worst?.status === 'block' ? 'bad' : 'warn'} title={worst?.reason || ''} />
+      </div>
+      <Table
+        columns={[
+          { key: 'sector', label: 'Сектор', width: '150px', render: (row) => <><strong>{row.sector}</strong><div className="muted">{row.tickers.slice(0, 8).join(', ')}</div></> },
+          { key: 'status', label: 'Статус', width: '105px', render: (row) => <Pill tone={row.status === 'block' ? 'bad' : row.status === 'watch' ? 'warn' : 'good'}>{row.status === 'block' ? 'BLOCK' : row.status === 'watch' ? 'WATCH' : 'PASS'}</Pill> },
+          { key: 'candidates', label: 'Канд.', width: '70px', className: 'right', render: (row) => money(row.candidates) },
+          { key: 'closed', label: 'Пар', width: '70px', className: 'right', render: (row) => money(row.closed) },
+          { key: 'winRatePercent', label: 'WR', width: '80px', className: 'right', render: (row) => percent(row.winRatePercent) },
+          { key: 'pnlRub', label: 'P/L', width: '95px', className: 'right', render: (row) => <span className={Number(row.pnlRub || 0) >= 0 ? 'good' : 'bad'}>{money(row.pnlRub)}</span> },
+          { key: 'reason', label: 'Причина', className: 'reason', render: (row) => <CompactReason>{row.reason}</CompactReason> }
+        ]}
+        rows={rows}
+        empty="Секторный фильтр пока не дал данных по buy-кандидатам"
+        loading={loading}
+      />
+    </Card>
+  );
+}
+
 const summarizeBlockers = (rows) => {
   if (!rows.length) return EMPTY;
 
@@ -1188,10 +1270,10 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
         <Checklist items={safetyItems} />
       </Card>
 
-      <Card title="Портфель / P&L" icon={LineChart} help="Результаты и наблюдаемая часть системы. Paper P/L - лаборатория идей, Social - отдельный сборщик сигналов, не исполняющий заявки сам.">
+      <Card title="Портфель / P&L" icon={LineChart} help="Результаты и наблюдаемая часть системы. Paper lab - отдельная симуляция идей, не реальные позиции брокера. Social - отдельный сборщик сигналов, не исполняющий заявки сам.">
         <div className="stats">
-          <Stat label="Paper open" value={paper?.open ?? '-'} />
-          <Stat label="Paper P/L" value={`${money(paper?.totalProfitRub)} RUB`} tone={(paper?.totalProfitRub || 0) >= 0 ? 'good' : 'bad'} />
+          <Stat label="Paper lab positions" value={paper?.open ?? '-'} title="Открытые позиции в бумажной симуляции, не реальные бумаги на торговом счете." />
+          <Stat label="Paper lab P/L" value={`${money(paper?.totalProfitRub)} RUB`} tone={(paper?.totalProfitRub || 0) >= 0 ? 'good' : 'bad'} title="P/L лабораторной paper-симуляции, не брокерский результат." />
           <Stat label="Social profiles" value={`${social?.health?.activeProfiles || 0} / ${social?.config?.configuredProfiles || 0}`} />
           <Stat label="Social collector" value={socialCollectorText(social)} tone={social?.health?.pendingAuth > 0 ? 'bad' : social?.health?.staleProfiles > 0 ? 'warn' : 'good'} />
         </div>
@@ -1252,6 +1334,8 @@ function Buy({ data, loadingKeys }) {
           </div>
         </div>
       </Card>
+
+      <SectorFilterCard previews={previews} loading={loadingKeys.preview} />
 
       <Card title="Боевой предпросмотр" icon={ShieldCheck} className="wide" help="Самый практический блок покупок: качество кандидата отдельно, решение исполнения отдельно. Высокий score не означает покупку, если рынок закрыт, лимит исчерпан или позиция стала бы слишком большой.">
         <BuyPreviewFilters rows={previews} filters={filters} onChange={setFilters} />
