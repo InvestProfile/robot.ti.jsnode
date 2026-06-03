@@ -52,7 +52,7 @@ const endpoints = {
 
 const endpointGroups = {
   core: ['status', 'limits', 'performance', 'paper', 'socialCollector', 'market', 'orderSafety'],
-  overview: ['market', 'orderSafety', 'snapshots', 'positions'],
+  overview: ['market', 'orderSafety', 'protectiveStops', 'snapshots', 'positions'],
   buy: ['dailyBuyList', 'preview', 'buyRecommendations', 'buyScan'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   socialProfiles: ['socialProfiles'],
@@ -1145,17 +1145,29 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
   const market = data.market || {};
   const tradeLimit = getTradeLimit(data);
   const orderSafety = data.orderSafety?.summary || {};
+  const protectiveSummary = data.protectiveStops?.summary || {};
+  const protectiveUncovered = data.protectiveStops?.uncoveredPositions || [];
   const liveActions = status?.config?.liveAllowedActions || [];
   const orderType = status?.config?.orderType || EMPTY;
   const statusKnown = Boolean(status);
   const marketKnown = Boolean(data.market);
   const orderSafetyKnown = Boolean(data.orderSafety);
+  const protectiveStopsKnown = Boolean(data.protectiveStops);
   const dryRun = statusKnown ? Boolean(status?.config?.dryRun) : false;
   const marketBlocked = Boolean(marketKnown && !market.passed);
   const dailyKnown = Boolean(tradeLimit);
   const dailyBlocked = Boolean(dailyKnown && (Number(tradeLimit.ordersLeft) <= 0 || Number(tradeLimit.rubLeft) <= 0));
   const unknownOrders = Number(orderSafety.unknown || 0);
   const openOrders = Number(orderSafety.open || 0);
+  const uncoveredStops = Number(protectiveSummary.uncoveredPositions || 0);
+  const rejectedStops = Number(protectiveSummary.brokerRejected || 0);
+  const protectiveStopProblemLabels = protectiveUncovered
+    .slice(0, 3)
+    .map((row) => {
+      const label = row.ticker || row.figi || row.instrumentUid || EMPTY;
+      return row.protectiveStopStatus === 'broker-rejected' ? `${label}: broker rejected` : label;
+    })
+    .join(', ');
   const socialNeedsAuth = Number(social?.health?.pendingAuth || 0) > 0;
   const socialStale = Number(social?.health?.staleProfiles || 0) > 0;
   const pipelineSteps = [
@@ -1220,6 +1232,16 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
       status: orderSafetyKnown ? unknownOrders ? String(unknownOrders) : '0' : 'WAIT',
       tone: orderSafetyKnown ? stageTone(unknownOrders) : 'warn',
       detail: orderSafetyKnown ? unknownOrders ? 'Есть заявки с неизвестным статусом, повторять их нельзя.' : 'Неизвестных заявок нет.' : 'Ждем order safety API.'
+    },
+    {
+      label: 'Protective stops',
+      status: protectiveStopsKnown ? rejectedStops ? 'BROKER REJECTED' : uncoveredStops ? 'UNCOVERED' : 'OK' : 'WAIT',
+      tone: protectiveStopsKnown ? rejectedStops || uncoveredStops ? 'bad' : 'good' : 'warn',
+      detail: protectiveStopsKnown
+        ? rejectedStops || uncoveredStops
+          ? `${protectiveStopProblemLabels || uncoveredStops + ' позиций без стопа'}`
+          : 'Все robot-owned позиции покрыты защитными стопами.'
+        : 'Ждем protective stops API.'
     },
     {
       label: 'Social collector',
@@ -2799,9 +2821,17 @@ function ExecutionOverview({ data, loading, className, onOrderTypeChange }) {
 
 const protectiveStopTone = (status) => {
   if (status === 'ok') return 'good';
-  if (status === 'too-tight' || status === 'no-ledger') return 'bad';
+  if (status === 'too-tight' || status === 'no-ledger' || status === 'broker-rejected') return 'bad';
   if (status === 'too-wide') return 'warn';
   return 'neutral';
+};
+
+const protectiveStopFailureText = (row) => {
+  const failure = row?.protectiveStopFailure;
+  if (!failure) return EMPTY;
+  const reason = String(failure.reason || failure.message || failure.error || EMPTY);
+  const at = failure.at || failure.createdAt || failure.timestamp;
+  return at ? `${reason} (${time(at)})` : reason;
 };
 
 function ProtectiveStops({ data, loading, onResync }) {
@@ -2856,17 +2886,33 @@ function ProtectiveStops({ data, loading, onResync }) {
         loading={loading}
       />
       {uncovered.length ? (
-        <div className="audit-callout">
-          <Pill tone="bad">{uncovered.length} без стопа</Pill>
-          {rejected ? <Pill tone="bad">{rejected} broker rejected</Pill> : null}
-          <span title={uncovered.map((row) => row.protectiveStopFailure?.reason || '').filter(Boolean).join('\n')}>
-            {uncovered.slice(0, 5).map((row) => {
-              const label = row.ticker || row.figi;
-              return row.protectiveStopFailure ? `${label}: broker rejected` : label;
-            }).join(', ')}
-          </span>
-          <strong>{rejected ? 'Брокер отклонил protective stop, смотри tooltip/логи.' : 'Нужно проверить постановку protective stop.'}</strong>
-        </div>
+        <>
+          <div className="audit-callout">
+            <Pill tone="bad">{uncovered.length} без стопа</Pill>
+            {rejected ? <Pill tone="bad">{rejected} broker rejected</Pill> : null}
+            <span title={uncovered.map(protectiveStopFailureText).filter((value) => value && value !== EMPTY).join('\n')}>
+              {uncovered.slice(0, 5).map((row) => {
+                const label = row.ticker || row.figi || row.instrumentUid;
+                return row.protectiveStopFailure ? `${label}: broker rejected` : label;
+              }).join(', ')}
+            </span>
+            <strong>{rejected ? 'Брокер отклонил protective stop. Позиция остается без брокерского аварийного стопа.' : 'Нужно проверить постановку protective stop.'}</strong>
+          </div>
+          <Table
+            className="protective-uncovered-table"
+            columns={[
+              { key: 'ticker', label: 'Тикер', width: '120px', render: (row) => <><strong>{row.ticker || row.figi || EMPTY}</strong><div className="muted">{row.name}</div></> },
+              { key: 'accountAlias', label: 'Счет', width: '140px', render: (row) => <TextCell>{row.accountAlias || row.accountId}</TextCell> },
+              { key: 'lots', label: 'Ledger', width: '78px', className: 'right', render: (row) => money(row.lots) },
+              { key: 'activeStopLots', label: 'Stop lots', width: '86px', className: 'right', render: (row) => money(row.activeStopLots) },
+              { key: 'uncoveredLots', label: 'Без стопа', width: '86px', className: 'right', render: (row) => <span className="bad">{money(row.uncoveredLots)}</span> },
+              { key: 'protectiveStopStatus', label: 'Статус', width: '140px', render: (row) => <Pill tone={protectiveStopTone(row.protectiveStopStatus)}>{row.protectiveStopStatus || 'uncovered'}</Pill> },
+              { key: 'protectiveStopFailure', label: 'Причина', render: (row) => <CompactReason>{protectiveStopFailureText(row)}</CompactReason> }
+            ]}
+            rows={uncovered}
+            empty="Все robot-owned позиции покрыты защитными стопами"
+          />
+        </>
       ) : null}
     </Card>
   );

@@ -1113,6 +1113,10 @@ tbody tr:hover td {
   min-width: 1060px;
 }
 
+.protective-uncovered-table {
+  min-width: 900px;
+}
+
 .decision-table td,
 .decision-table th,
 .trade-review-table td,
@@ -1122,7 +1126,9 @@ tbody tr:hover td {
 .accounting-audit-table td,
 .accounting-audit-table th,
 .order-safety-table td,
-.order-safety-table th {
+.order-safety-table th,
+.protective-uncovered-table td,
+.protective-uncovered-table th {
   vertical-align: top;
 }
 
