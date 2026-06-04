@@ -1181,6 +1181,11 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
             noLedger: stops.filter(stop => stop.driftStatus === 'no-ledger').length,
             uncoveredPositions: uncoveredPositions.length,
             brokerRejected: uncoveredPositions.filter(item => item.protectiveStopStatus === 'broker-rejected').length,
+            softwareFallbacks: uncoveredPositions.filter(item =>
+                item.protectiveStopStatus === 'broker-rejected'
+                && !config.dryRun
+                && config.liveAllowedActions.includes('sell')
+            ).length,
             errors: errors.length
         },
         stops,

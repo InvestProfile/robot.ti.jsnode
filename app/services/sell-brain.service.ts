@@ -6,6 +6,7 @@ import InstrumentsService from './instruments.service';
 import marketData from './marketData.service';
 import { quotationToNumber } from '../utils/money';
 import SellPolicyService from './sell-policy.service';
+import ProtectiveStopService from './protective-stop.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -70,6 +71,12 @@ export default class SellBrainService {
                     tradingStatus: tradingStatus?.tradingStatus,
                     signal
                 }, config);
+                const protectiveFailure = signal?.source === 'stop-loss'
+                    ? ProtectiveStopService.getLastFailure(account.accountId, position.instrumentUid)
+                    : undefined;
+                const riskReason = protectiveFailure
+                    ? `${risk.reason}; software protective stop fallback active because broker rejected protective stop: ${protectiveFailure.reason}`
+                    : risk.reason;
                 const sellPolicy = risk.allowed
                     ? await SellPolicyService.evaluateSellPermission({
                         accountId: account.accountId,
@@ -105,8 +112,8 @@ export default class SellBrainService {
                     reason: policyBlocked
                         ? sellPolicy.reason
                         : account.mode === 'observe' && risk.allowed
-                        ? 'observe-only: ' + risk.reason
-                        : risk.reason,
+                        ? 'observe-only: ' + riskReason
+                        : riskReason,
                     averagePrice,
                     currentPrice,
                     profitPercent: risk.profitPercent,

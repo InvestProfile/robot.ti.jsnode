@@ -305,6 +305,20 @@ const cancelProtectiveStopsAfterSell = async (input: {
     }
 };
 
+const withSoftwareProtectiveStopReason = (input: {
+    accountId: string;
+    instrumentUid?: string;
+    signalSource?: string;
+    reason: string;
+}) => {
+    if (input.signalSource !== 'stop-loss' || !input.accountId || !input.instrumentUid) return input.reason;
+
+    const failure = ProtectiveStopService.getLastFailure(input.accountId, input.instrumentUid);
+    if (!failure) return input.reason;
+
+    return `${input.reason}; software protective stop fallback active because broker rejected protective stop: ${failure.reason}`;
+};
+
 export const ensureProtectiveStopsForOpenRobotPositions = async (config: RobotConfig, reason = 'automatic') => {
     if (!config.protectiveStopsEnabled || config.dryRun || !config.liveAllowedActions.includes('sell')) return {
         checked: 0,
@@ -823,6 +837,12 @@ export const executeTrades = async (
             tradingStatus: tradingStatus?.tradingStatus,
             signal
         }, config);
+        const riskReason = withSoftwareProtectiveStopReason({
+            accountId,
+            instrumentUid: position.instrumentUid,
+            signalSource: signal?.source,
+            reason: risk.reason
+        });
 
         if (!risk.allowed) {
             await TradeJournalService.logDecision({
@@ -835,7 +855,7 @@ export const executeTrades = async (
                 name: instrument?.name,
                 status: 'skip',
                 signalSource: signal?.source,
-                reason: risk.reason,
+                reason: riskReason,
                 averagePrice,
                 currentPrice,
                 profitPercent: risk.profitPercent,
@@ -855,7 +875,7 @@ export const executeTrades = async (
                 name: instrument?.name,
                 status: 'dry-run',
                 signalSource: signal?.source,
-                reason: accountMode === 'observe' ? 'observe-only: ' + risk.reason : risk.reason,
+                reason: accountMode === 'observe' ? 'observe-only: ' + riskReason : riskReason,
                 averagePrice,
                 currentPrice,
                 profitPercent: risk.profitPercent,
@@ -1020,7 +1040,7 @@ export const executeTrades = async (
             name: instrument?.name,
             status: getSubmittedDecisionStatus(orderSubmission),
             signalSource: signal?.source,
-            reason: getSubmittedDecisionReason(`${risk.reason}; ${sellPolicy.reason}; ${orderSubmission.executionPolicy?.reason ?? ''}`, orderSubmission),
+            reason: getSubmittedDecisionReason(`${riskReason}; ${sellPolicy.reason}; ${orderSubmission.executionPolicy?.reason ?? ''}`, orderSubmission),
             averagePrice,
             currentPrice,
             profitPercent: risk.profitPercent,

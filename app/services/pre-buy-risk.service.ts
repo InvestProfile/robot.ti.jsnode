@@ -7,6 +7,7 @@ import MarketDataService from './marketData.service';
 import SellPolicyService from './sell-policy.service';
 import TradesService from './trades.service';
 import { isIgnoredAccountingOrderStatus } from '../utils/order-status';
+import ProtectiveStopService from './protective-stop.service';
 
 type OrderBookMetrics = NonNullable<Awaited<ReturnType<typeof MarketDataService.getOrderBookMetrics>>>;
 
@@ -237,6 +238,16 @@ export default class PreBuyRiskService {
                 key: 'same-day-buy-rejected-reentry',
                 status: 'block',
                 reason: `same-day re-entry blocked after rejected buy order for ${input.ticker}`,
+                enforced: true
+            });
+        }
+
+        const protectiveStopFailure = ProtectiveStopService.getLastFailure(input.accountId, input.instrumentUid);
+        if (protectiveStopFailure) {
+            addCheck({
+                key: 'protective-stop-broker-rejected',
+                status: 'block',
+                reason: `buy blocked: broker rejected protective stop for ${input.ticker ?? input.instrumentUid}; software stop can sell existing position, but new entries are blocked until protective stop is accepted`,
                 enforced: true
             });
         }

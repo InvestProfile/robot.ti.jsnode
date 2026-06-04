@@ -4,9 +4,11 @@ import { TradeDecisionModel } from '../models/trade-decision.model';
 import { TradesModel } from '../models/trades.model';
 import { RobotConfig } from '../config/robot.config';
 import PreBuyRiskService from './pre-buy-risk.service';
+import ProtectiveStopService from './protective-stop.service';
 
 const originalCount = TradeDecisionModel.count;
 const originalFindAll = TradesModel.findAll;
+const originalGetLastFailure = ProtectiveStopService.getLastFailure;
 
 const config = {
     buyAddOnMinProfitPercent: 1,
@@ -37,6 +39,7 @@ const baseInput = {
 afterEach(() => {
     (TradeDecisionModel.count as unknown) = originalCount;
     (TradesModel.findAll as unknown) = originalFindAll;
+    (ProtectiveStopService.getLastFailure as unknown) = originalGetLastFailure;
 });
 
 const mockTrades = (trades: Record<string, unknown>[]) => {
@@ -82,6 +85,22 @@ describe('PreBuyRiskService', () => {
 
         assert.strictEqual(result.passed, true);
         assert.deepStrictEqual(result.blockingReasons, []);
+    });
+
+    it('blocks buy when broker recently rejected protective stop for the instrument', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        (ProtectiveStopService.getLastFailure as unknown) = () => ({
+            failedAt: new Date().toISOString(),
+            reason: 'PostStopOrder INVALID_ARGUMENT: 30099',
+            cooldownLeftMs: 1000
+        });
+        mockTrades([]);
+
+        const result = await PreBuyRiskService.evaluate(baseInput, config);
+
+        assert.strictEqual(result.passed, false);
+        assert.ok(result.blockingReasons.some(reason => reason.includes('broker rejected protective stop')));
+        assert.ok(result.checks.some(check => check.key === 'protective-stop-broker-rejected' && check.status === 'block'));
     });
 
     it('blocks same-day re-entry after sell until price confirms above last exit', async () => {

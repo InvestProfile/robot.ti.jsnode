@@ -2859,6 +2859,7 @@ function ProtectiveStops({ data, loading, onResync }) {
           { label: 'Too wide', value: summary.tooWide ?? 0, tone: summary.tooWide ? 'warn' : 'good', detail: 'риск больше расчета' },
           { label: 'Uncovered', value: summary.uncoveredPositions ?? 0, tone: summary.uncoveredPositions ? 'bad' : 'good', detail: 'robot-лоты без стопа' },
           { label: 'Rejected', value: rejected, tone: rejected ? 'bad' : 'good', detail: 'брокер не принял стоп' },
+          { label: 'Software', value: summary.softwareFallbacks ?? 0, tone: summary.softwareFallbacks ? 'warn' : 'good', detail: 'страхует sell-loop, не брокер' },
           { label: 'Fallback', value: summary.stopLimitFallbacks ?? 0, tone: summary.stopLimitFallbacks ? 'warn' : 'good', detail: 'stop-limit вместо market-stop' },
           { label: 'Errors', value: summary.errors ?? 0, tone: summary.errors ? 'bad' : 'good', detail: 'ошибки API стопов' },
           { label: 'Auto sync', value: runtime.lastSyncFinishedAt ? time(runtime.lastSyncFinishedAt) : EMPTY, tone: runtime.lastError ? 'bad' : 'good', detail: runtime.lastResyncAt ? `resync ${time(runtime.lastResyncAt)}` : `${runtime.checked ?? 0} checked, ${runtime.resynced ?? 0} resynced` }
