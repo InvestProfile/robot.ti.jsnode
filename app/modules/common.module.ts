@@ -317,6 +317,7 @@ export const ensureProtectiveStopsForOpenRobotPositions = async (config: RobotCo
     protectiveStopLastError = undefined;
     let checked = 0;
     let resynced = 0;
+    const errors: string[] = [];
 
     try {
         const ledger = await RobotPositionLedgerService.getLedger(config);
@@ -330,34 +331,43 @@ export const ensureProtectiveStopsForOpenRobotPositions = async (config: RobotCo
 
         for (const item of openItems) {
             checked += 1;
-            const result = await placeProtectiveStopForBuy({
-                config,
-                accountId: String(item.accountId),
-                figi: String(item.figi),
-                instrumentUid: String(item.instrumentUid),
-                ticker: item.ticker ? String(item.ticker) : undefined,
-                name: item.name ? String(item.name) : undefined,
-                quantityLots: Number(item.lots),
-                entryPrice: Number(item.averagePrice),
-                currentPrice: Number(item.currentPrice)
-            });
-            const cancelledStops = Number(result?.resync?.cancelled ?? 0);
-            if (cancelledStops > 0) {
-                resynced += 1;
-                protectiveStopLastResyncAt = new Date().toISOString();
-                protectiveStopLastResyncReason = `${reason}: ${String(item.ticker || item.figi || item.instrumentUid)} ${String(result?.resync?.reason || '')}`;
+            try {
+                const result = await placeProtectiveStopForBuy({
+                    config,
+                    accountId: String(item.accountId),
+                    figi: String(item.figi),
+                    instrumentUid: String(item.instrumentUid),
+                    ticker: item.ticker ? String(item.ticker) : undefined,
+                    name: item.name ? String(item.name) : undefined,
+                    quantityLots: Number(item.lots),
+                    entryPrice: Number(item.averagePrice),
+                    currentPrice: Number(item.currentPrice)
+                });
+                const cancelledStops = Number(result?.resync?.cancelled ?? 0);
+                if (cancelledStops > 0) {
+                    resynced += 1;
+                    protectiveStopLastResyncAt = new Date().toISOString();
+                    protectiveStopLastResyncReason = `${reason}: ${String(item.ticker || item.figi || item.instrumentUid)} ${String(result?.resync?.reason || '')}`;
+                }
+            } catch (error) {
+                const label = String(item.ticker || item.figi || item.instrumentUid);
+                errors.push(`${label}: ${getErrorMessage(error)}`);
             }
         }
 
         protectiveStopLastChecked = checked;
         protectiveStopLastResynced = resynced;
+        protectiveStopLastError = errors.length > 0 ? `${errors.length} protective stop errors; ${errors.slice(0, 3).join(' | ')}` : undefined;
         protectiveStopLastSyncFinishedAt = new Date().toISOString();
 
         return {
             checked,
             resynced,
             skipped: false,
-            reason
+            reason,
+            failed: errors.length,
+            errors: errors.slice(0, 20),
+            error: protectiveStopLastError
         };
     } catch (error) {
         protectiveStopLastError = getErrorMessage(error);

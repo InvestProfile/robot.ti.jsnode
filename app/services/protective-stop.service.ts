@@ -253,34 +253,58 @@ export default class ProtectiveStopService {
                         units: fallbackPriceMoney.units,
                         nano: fallbackPriceMoney.nano
                     };
-                    const fallbackDiagnostics = {
-                        ...baseDiagnostics,
-                        fallbackFrom: 'market-stop-loss',
-                        stopOrderType: 'stop_limit',
-                        exchangeOrderType: 'limit',
-                        price: fallbackPrice,
-                        priceQuotation: fallbackPriceQuotation
-                    };
-
-                    try {
-                        response = await postStopOrder({
-                            orderId: randomUUID(),
-                            price: fallbackPriceQuotation,
-                            stopPrice: stopPriceQuotation,
+                    const fallbackAttempts = [
+                        {
+                            label: 'stop-loss-limit-execution',
+                            stopOrderType: StopOrderType.STOP_ORDER_TYPE_STOP_LOSS,
+                            exchangeOrderType: ExchangeOrderType.EXCHANGE_ORDER_TYPE_LIMIT
+                        },
+                        {
+                            label: 'stop-limit',
                             stopOrderType: StopOrderType.STOP_ORDER_TYPE_STOP_LIMIT,
                             exchangeOrderType: ExchangeOrderType.EXCHANGE_ORDER_TYPE_LIMIT
-                        });
-                        fallback = {
-                            used: true,
-                            reason: 'market stop-loss rejected with INVALID_ARGUMENT 30099; placed stop-limit fallback',
-                            stopPrice,
-                            limitPrice: fallbackPrice,
-                            bufferPercent: STOP_LIMIT_FALLBACK_BUFFER_PERCENT
+                        }
+                    ];
+                    const fallbackErrors: string[] = [];
+
+                    for (const attempt of fallbackAttempts) {
+                        const fallbackDiagnostics = {
+                            ...baseDiagnostics,
+                            fallbackFrom: 'market-stop-loss',
+                            fallbackAttempt: attempt.label,
+                            stopOrderType: attempt.label,
+                            exchangeOrderType: 'limit',
+                            price: fallbackPrice,
+                            priceQuotation: fallbackPriceQuotation
                         };
-                    } catch (fallbackError) {
-                        const reason = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+
+                        try {
+                            response = await postStopOrder({
+                                orderId: randomUUID(),
+                                price: fallbackPriceQuotation,
+                                stopPrice: stopPriceQuotation,
+                                stopOrderType: attempt.stopOrderType,
+                                exchangeOrderType: attempt.exchangeOrderType
+                            });
+                            fallback = {
+                                used: true,
+                                reason: `market stop-loss rejected with INVALID_ARGUMENT 30099; placed ${attempt.label} fallback`,
+                                attempt: attempt.label,
+                                stopPrice,
+                                limitPrice: fallbackPrice,
+                                bufferPercent: STOP_LIMIT_FALLBACK_BUFFER_PERCENT
+                            };
+                            break;
+                        } catch (fallbackError) {
+                            const reason = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+                            fallbackErrors.push(`${attempt.label}: ${reason}; diagnostics=${JSON.stringify(fallbackDiagnostics)}`);
+                        }
+                    }
+
+                    if (!response && fallbackErrors.length > 0) {
+                        const reason = fallbackErrors.join(' | ');
                         failedStopAttempts.set(failureKey, { failedAt: Date.now(), reason });
-                        throw new Error(`protective stop fallback post failed: ${reason}; diagnostics=${JSON.stringify(fallbackDiagnostics)}`);
+                        throw new Error(`protective stop fallback post failed: ${reason}`);
                     }
                 }
             }
