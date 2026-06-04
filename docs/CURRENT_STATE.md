@@ -27,6 +27,7 @@ Changes already made:
 
 - Stop price is rounded down to the instrument `minPriceIncrement`.
 - For market stop-loss, `price` is omitted and only `stopPrice` is sent.
+- If broker rejects market stop-loss with `INVALID_ARGUMENT: 30099`, the robot retries once as stop-limit with a limit price below the stop trigger.
 - Failed protective stop attempts are throttled for 30 minutes per account/instrument.
 - Safe diagnostics are logged without secrets.
 - Sync skips stale protective stops when current price is already at or below the calculated stop.

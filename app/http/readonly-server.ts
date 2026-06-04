@@ -3,6 +3,7 @@ import { URL } from 'url';
 import path from 'path';
 import { chmod, chown, mkdir, readFile, rename, stat, writeFile } from 'fs/promises';
 import { OrderIdType } from 'tinkoff-sdk-grpc-js/dist/generated/orders';
+import { ExchangeOrderType, StopOrderType } from 'tinkoff-sdk-grpc-js/dist/generated/stoporders';
 import { getEnv } from '../config/env.config';
 import { getRobotConfig, RobotConfig } from '../config/robot.config';
 import { ensureProtectiveStopsForOpenRobotPositions, getTradingRuntimeState } from '../modules/common.module';
@@ -1171,6 +1172,10 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
             enabled: config.protectiveStopsEnabled,
             active: stops.length,
             ok: stops.filter(stop => stop.driftStatus === 'ok').length,
+            stopLimitFallbacks: stops.filter(stop =>
+                stop.orderType === StopOrderType.STOP_ORDER_TYPE_STOP_LIMIT
+                || stop.exchangeOrderType === ExchangeOrderType.EXCHANGE_ORDER_TYPE_LIMIT
+            ).length,
             tooTight: stops.filter(stop => stop.driftStatus === 'too-tight').length,
             tooWide: stops.filter(stop => stop.driftStatus === 'too-wide').length,
             noLedger: stops.filter(stop => stop.driftStatus === 'no-ledger').length,

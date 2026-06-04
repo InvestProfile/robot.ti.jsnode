@@ -2834,6 +2834,13 @@ const protectiveStopFailureText = (row) => {
   return at ? `${reason} (${time(at)})` : reason;
 };
 
+const stopOrderTypeText = (row) => {
+  const orderType = String(row?.orderType || EMPTY).replace('STOP_ORDER_TYPE_', '').toLowerCase();
+  const exchangeType = String(row?.exchangeOrderType || EMPTY).replace('EXCHANGE_ORDER_TYPE_', '').toLowerCase();
+  if (orderType === EMPTY && exchangeType === EMPTY) return EMPTY;
+  return `${orderType || EMPTY} / ${exchangeType || EMPTY}`;
+};
+
 function ProtectiveStops({ data, loading, onResync }) {
   const summary = data.protectiveStops?.summary || {};
   const stops = data.protectiveStops?.stops || [];
@@ -2852,6 +2859,7 @@ function ProtectiveStops({ data, loading, onResync }) {
           { label: 'Too wide', value: summary.tooWide ?? 0, tone: summary.tooWide ? 'warn' : 'good', detail: 'риск больше расчета' },
           { label: 'Uncovered', value: summary.uncoveredPositions ?? 0, tone: summary.uncoveredPositions ? 'bad' : 'good', detail: 'robot-лоты без стопа' },
           { label: 'Rejected', value: rejected, tone: rejected ? 'bad' : 'good', detail: 'брокер не принял стоп' },
+          { label: 'Fallback', value: summary.stopLimitFallbacks ?? 0, tone: summary.stopLimitFallbacks ? 'warn' : 'good', detail: 'stop-limit вместо market-stop' },
           { label: 'Errors', value: summary.errors ?? 0, tone: summary.errors ? 'bad' : 'good', detail: 'ошибки API стопов' },
           { label: 'Auto sync', value: runtime.lastSyncFinishedAt ? time(runtime.lastSyncFinishedAt) : EMPTY, tone: runtime.lastError ? 'bad' : 'good', detail: runtime.lastResyncAt ? `resync ${time(runtime.lastResyncAt)}` : `${runtime.checked ?? 0} checked, ${runtime.resynced ?? 0} resynced` }
         ]}
@@ -2871,6 +2879,7 @@ function ProtectiveStops({ data, loading, onResync }) {
           { key: 'ticker', label: 'Тикер', width: '120px', render: (row) => <><strong>{row.ticker || row.figi || EMPTY}</strong><div className="muted">{row.name}</div></> },
           { key: 'accountAlias', label: 'Счет', width: '130px', render: (row) => <TextCell>{row.accountAlias || row.accountId}</TextCell> },
           { key: 'driftStatus', label: 'Drift', width: '105px', render: (row) => <Pill tone={protectiveStopTone(row.driftStatus)}>{row.driftStatus || EMPTY}</Pill> },
+          { key: 'orderType', label: 'Тип', width: '145px', render: (row) => <TextCell>{stopOrderTypeText(row)}</TextCell> },
           { key: 'lotsRequested', label: 'Stop lots', width: '86px', className: 'right', render: (row) => money(row.lotsRequested) },
           { key: 'ledgerLots', label: 'Ledger', width: '78px', className: 'right', render: (row) => money(row.ledgerLots) },
           { key: 'stopPrice', label: 'Broker stop', width: '105px', className: 'right', render: (row) => money(row.stopPrice) },

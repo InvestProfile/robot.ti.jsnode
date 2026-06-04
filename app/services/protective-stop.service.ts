@@ -17,6 +17,7 @@ import InstrumentsService from './instruments.service';
 const envVariables = getEnv();
 const FAILED_STOP_RETRY_COOLDOWN_MS = 30 * 60 * 1000;
 const STOP_DRIFT_RESYNC_PERCENT = 0.5;
+const STOP_LIMIT_FALLBACK_BUFFER_PERCENT = 0.5;
 const failedStopAttempts = new Map<string, { failedAt: number; reason: string }>();
 
 const roundSellStopPrice = (price: number, minPriceIncrement?: number) => {
@@ -27,6 +28,24 @@ const roundSellStopPrice = (price: number, minPriceIncrement?: number) => {
 };
 
 const failedStopKey = (accountId: string, instrumentUid: string) => `${accountId}:${instrumentUid}`;
+
+const isInvalidStopOrderArgument = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    return message.includes('INVALID_ARGUMENT') && message.includes('30099');
+};
+
+const buildStopLimitFallbackPrice = (stopPrice: number, minPriceIncrement?: number) => {
+    const fallbackRawPrice = stopPrice * (1 - STOP_LIMIT_FALLBACK_BUFFER_PERCENT / 100);
+    const rounded = roundSellStopPrice(fallbackRawPrice, minPriceIncrement);
+    if (Number.isFinite(rounded) && rounded > 0 && rounded < stopPrice) return rounded;
+
+    const increment = Number(minPriceIncrement);
+    if (Number.isFinite(increment) && increment > 0 && stopPrice > increment) {
+        return roundSellStopPrice(stopPrice - increment, increment);
+    }
+
+    return fallbackRawPrice > 0 && fallbackRawPrice < stopPrice ? fallbackRawPrice : undefined;
+};
 
 export interface ProtectiveStopInput {
     accountId: string;
@@ -172,7 +191,7 @@ export default class ProtectiveStopService {
             units: stopPriceMoney.units,
             nano: stopPriceMoney.nano
         };
-        const requestDiagnostics = {
+        const baseDiagnostics = {
             accountId: input.accountId,
             ticker: input.ticker,
             instrumentUid: input.instrumentUid,
@@ -189,31 +208,88 @@ export default class ProtectiveStopService {
             stopPriceQuotation
         };
         const { stopOrders } = getSdk(envVariables.INVEST_TOKEN);
+        const postStopOrder = async (params: {
+            orderId: string;
+            price?: { units: number; nano: number };
+            stopPrice: { units: number; nano: number };
+            stopOrderType: StopOrderType;
+            exchangeOrderType: ExchangeOrderType;
+        }) => TInvestApiCacheService.withRetry(() => stopOrders.postStopOrder({
+            accountId: input.accountId,
+            orderId: params.orderId,
+            figi: undefined,
+            instrumentId: input.instrumentUid,
+            quantity: uncoveredQuantity,
+            price: params.price,
+            stopPrice: params.stopPrice,
+            direction: StopOrderDirection.STOP_ORDER_DIRECTION_SELL,
+            expirationType: StopOrderExpirationType.STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL,
+            stopOrderType: params.stopOrderType,
+            expireDate: undefined,
+            exchangeOrderType: params.exchangeOrderType,
+            takeProfitType: TakeProfitType.TAKE_PROFIT_TYPE_UNSPECIFIED,
+            trailingData: undefined,
+            priceType: PriceType.PRICE_TYPE_CURRENCY,
+            confirmMarginTrade: false,
+            instantExecution: undefined
+        }));
+
         let response;
+        let fallback;
         try {
-            response = await TInvestApiCacheService.withRetry(() => stopOrders.postStopOrder({
-                accountId: input.accountId,
+            response = await postStopOrder({
                 orderId: randomUUID(),
-                figi: undefined,
-                instrumentId: input.instrumentUid,
-                quantity: uncoveredQuantity,
                 price: undefined,
                 stopPrice: stopPriceQuotation,
-                direction: StopOrderDirection.STOP_ORDER_DIRECTION_SELL,
-                expirationType: StopOrderExpirationType.STOP_ORDER_EXPIRATION_TYPE_GOOD_TILL_CANCEL,
                 stopOrderType: StopOrderType.STOP_ORDER_TYPE_STOP_LOSS,
-                expireDate: undefined,
-                exchangeOrderType: ExchangeOrderType.EXCHANGE_ORDER_TYPE_MARKET,
-                takeProfitType: TakeProfitType.TAKE_PROFIT_TYPE_UNSPECIFIED,
-                trailingData: undefined,
-                priceType: PriceType.PRICE_TYPE_CURRENCY,
-                confirmMarginTrade: false,
-                instantExecution: undefined
-            }));
+                exchangeOrderType: ExchangeOrderType.EXCHANGE_ORDER_TYPE_MARKET
+            });
         } catch (error) {
+            if (isInvalidStopOrderArgument(error)) {
+                const fallbackPrice = buildStopLimitFallbackPrice(stopPrice, minPriceIncrement);
+                if (fallbackPrice) {
+                    const fallbackPriceMoney = numberToQuotation(fallbackPrice);
+                    const fallbackPriceQuotation = {
+                        units: fallbackPriceMoney.units,
+                        nano: fallbackPriceMoney.nano
+                    };
+                    const fallbackDiagnostics = {
+                        ...baseDiagnostics,
+                        fallbackFrom: 'market-stop-loss',
+                        stopOrderType: 'stop_limit',
+                        exchangeOrderType: 'limit',
+                        price: fallbackPrice,
+                        priceQuotation: fallbackPriceQuotation
+                    };
+
+                    try {
+                        response = await postStopOrder({
+                            orderId: randomUUID(),
+                            price: fallbackPriceQuotation,
+                            stopPrice: stopPriceQuotation,
+                            stopOrderType: StopOrderType.STOP_ORDER_TYPE_STOP_LIMIT,
+                            exchangeOrderType: ExchangeOrderType.EXCHANGE_ORDER_TYPE_LIMIT
+                        });
+                        fallback = {
+                            used: true,
+                            reason: 'market stop-loss rejected with INVALID_ARGUMENT 30099; placed stop-limit fallback',
+                            stopPrice,
+                            limitPrice: fallbackPrice,
+                            bufferPercent: STOP_LIMIT_FALLBACK_BUFFER_PERCENT
+                        };
+                    } catch (fallbackError) {
+                        const reason = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+                        failedStopAttempts.set(failureKey, { failedAt: Date.now(), reason });
+                        throw new Error(`protective stop fallback post failed: ${reason}; diagnostics=${JSON.stringify(fallbackDiagnostics)}`);
+                    }
+                }
+            }
+
+            if (!response) {
             const reason = error instanceof Error ? error.message : String(error);
             failedStopAttempts.set(failureKey, { failedAt: Date.now(), reason });
-            throw new Error(`protective stop post failed: ${reason}; diagnostics=${JSON.stringify(requestDiagnostics)}`);
+                throw new Error(`protective stop post failed: ${reason}; diagnostics=${JSON.stringify(baseDiagnostics)}`);
+            }
         }
 
         failedStopAttempts.delete(failureKey);
@@ -226,6 +302,7 @@ export default class ProtectiveStopService {
             minPriceIncrement,
             stopPrice: quotationToNumber(stopPriceQuotation),
             quantity: uncoveredQuantity,
+            fallback,
             resync
         };
     }
