@@ -105,7 +105,23 @@ const getAvgDailyTurnoverRub = (candles: DailyCandle[] | undefined, lot: number)
     return average(values);
 };
 
-const getAntiFomoMetrics = (candles: DailyCandle[] | undefined, currentPrice?: number) => {
+const getAverageDailyRangePercent = (candles: DailyCandle[], days: number) => {
+    const ranges = candles
+        .slice(0, -1)
+        .slice(-days)
+        .map(candle => {
+            if (!Number.isFinite(candle.high) || !Number.isFinite(candle.low) || !Number.isFinite(candle.close) || candle.close <= 0) {
+                return undefined;
+            }
+
+            return ((candle.high - candle.low) / candle.close) * 100;
+        })
+        .filter((value): value is number => value !== undefined && Number.isFinite(value) && value >= 0);
+
+    return average(ranges);
+};
+
+const getAntiFomoMetrics = (candles: DailyCandle[] | undefined, currentPrice: number | undefined, config: RobotConfig) => {
     const validCandles = candles
         ?.filter(candle =>
             Number.isFinite(candle.close)
@@ -121,9 +137,17 @@ const getAntiFomoMetrics = (candles: DailyCandle[] | undefined, currentPrice?: n
     const recentHigh = Math.max(...validCandles.map(candle => candle.high));
     if (!previousClose || !Number.isFinite(recentHigh) || recentHigh <= 0) return undefined;
 
+    const averageDailyRangePercent = getAverageDailyRangePercent(validCandles, config.buyAntiFomoRangeDays);
+    const rangeExtensionLimitPercent = averageDailyRangePercent !== undefined
+        ? averageDailyRangePercent * config.buyAntiFomoMaxRangeMultiplier
+        : undefined;
+    const momentumPercent = (price / previousClose - 1) * 100;
+
     return {
-        momentumPercent: (price / previousClose - 1) * 100,
-        belowHighPercent: (recentHigh / price - 1) * 100
+        momentumPercent,
+        belowHighPercent: (recentHigh / price - 1) * 100,
+        averageDailyRangePercent,
+        rangeExtensionLimitPercent
     };
 };
 
@@ -419,7 +443,7 @@ export default class PreBuyRiskService {
         }
 
         if (config.buyAntiFomoEnabled) {
-            const antiFomoMetrics = getAntiFomoMetrics(input.dailyCandles, input.currentPrice);
+            const antiFomoMetrics = getAntiFomoMetrics(input.dailyCandles, input.currentPrice, config);
             if (!antiFomoMetrics) {
                 addCheck({
                     key: 'anti-fomo',
@@ -430,16 +454,23 @@ export default class PreBuyRiskService {
             } else {
                 const momentumTooHot = antiFomoMetrics.momentumPercent > config.buyAntiFomoMaxMomentumPercent;
                 const tooCloseToHigh = antiFomoMetrics.belowHighPercent <= config.buyAntiFomoMinBelowHighPercent;
-                const blocked = momentumTooHot && tooCloseToHigh;
+                const rangeExtensionTooHot = antiFomoMetrics.rangeExtensionLimitPercent !== undefined
+                    && antiFomoMetrics.momentumPercent > antiFomoMetrics.rangeExtensionLimitPercent;
+                const blocked = tooCloseToHigh && (momentumTooHot || rangeExtensionTooHot);
+                const rangeText = antiFomoMetrics.averageDailyRangePercent !== undefined && antiFomoMetrics.rangeExtensionLimitPercent !== undefined
+                    ? `, avg range ${formatPercent(antiFomoMetrics.averageDailyRangePercent)}, extension limit ${formatPercent(antiFomoMetrics.rangeExtensionLimitPercent)}`
+                    : '';
                 addCheck({
                     key: 'anti-fomo',
                     status: blocked ? 'block' : 'pass',
                     reason: blocked
-                        ? `anti-FOMO blocked: momentum ${formatPercent(antiFomoMetrics.momentumPercent)} above ${formatPercent(config.buyAntiFomoMaxMomentumPercent)} and price is only ${formatPercent(antiFomoMetrics.belowHighPercent)} below high`
-                        : `anti-FOMO passed: momentum ${formatPercent(antiFomoMetrics.momentumPercent)} within ${formatPercent(config.buyAntiFomoMaxMomentumPercent)} or price is ${formatPercent(antiFomoMetrics.belowHighPercent)} below high`,
+                        ? `anti-FOMO blocked: price is only ${formatPercent(antiFomoMetrics.belowHighPercent)} below high, momentum ${formatPercent(antiFomoMetrics.momentumPercent)}${momentumTooHot ? ` above ${formatPercent(config.buyAntiFomoMaxMomentumPercent)}` : ''}${rangeExtensionTooHot ? ` above normal range extension` : ''}${rangeText}`
+                        : `anti-FOMO passed: momentum ${formatPercent(antiFomoMetrics.momentumPercent)}, price is ${formatPercent(antiFomoMetrics.belowHighPercent)} below high${rangeText}`,
                     enforced: config.buyAntiFomoEnforced,
                     value: antiFomoMetrics.momentumPercent,
-                    limit: config.buyAntiFomoMaxMomentumPercent
+                    limit: antiFomoMetrics.rangeExtensionLimitPercent !== undefined
+                        ? Math.min(config.buyAntiFomoMaxMomentumPercent, antiFomoMetrics.rangeExtensionLimitPercent)
+                        : config.buyAntiFomoMaxMomentumPercent
                 });
             }
         }

@@ -33,7 +33,7 @@ Current buy guards:
 - Weak add-on protection blocks adding to a losing robot-owned position.
 - Loss guard raises the required buy score for tickers/sectors with recent stop-heavy negative round-trips; it is a score buffer, not a permanent ban.
 - Negative technical adjustment requires a higher final score.
-- Anti-FOMO blocks buys when the current daily momentum is already hot and the price is too close to the recent high.
+- Anti-FOMO blocks buys when price is close to the recent high and either same-day momentum is hot or the move is already too large versus the instrument's normal daily range.
 - External analyst/social/technical data may adjust score, but stale positive analyst data should not make the robot more aggressive.
 
 ## Sell Pipeline
@@ -90,6 +90,8 @@ Notes:
 - `ROBOT_BUY_ANTI_FOMO_ENFORCED`
 - `ROBOT_BUY_ANTI_FOMO_MAX_MOMENTUM_PERCENT`
 - `ROBOT_BUY_ANTI_FOMO_MIN_BELOW_HIGH_PERCENT`
+- `ROBOT_BUY_ANTI_FOMO_RANGE_DAYS`
+- `ROBOT_BUY_ANTI_FOMO_MAX_RANGE_MULTIPLIER`
 - `ROBOT_BUY_LOSS_GUARD_ENABLED`
 - `ROBOT_BUY_LOSS_GUARD_ENFORCED`
 - `ROBOT_BUY_LOSS_GUARD_SCORE_BUFFER`

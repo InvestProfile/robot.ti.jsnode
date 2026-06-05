@@ -28,7 +28,9 @@ const config = {
     buyLossGuardMinClosed: 3,
     buyLossGuardMinLosses: 2,
     buyLossGuardMinPnlRub: -30,
-    buyLossGuardMinWinRatePercent: 35
+    buyLossGuardMinWinRatePercent: 35,
+    buyAntiFomoRangeDays: 10,
+    buyAntiFomoMaxRangeMultiplier: 0.8
 } as unknown as RobotConfig;
 
 const baseInput = {
@@ -286,6 +288,32 @@ describe('PreBuyRiskService', () => {
 
         assert.strictEqual(result.passed, true);
         assert.ok(result.checks.some(check => check.key === 'anti-fomo' && check.status === 'pass'));
+    });
+
+    it('blocks a near-high buy when the move is too large for the normal daily range', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([]);
+
+        const result = await PreBuyRiskService.evaluate({
+            ...baseInput,
+            currentPrice: 102.6,
+            dailyCandles: [
+                { close: 99, high: 100, low: 99, volume: 1000 },
+                { close: 100, high: 102.8, low: 99.8, volume: 1000 }
+            ]
+        }, {
+            ...config,
+            buyAntiFomoEnabled: true,
+            buyAntiFomoEnforced: true,
+            buyAntiFomoMaxMomentumPercent: 3,
+            buyAntiFomoMinBelowHighPercent: 1,
+            buyAntiFomoRangeDays: 10,
+            buyAntiFomoMaxRangeMultiplier: 0.8
+        } as RobotConfig);
+
+        assert.strictEqual(result.passed, false);
+        assert.ok(result.blockingReasons.some(reason => reason.includes('normal range extension')));
+        assert.ok(result.checks.some(check => check.key === 'anti-fomo' && check.status === 'block' && check.limit !== undefined && check.limit < 3));
     });
 
     it('keeps weak sector performance observe-only by default', async () => {

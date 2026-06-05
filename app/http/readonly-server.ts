@@ -709,6 +709,8 @@ const safeConfig = (config: RobotConfig) => ({
     buyAntiFomoEnforced: config.buyAntiFomoEnforced,
     buyAntiFomoMaxMomentumPercent: config.buyAntiFomoMaxMomentumPercent,
     buyAntiFomoMinBelowHighPercent: config.buyAntiFomoMinBelowHighPercent,
+    buyAntiFomoRangeDays: config.buyAntiFomoRangeDays,
+    buyAntiFomoMaxRangeMultiplier: config.buyAntiFomoMaxRangeMultiplier,
     buyScoreProfiles: config.buyScoreProfiles,
     maxOrderRub: config.maxOrderRub,
     maxDailyOrders: config.maxDailyOrders,
