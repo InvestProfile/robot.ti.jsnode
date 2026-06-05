@@ -356,7 +356,7 @@ export const getRobotConfig = (): RobotConfig => {
         buyAntiFomoMaxMomentumPercent: Math.max(0, Math.min(30, parseNumber(env.ROBOT_BUY_ANTI_FOMO_MAX_MOMENTUM_PERCENT, 3))),
         buyAntiFomoMinBelowHighPercent: Math.max(0, Math.min(30, parseNumber(env.ROBOT_BUY_ANTI_FOMO_MIN_BELOW_HIGH_PERCENT, 1))),
         buyAntiFomoRangeDays: Math.max(2, Math.min(60, Math.trunc(parseNumber(env.ROBOT_BUY_ANTI_FOMO_RANGE_DAYS, 10)))),
-        buyAntiFomoMaxRangeMultiplier: Math.max(0, Math.min(5, parseNumber(env.ROBOT_BUY_ANTI_FOMO_MAX_RANGE_MULTIPLIER, 0.8))),
+        buyAntiFomoMaxRangeMultiplier: Math.max(0, Math.min(5, parseNumber(env.ROBOT_BUY_ANTI_FOMO_MAX_RANGE_MULTIPLIER, 1.5))),
         buyLossGuardEnabled: parseBoolean(env.ROBOT_BUY_LOSS_GUARD_ENABLED, true),
         buyLossGuardEnforced: parseBoolean(env.ROBOT_BUY_LOSS_GUARD_ENFORCED, true),
         buyLossGuardScoreBuffer: Math.max(0, Math.min(30, parseNumber(env.ROBOT_BUY_LOSS_GUARD_SCORE_BUFFER, 10))),
