@@ -8,6 +8,7 @@ import SellPolicyService from './sell-policy.service';
 import TradesService from './trades.service';
 import { isIgnoredAccountingOrderStatus } from '../utils/order-status';
 import ProtectiveStopService from './protective-stop.service';
+import { LossGuardStats } from './loss-guard.service';
 
 type OrderBookMetrics = NonNullable<Awaited<ReturnType<typeof MarketDataService.getOrderBookMetrics>>>;
 
@@ -35,6 +36,12 @@ interface PreBuyRiskInput {
     dailyCandles?: DailyCandle[];
     orderBookMetrics?: OrderBookMetrics;
     orderBookError?: unknown;
+    buyScore?: number;
+    buyRequiredScore?: number;
+    lossGuard?: {
+        ticker?: LossGuardStats;
+        sector?: LossGuardStats;
+    };
 }
 
 export interface PreBuyRiskCheck {
@@ -61,6 +68,7 @@ export interface PreBuyRiskResult {
     robotOwnedLots?: number;
     robotAverageLotCostRub?: number;
     robotProfitPercent?: number;
+    lossGuard?: PreBuyRiskInput['lossGuard'];
 }
 
 const average = (values: number[]) => values.length
@@ -72,6 +80,21 @@ const formatPercent = (value: number | undefined) =>
 
 const formatRub = (value: number | undefined) =>
     value === undefined || !Number.isFinite(value) ? '-' : `${Math.round(value)} RUB`;
+
+const isWeakLossGuardStats = (stats: LossGuardStats | undefined, config: RobotConfig) => {
+    if (!stats) return false;
+    if (stats.closed < config.buyLossGuardMinClosed) return false;
+    if (stats.losses < config.buyLossGuardMinLosses) return false;
+
+    const winRate = stats.winRatePercent ?? 0;
+    const weakByPnl = stats.pnlRub <= config.buyLossGuardMinPnlRub;
+    const weakByWinRate = winRate < config.buyLossGuardMinWinRatePercent;
+
+    return weakByPnl || weakByWinRate;
+};
+
+const lossGuardReason = (label: string, stats: LossGuardStats, score: number | undefined, requiredScore: number, config: RobotConfig) =>
+    `${label} loss guard: score ${score ?? '-'} < required ${requiredScore}; closed ${stats.closed}, losses ${stats.losses}, P/L ${formatRub(stats.pnlRub)}, WR ${formatPercent(stats.winRatePercent)}, buffer ${formatPercent(config.buyLossGuardScoreBuffer)}${stats.stale ? ', stale cache' : ''}`;
 
 const getAvgDailyTurnoverRub = (candles: DailyCandle[] | undefined, lot: number) => {
     const values = candles
@@ -274,6 +297,42 @@ export default class PreBuyRiskService {
                 reason: `same-day re-entry blocked after rejected buy order for ${input.ticker}`,
                 enforced: true
             });
+        }
+
+        if (config.buyLossGuardEnabled) {
+            const score = Number(input.buyScore);
+            const baseRequiredScore = Number(input.buyRequiredScore ?? config.buyMinScore);
+            const requiredScore = Math.min(100, Math.max(1, baseRequiredScore + Number(config.buyLossGuardScoreBuffer ?? 0)));
+            const scoreKnown = Number.isFinite(score);
+
+            const addLossGuardCheck = (key: string, label: string, stats: LossGuardStats | undefined) => {
+                if (!stats) return;
+                if (!isWeakLossGuardStats(stats, config)) {
+                    addCheck({
+                        key,
+                        status: 'pass',
+                        reason: `${label} loss guard passed: closed ${stats.closed}, losses ${stats.losses}, P/L ${formatRub(stats.pnlRub)}, WR ${formatPercent(stats.winRatePercent)}`,
+                        enforced: config.buyLossGuardEnforced,
+                        value: scoreKnown ? score : undefined,
+                        limit: requiredScore
+                    });
+                    return;
+                }
+
+                addCheck({
+                    key,
+                    status: !scoreKnown || score < requiredScore ? 'block' : 'pass',
+                    reason: !scoreKnown || score < requiredScore
+                        ? lossGuardReason(label, stats, scoreKnown ? score : undefined, requiredScore, config)
+                        : `${label} loss guard passed by strong score ${score}/${requiredScore}: closed ${stats.closed}, losses ${stats.losses}, P/L ${formatRub(stats.pnlRub)}, WR ${formatPercent(stats.winRatePercent)}`,
+                    enforced: config.buyLossGuardEnforced,
+                    value: scoreKnown ? score : undefined,
+                    limit: requiredScore
+                });
+            };
+
+            addLossGuardCheck('ticker-loss-guard', `ticker ${input.ticker ?? input.instrumentUid}`, input.lossGuard?.ticker);
+            addLossGuardCheck('sector-loss-guard', `sector ${input.sector ?? '-'}`, input.lossGuard?.sector);
         }
 
         const protectiveStopFailure = ProtectiveStopService.getLastFailure(input.accountId, input.instrumentUid);
@@ -516,7 +575,7 @@ export default class PreBuyRiskService {
 
         return {
             passed: blockingReasons.length === 0,
-            mode: config.liquidityRiskEnforced || config.sectorRiskEnforced || config.sectorPerformanceRiskEnforced || config.buyAntiFomoEnforced ? 'enforced' : 'observe',
+            mode: config.liquidityRiskEnforced || config.sectorRiskEnforced || config.sectorPerformanceRiskEnforced || config.buyAntiFomoEnforced || config.buyLossGuardEnforced ? 'enforced' : 'observe',
             warnings,
             blockingReasons,
             checks,
@@ -528,7 +587,8 @@ export default class PreBuyRiskService {
             sectorPerformance: input.sectorPerformance,
             robotOwnedLots,
             robotAverageLotCostRub,
-            robotProfitPercent
+            robotProfitPercent,
+            lossGuard: input.lossGuard
         };
     }
 }

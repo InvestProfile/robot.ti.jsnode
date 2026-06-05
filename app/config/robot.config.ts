@@ -211,6 +211,14 @@ export interface RobotConfig {
     buyAntiFomoEnforced: boolean;
     buyAntiFomoMaxMomentumPercent: number;
     buyAntiFomoMinBelowHighPercent: number;
+    buyLossGuardEnabled: boolean;
+    buyLossGuardEnforced: boolean;
+    buyLossGuardScoreBuffer: number;
+    buyLossGuardMinClosed: number;
+    buyLossGuardMinLosses: number;
+    buyLossGuardMinPnlRub: number;
+    buyLossGuardMinWinRatePercent: number;
+    buyLossGuardCacheTtlMs: number;
     buyScoreProfiles: Record<string, BuyScoreProfile>;
     maxOrderRub: number;
     maxDailyOrders: number;
@@ -345,6 +353,14 @@ export const getRobotConfig = (): RobotConfig => {
         buyAntiFomoEnforced: parseBoolean(env.ROBOT_BUY_ANTI_FOMO_ENFORCED, true),
         buyAntiFomoMaxMomentumPercent: Math.max(0, Math.min(30, parseNumber(env.ROBOT_BUY_ANTI_FOMO_MAX_MOMENTUM_PERCENT, 3))),
         buyAntiFomoMinBelowHighPercent: Math.max(0, Math.min(30, parseNumber(env.ROBOT_BUY_ANTI_FOMO_MIN_BELOW_HIGH_PERCENT, 1))),
+        buyLossGuardEnabled: parseBoolean(env.ROBOT_BUY_LOSS_GUARD_ENABLED, true),
+        buyLossGuardEnforced: parseBoolean(env.ROBOT_BUY_LOSS_GUARD_ENFORCED, true),
+        buyLossGuardScoreBuffer: Math.max(0, Math.min(30, parseNumber(env.ROBOT_BUY_LOSS_GUARD_SCORE_BUFFER, 10))),
+        buyLossGuardMinClosed: Math.max(1, Math.trunc(parseNumber(env.ROBOT_BUY_LOSS_GUARD_MIN_CLOSED, 3))),
+        buyLossGuardMinLosses: Math.max(1, Math.trunc(parseNumber(env.ROBOT_BUY_LOSS_GUARD_MIN_LOSSES, 2))),
+        buyLossGuardMinPnlRub: parseNumber(env.ROBOT_BUY_LOSS_GUARD_MIN_PNL_RUB, -30),
+        buyLossGuardMinWinRatePercent: Math.max(0, Math.min(100, parseNumber(env.ROBOT_BUY_LOSS_GUARD_MIN_WIN_RATE_PERCENT, 35))),
+        buyLossGuardCacheTtlMs: Math.max(0, parseNumber(env.ROBOT_BUY_LOSS_GUARD_CACHE_TTL_MS, 15 * 60_000)),
         buyScoreProfiles: parseBuyScoreProfiles(env.ROBOT_BUY_SCORE_PROFILES),
         maxOrderRub,
         maxDailyOrders,

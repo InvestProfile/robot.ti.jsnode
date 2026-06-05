@@ -300,6 +300,8 @@ const shortReason = (value) => {
 
 const classifyBlocker = (reason) => {
   const text = String(reason || '').toLowerCase();
+  if (text.includes('ticker') && text.includes('loss guard')) return 'плохая история тикера';
+  if (text.includes('sector') && text.includes('loss guard')) return 'плохая история сектора';
   if (text.includes('same-day add-on blocked')) return 'докупка без подтверждения';
   if (text.includes('re-entry blocked after same-day sell')) return 'вход после выхода';
   if (text.includes('anti-fomo')) return 'покупка на импульсе';

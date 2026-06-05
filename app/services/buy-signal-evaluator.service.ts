@@ -14,6 +14,7 @@ import BuyScoreAdjustmentService from './buy-score-adjustment.service';
 import DailyBuyListService from './daily-buy-list.service';
 import PreBuyRiskService, { PreBuyRiskResult } from './pre-buy-risk.service';
 import SectorPerformanceService from './sector-performance.service';
+import LossGuardService from './loss-guard.service';
 
 type SharesResponse = Awaited<ReturnType<typeof InstrumentsService.getShares>>;
 type ShareInstrument = NonNullable<NonNullable<SharesResponse>['instruments']>[number];
@@ -258,6 +259,9 @@ export default class BuySignalEvaluatorService {
         const sectorPerformanceBySector = config.sectorPerformanceRiskEnabled
             ? await SectorPerformanceService.getSectorPerformance(config)
             : new Map();
+        const lossGuard = config.buyLossGuardEnabled
+            ? await LossGuardService.getSnapshot(config)
+            : { byTicker: new Map(), bySector: new Map() };
         const previews: BuySignalPreview[] = [];
 
         for (const instrument of buyInstruments) {
@@ -367,7 +371,13 @@ export default class BuySignalEvaluatorService {
                 sectorPerformance: instrument.sector ? sectorPerformanceBySector.get(instrument.sector) : undefined,
                 dailyCandles,
                 orderBookMetrics: orderBookByUid.get(instrument.uid),
-                orderBookError: orderBookErrorByUid.get(instrument.uid)
+                orderBookError: orderBookErrorByUid.get(instrument.uid),
+                buyScore: scoreAnalysis?.score,
+                buyRequiredScore: scoreAnalysis?.factors?.negativeTechRequiredScore ?? buyConfig.buyMinScore,
+                lossGuard: {
+                    ticker: lossGuard.byTicker.get(instrument.ticker.toUpperCase()),
+                    sector: instrument.sector ? lossGuard.bySector.get(instrument.sector) : undefined
+                }
             }, config);
             const allowed = risk.allowed && preBuyRisk.passed;
             let skipReason: string | undefined;

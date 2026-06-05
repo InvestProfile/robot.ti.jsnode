@@ -21,7 +21,14 @@ const config = {
     sectorPerformanceRiskEnforced: false,
     sectorPerformanceMinClosed: 5,
     sectorPerformanceMinWinRatePercent: 35,
-    sectorPerformanceMinPnlRub: -50
+    sectorPerformanceMinPnlRub: -50,
+    buyLossGuardEnabled: false,
+    buyLossGuardEnforced: false,
+    buyLossGuardScoreBuffer: 10,
+    buyLossGuardMinClosed: 3,
+    buyLossGuardMinLosses: 2,
+    buyLossGuardMinPnlRub: -30,
+    buyLossGuardMinWinRatePercent: 35
 } as unknown as RobotConfig;
 
 const baseInput = {
@@ -331,5 +338,66 @@ describe('PreBuyRiskService', () => {
         assert.strictEqual(result.passed, false);
         assert.ok(result.blockingReasons.some(reason => reason.includes('sector it performance')));
         assert.ok(result.checks.some(check => check.key === 'sector-performance' && check.status === 'block' && check.enforced));
+    });
+
+    it('blocks a weak ticker when loss guard requires a higher score', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([]);
+
+        const result = await PreBuyRiskService.evaluate({
+            ...baseInput,
+            buyScore: 74,
+            buyRequiredScore: 70,
+            lossGuard: {
+                ticker: {
+                    type: 'ticker',
+                    key: 'SBER',
+                    closed: 4,
+                    wins: 0,
+                    losses: 4,
+                    pnlRub: -64,
+                    winRatePercent: 0
+                }
+            }
+        }, {
+            ...config,
+            buyLossGuardEnabled: true,
+            buyLossGuardEnforced: true,
+            buyLossGuardScoreBuffer: 10
+        } as RobotConfig);
+
+        assert.strictEqual(result.passed, false);
+        assert.ok(result.blockingReasons.some(reason => reason.includes('ticker SBER loss guard')));
+        assert.ok(result.checks.some(check => check.key === 'ticker-loss-guard' && check.status === 'block'));
+    });
+
+    it('allows a weak ticker when score clears the loss guard buffer', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([]);
+
+        const result = await PreBuyRiskService.evaluate({
+            ...baseInput,
+            buyScore: 83,
+            buyRequiredScore: 70,
+            lossGuard: {
+                ticker: {
+                    type: 'ticker',
+                    key: 'SBER',
+                    closed: 4,
+                    wins: 0,
+                    losses: 4,
+                    pnlRub: -64,
+                    winRatePercent: 0
+                }
+            }
+        }, {
+            ...config,
+            buyLossGuardEnabled: true,
+            buyLossGuardEnforced: true,
+            buyLossGuardScoreBuffer: 10
+        } as RobotConfig);
+
+        assert.strictEqual(result.passed, true);
+        assert.ok(result.checks.some(check => check.key === 'ticker-loss-guard' && check.status === 'pass'));
     });
 });
