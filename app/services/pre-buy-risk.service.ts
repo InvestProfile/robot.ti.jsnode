@@ -430,10 +430,13 @@ export default class PreBuyRiskService {
             } else {
                 const momentumTooHot = antiFomoMetrics.momentumPercent > config.buyAntiFomoMaxMomentumPercent;
                 const tooCloseToHigh = antiFomoMetrics.belowHighPercent <= config.buyAntiFomoMinBelowHighPercent;
+                const blocked = momentumTooHot && tooCloseToHigh;
                 addCheck({
                     key: 'anti-fomo',
-                    status: momentumTooHot && tooCloseToHigh ? 'block' : 'pass',
-                    reason: `anti-FOMO: momentum ${formatPercent(antiFomoMetrics.momentumPercent)} > ${formatPercent(config.buyAntiFomoMaxMomentumPercent)} and below high ${formatPercent(antiFomoMetrics.belowHighPercent)} <= ${formatPercent(config.buyAntiFomoMinBelowHighPercent)}`,
+                    status: blocked ? 'block' : 'pass',
+                    reason: blocked
+                        ? `anti-FOMO blocked: momentum ${formatPercent(antiFomoMetrics.momentumPercent)} above ${formatPercent(config.buyAntiFomoMaxMomentumPercent)} and price is only ${formatPercent(antiFomoMetrics.belowHighPercent)} below high`
+                        : `anti-FOMO passed: momentum ${formatPercent(antiFomoMetrics.momentumPercent)} within ${formatPercent(config.buyAntiFomoMaxMomentumPercent)} or price is ${formatPercent(antiFomoMetrics.belowHighPercent)} below high`,
                     enforced: config.buyAntiFomoEnforced,
                     value: antiFomoMetrics.momentumPercent,
                     limit: config.buyAntiFomoMaxMomentumPercent
@@ -459,10 +462,13 @@ export default class PreBuyRiskService {
                         enforced: config.liquidityRiskEnforced
                     });
                 } else {
+                    const blocked = spreadPercent > config.maxSpreadPercent;
                     addCheck({
                         key: 'spread',
-                        status: spreadPercent > config.maxSpreadPercent ? 'block' : 'pass',
-                        reason: `spread ${formatPercent(spreadPercent)} > ${formatPercent(config.maxSpreadPercent)}`,
+                        status: blocked ? 'block' : 'pass',
+                        reason: blocked
+                            ? `spread blocked: ${formatPercent(spreadPercent)} above limit ${formatPercent(config.maxSpreadPercent)}`
+                            : `spread passed: ${formatPercent(spreadPercent)} within limit ${formatPercent(config.maxSpreadPercent)}`,
                         enforced: config.liquidityRiskEnforced,
                         value: spreadPercent,
                         limit: config.maxSpreadPercent
@@ -477,10 +483,13 @@ export default class PreBuyRiskService {
                         enforced: config.liquidityRiskEnforced
                     });
                 } else {
+                    const blocked = askLiquidityRub < config.minOrderbookAskRub;
                     addCheck({
                         key: 'orderbook-ask',
-                        status: askLiquidityRub < config.minOrderbookAskRub ? 'block' : 'pass',
-                        reason: `ask liquidity ${formatRub(askLiquidityRub)} < ${formatRub(config.minOrderbookAskRub)}`,
+                        status: blocked ? 'block' : 'pass',
+                        reason: blocked
+                            ? `ask liquidity blocked: ${formatRub(askLiquidityRub)} below minimum ${formatRub(config.minOrderbookAskRub)}`
+                            : `ask liquidity passed: ${formatRub(askLiquidityRub)} above minimum ${formatRub(config.minOrderbookAskRub)}`,
                         enforced: config.liquidityRiskEnforced,
                         value: askLiquidityRub,
                         limit: config.minOrderbookAskRub
@@ -504,10 +513,13 @@ export default class PreBuyRiskService {
                     enforced: config.liquidityRiskEnforced
                 });
             } else {
+                const blocked = avgDailyTurnoverRub < config.minDailyTurnoverRub;
                 addCheck({
                     key: 'daily-turnover',
-                    status: avgDailyTurnoverRub < config.minDailyTurnoverRub ? 'block' : 'pass',
-                    reason: `avg daily turnover ${formatRub(avgDailyTurnoverRub)} < ${formatRub(config.minDailyTurnoverRub)}`,
+                    status: blocked ? 'block' : 'pass',
+                    reason: blocked
+                        ? `daily turnover blocked: ${formatRub(avgDailyTurnoverRub)} below minimum ${formatRub(config.minDailyTurnoverRub)}`
+                        : `daily turnover passed: ${formatRub(avgDailyTurnoverRub)} above minimum ${formatRub(config.minDailyTurnoverRub)}`,
                     enforced: config.liquidityRiskEnforced,
                     value: avgDailyTurnoverRub,
                     limit: config.minDailyTurnoverRub
@@ -529,10 +541,13 @@ export default class PreBuyRiskService {
                 });
             } else if (input.portfolioValueRub > 0) {
                 projectedSectorSharePercent = (input.sectorValueRub + input.estimatedOrderRub) / input.portfolioValueRub * 100;
+                const blocked = projectedSectorSharePercent > config.maxSectorSharePercent;
                 addCheck({
                     key: 'sector-share',
-                    status: projectedSectorSharePercent > config.maxSectorSharePercent ? 'block' : 'pass',
-                    reason: `sector ${sector} share ${formatPercent(projectedSectorSharePercent)} > ${formatPercent(config.maxSectorSharePercent)}`,
+                    status: blocked ? 'block' : 'pass',
+                    reason: blocked
+                        ? `sector share blocked: ${sector} would become ${formatPercent(projectedSectorSharePercent)}, above limit ${formatPercent(config.maxSectorSharePercent)}`
+                        : `sector share passed: ${sector} would be ${formatPercent(projectedSectorSharePercent)}, within limit ${formatPercent(config.maxSectorSharePercent)}`,
                     enforced: config.sectorRiskEnforced,
                     value: projectedSectorSharePercent,
                     limit: config.maxSectorSharePercent

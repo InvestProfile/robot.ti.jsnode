@@ -323,6 +323,24 @@ const classifyBlocker = (reason) => {
 
 const getRiskCheck = (risk, key) => risk?.checks?.find((check) => check.key === key);
 
+const riskCheckLabel = (check) => {
+  if (!check) return EMPTY;
+  if (check.key === 'ticker-loss-guard') return check.status === 'block' ? 'история тикера' : 'тикер OK';
+  if (check.key === 'sector-loss-guard') return check.status === 'block' ? 'история сектора' : 'сектор OK';
+  if (check.key === 'same-day-buy-price-confirmation') return 'докупка';
+  if (check.key === 'same-day-stop-loss-reentry') return 'после stop-loss';
+  if (check.key === 'same-day-buy-rejected-reentry') return 'после reject';
+  if (check.key === 'protective-stop-broker-rejected') return 'защитный стоп';
+  if (check.key === 'add-on-position-profit') return 'докупка';
+  if (check.key === 'anti-fomo') return check.status === 'block' ? 'пик/импульс' : 'не пик';
+  if (check.key === 'spread') return check.status === 'block' ? 'спред' : 'спред OK';
+  if (check.key === 'orderbook-ask') return check.status === 'block' ? 'стакан' : 'стакан OK';
+  if (check.key === 'daily-turnover') return check.status === 'block' ? 'оборот' : 'оборот OK';
+  if (check.key === 'sector-share') return check.status === 'block' ? 'лимит сектора' : 'сектор OK';
+  if (check.key === 'sector-performance') return check.status === 'pass' ? 'сектор OK' : 'сектор под вопросом';
+  return classifyBlocker(check.reason);
+};
+
 const PostSellConfirmation = ({ risk }) => {
   const check = getRiskCheck(risk, 'post-sell-price-confirmation');
   if (!check) {
@@ -349,17 +367,25 @@ const PostSellConfirmation = ({ risk }) => {
 const PreBuyRisk = ({ risk }) => {
   if (!risk) return <span className="muted">-</span>;
 
-  const failed = risk.checks?.filter((check) => check.key !== 'post-sell-price-confirmation' && (check.status === 'block' || check.status === 'warn' || check.status === 'unknown')) || [];
-  const visibleReasons = [
-    ...(risk.blockingReasons || []).filter((reason) => classifyBlocker(reason) !== 'вход после выхода'),
-    ...(risk.warnings || [])
+  const relevantChecks = risk.checks?.filter((check) => check.key !== 'post-sell-price-confirmation') || [];
+  const enforcedBlocks = relevantChecks.filter((check) => check.status === 'block' && check.enforced);
+  const watchChecks = relevantChecks.filter((check) => check.status === 'warn' || check.status === 'unknown' || (check.status === 'block' && !check.enforced));
+  const passedChecks = relevantChecks.filter((check) => check.status === 'pass');
+  const visibleBlocks = (risk.blockingReasons || []).filter((reason) => classifyBlocker(reason) !== 'вход после выхода');
+
+  const tone = enforcedBlocks.length || visibleBlocks.length ? 'bad' : watchChecks.length ? 'warn' : 'good';
+  const label = enforcedBlocks.length || visibleBlocks.length ? 'BLOCK' : watchChecks.length ? 'WATCH' : 'OK';
+  const titleLines = [
+    ...visibleBlocks,
+    ...watchChecks.map((check) => check.reason),
+    ...(visibleBlocks.length || watchChecks.length ? [] : passedChecks.slice(0, 6).map((check) => check.reason))
   ];
-  const tone = visibleReasons.length ? 'bad' : failed.length ? 'warn' : 'good';
-  const label = visibleReasons.length ? 'BLOCK' : failed.length ? 'WATCH' : 'OK';
-  const title = visibleReasons.join('\n') || 'Проверки ликвидности, сектора и концентрации пройдены';
-  const detail = failed.length
-    ? failed.slice(0, 2).map((check) => classifyBlocker(check.reason)).join(', ')
-    : `${percent(risk.spreadPercent)} спред`;
+  const title = titleLines.join('\n') || 'Проверки ликвидности, сектора, истории и концентрации пройдены';
+  const detail = enforcedBlocks.length
+    ? enforcedBlocks.slice(0, 2).map(riskCheckLabel).join(', ')
+    : watchChecks.length
+      ? watchChecks.slice(0, 2).map(riskCheckLabel).join(', ')
+      : `${passedChecks.length} проверок OK`;
 
   return (
     <div className="execution-cell" title={title}>
