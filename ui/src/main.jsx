@@ -300,6 +300,7 @@ const shortReason = (value) => {
 
 const classifyBlocker = (reason) => {
   const text = String(reason || '').toLowerCase();
+  if (text.includes('same-day add-on blocked')) return 'докупка без подтверждения';
   if (text.includes('re-entry blocked after same-day sell')) return 'вход после выхода';
   if (text.includes('anti-fomo')) return 'покупка на импульсе';
   if (text.includes('already in portfolio')) return 'уже в портфеле';
@@ -2860,6 +2861,8 @@ function ProtectiveStops({ data, loading, onResync }) {
           { label: 'Uncovered', value: summary.uncoveredPositions ?? 0, tone: summary.uncoveredPositions ? 'bad' : 'good', detail: 'robot-лоты без стопа' },
           { label: 'Rejected', value: rejected, tone: rejected ? 'bad' : 'good', detail: 'брокер не принял стоп' },
           { label: 'Software', value: summary.softwareFallbacks ?? 0, tone: summary.softwareFallbacks ? 'warn' : 'good', detail: 'страхует sell-loop, не брокер' },
+          { label: 'Risk', value: money(summary.unprotectedRiskRub), tone: summary.unprotectedRiskRub ? 'warn' : 'good', detail: `позиции ${money(summary.unprotectedMarketValueRub)}` },
+          { label: 'Breached', value: summary.softwareStopBreached ?? 0, tone: summary.softwareStopBreached ? 'bad' : 'good', detail: 'ниже software stop' },
           { label: 'Fallback', value: summary.stopLimitFallbacks ?? 0, tone: summary.stopLimitFallbacks ? 'warn' : 'good', detail: 'stop-limit вместо market-stop' },
           { label: 'Errors', value: summary.errors ?? 0, tone: summary.errors ? 'bad' : 'good', detail: 'ошибки API стопов' },
           { label: 'Auto sync', value: runtime.lastSyncFinishedAt ? time(runtime.lastSyncFinishedAt) : EMPTY, tone: runtime.lastError ? 'bad' : 'good', detail: runtime.lastResyncAt ? `resync ${time(runtime.lastResyncAt)}` : `${runtime.checked ?? 0} checked, ${runtime.resynced ?? 0} resynced` }
@@ -2916,6 +2919,10 @@ function ProtectiveStops({ data, loading, onResync }) {
               { key: 'lots', label: 'Ledger', width: '78px', className: 'right', render: (row) => money(row.lots) },
               { key: 'activeStopLots', label: 'Stop lots', width: '86px', className: 'right', render: (row) => money(row.activeStopLots) },
               { key: 'uncoveredLots', label: 'Без стопа', width: '86px', className: 'right', render: (row) => <span className="bad">{money(row.uncoveredLots)}</span> },
+              { key: 'uncoveredMarketValueRub', label: 'Стоимость', width: '105px', className: 'right', render: (row) => money(row.uncoveredMarketValueRub) },
+              { key: 'softwareStopPrice', label: 'Software stop', width: '115px', className: 'right', render: (row) => money(row.softwareStopPrice) },
+              { key: 'distanceToSoftwareStopPercent', label: 'До стопа', width: '88px', className: 'right', render: (row) => <span className={row.softwareStopBreached ? 'bad' : ''}>{percent(row.distanceToSoftwareStopPercent)}</span> },
+              { key: 'softwareStopRiskRub', label: 'Риск RUB', width: '95px', className: 'right', render: (row) => <span className={Number(row.softwareStopRiskRub) > 0 ? 'warn' : ''}>{money(row.softwareStopRiskRub)}</span> },
               { key: 'protectiveStopStatus', label: 'Статус', width: '140px', render: (row) => <Pill tone={protectiveStopTone(row.protectiveStopStatus)}>{row.protectiveStopStatus || 'uncovered'}</Pill> },
               { key: 'protectiveStopFailure', label: 'Причина', render: (row) => <CompactReason>{protectiveStopFailureText(row)}</CompactReason> }
             ]}

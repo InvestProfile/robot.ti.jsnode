@@ -28,6 +28,7 @@ Current buy guards:
 - Available cash.
 - Per-position concentration cap.
 - Add-on buy requires existing robot position to be profitable enough.
+- Same-day add-on for the same ticker requires price confirmation above the latest robot buy; this is price-based, not a timer cooldown.
 - Same-day re-entry after stop-loss is blocked.
 - Weak add-on protection blocks adding to a losing robot-owned position.
 - Negative technical adjustment requires a higher final score.

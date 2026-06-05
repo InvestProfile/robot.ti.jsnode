@@ -187,6 +187,53 @@ describe('PreBuyRiskService', () => {
         assert.ok(result.checks.some(check => check.key === 'add-on-position-profit' && check.status === 'pass'));
     });
 
+    it('blocks same-day add-on until price confirms above the latest buy', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([{
+            accountId: 'acc-1',
+            figi: 'figi-1',
+            instrumentId: 'uid-1',
+            direction: '1',
+            status: 'EXECUTION_REPORT_STATUS_FILL',
+            lotsExecuted: 1,
+            totalAmountUnits: '100',
+            totalAmountNano: '0',
+            createdAt: new Date()
+        }]);
+
+        const result = await PreBuyRiskService.evaluate({
+            ...baseInput,
+            currentPrice: 100.5
+        }, config);
+
+        assert.strictEqual(result.passed, false);
+        assert.ok(result.blockingReasons.some(reason => reason.includes('same-day add-on blocked')));
+        assert.ok(result.checks.some(check => check.key === 'same-day-buy-price-confirmation' && check.status === 'block'));
+    });
+
+    it('allows same-day add-on when price confirms above the latest buy', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([{
+            accountId: 'acc-1',
+            figi: 'figi-1',
+            instrumentId: 'uid-1',
+            direction: '1',
+            status: 'EXECUTION_REPORT_STATUS_FILL',
+            lotsExecuted: 1,
+            totalAmountUnits: '100',
+            totalAmountNano: '0',
+            createdAt: new Date()
+        }]);
+
+        const result = await PreBuyRiskService.evaluate({
+            ...baseInput,
+            currentPrice: 101.5
+        }, config);
+
+        assert.strictEqual(result.passed, true);
+        assert.ok(result.checks.some(check => check.key === 'same-day-buy-price-confirmation' && check.status === 'pass'));
+    });
+
     it('blocks hot same-day momentum when price is already near the recent high', async () => {
         (TradeDecisionModel.count as unknown) = async () => 0;
         mockTrades([]);

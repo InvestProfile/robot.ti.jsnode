@@ -1137,7 +1137,7 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
         }
     }
 
-    const uncoveredPositions = ledgerItems
+    const uncoveredPositions = await Promise.all(ledgerItems
         .filter(item => {
             const accountId = String(item.accountId || '');
             const instrumentUid = String(item.instrumentUid || '');
@@ -1148,7 +1148,7 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
             );
             return activeLots < Number(item.lots ?? 0);
         })
-        .map(item => {
+        .map(async item => {
         const accountId = String(item.accountId || '');
         const instrumentUid = String(item.instrumentUid || '');
         const figi = String(item.figi || '');
@@ -1157,15 +1157,58 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
             activeLotsByAccountAndInstrument.get(`${accountId}:${figi}`) ?? 0
         );
             const lastFailure = ProtectiveStopService.getLastFailure(accountId, instrumentUid);
+            const uncoveredLots = Math.max(0, Number(item.lots ?? 0) - activeLots);
+            const averagePrice = Number(item.averagePrice);
+            const currentPrice = Number(item.currentPrice);
+            const lotSize = Math.max(1, Number(item.lotSize || 1));
+            const uncoveredMarketValueRub = Number.isFinite(currentPrice) && currentPrice > 0
+                ? uncoveredLots * currentPrice * lotSize
+                : undefined;
+            let softwareStopPrice: number | undefined;
+            let softwareStopPercent: number | undefined;
+            let distanceToSoftwareStopPercent: number | undefined;
+            let softwareStopRiskRub: number | undefined;
+            let softwareStopBreached: boolean | undefined;
+
+            if (
+                instrumentUid
+                && Number.isFinite(averagePrice)
+                && averagePrice > 0
+            ) {
+                const stopPlan = await StopLossStrategy.calculateEffectiveStop({
+                    accountId,
+                    ticker: String(item.ticker || ''),
+                    instrumentUid
+                }, config);
+
+                softwareStopPercent = stopPlan.effectiveStopPercent;
+                softwareStopPrice = averagePrice * (1 - stopPlan.effectiveStopPercent / 100);
+
+                if (
+                    Number.isFinite(currentPrice)
+                    && currentPrice > 0
+                    && softwareStopPrice > 0
+                ) {
+                    distanceToSoftwareStopPercent = (currentPrice / softwareStopPrice - 1) * 100;
+                    softwareStopRiskRub = Math.max(0, currentPrice - softwareStopPrice) * uncoveredLots * lotSize;
+                    softwareStopBreached = currentPrice <= softwareStopPrice;
+                }
+            }
 
             return {
                 ...item,
                 activeStopLots: activeLots,
-                uncoveredLots: Math.max(0, Number(item.lots ?? 0) - activeLots),
+                uncoveredLots,
+                uncoveredMarketValueRub,
+                softwareStopPrice,
+                softwareStopPercent,
+                distanceToSoftwareStopPercent,
+                softwareStopRiskRub,
+                softwareStopBreached,
                 protectiveStopFailure: lastFailure,
                 protectiveStopStatus: lastFailure ? 'broker-rejected' : 'uncovered'
             };
-        });
+        }));
 
     return {
         summary: {
@@ -1186,6 +1229,9 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
                 && !config.dryRun
                 && config.liveAllowedActions.includes('sell')
             ).length,
+            unprotectedMarketValueRub: uncoveredPositions.reduce((sum, item) => sum + Number(item.uncoveredMarketValueRub ?? 0), 0),
+            unprotectedRiskRub: uncoveredPositions.reduce((sum, item) => sum + Number(item.softwareStopRiskRub ?? 0), 0),
+            softwareStopBreached: uncoveredPositions.filter(item => item.softwareStopBreached).length,
             errors: errors.length
         },
         stops,
