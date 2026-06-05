@@ -1160,9 +1160,15 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
             const uncoveredLots = Math.max(0, Number(item.lots ?? 0) - activeLots);
             const averagePrice = Number(item.averagePrice);
             const currentPrice = Number(item.currentPrice);
+            const riskMarkPrice = Number.isFinite(currentPrice) && currentPrice > 0
+                ? currentPrice
+                : Number.isFinite(averagePrice) && averagePrice > 0
+                    ? averagePrice
+                    : undefined;
+            const riskPriceSource = Number.isFinite(currentPrice) && currentPrice > 0 ? 'current' : riskMarkPrice ? 'average' : 'unknown';
             const lotSize = Math.max(1, Number(item.lotSize || 1));
-            const uncoveredMarketValueRub = Number.isFinite(currentPrice) && currentPrice > 0
-                ? uncoveredLots * currentPrice * lotSize
+            const uncoveredMarketValueRub = riskMarkPrice
+                ? uncoveredLots * riskMarkPrice * lotSize
                 : undefined;
             let softwareStopPrice: number | undefined;
             let softwareStopPercent: number | undefined;
@@ -1185,13 +1191,12 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
                 softwareStopPrice = averagePrice * (1 - stopPlan.effectiveStopPercent / 100);
 
                 if (
-                    Number.isFinite(currentPrice)
-                    && currentPrice > 0
+                    riskMarkPrice
                     && softwareStopPrice > 0
                 ) {
-                    distanceToSoftwareStopPercent = (currentPrice / softwareStopPrice - 1) * 100;
-                    softwareStopRiskRub = Math.max(0, currentPrice - softwareStopPrice) * uncoveredLots * lotSize;
-                    softwareStopBreached = currentPrice <= softwareStopPrice;
+                    distanceToSoftwareStopPercent = (riskMarkPrice / softwareStopPrice - 1) * 100;
+                    softwareStopRiskRub = Math.max(0, riskMarkPrice - softwareStopPrice) * uncoveredLots * lotSize;
+                    softwareStopBreached = riskMarkPrice <= softwareStopPrice;
                 }
             }
 
@@ -1200,6 +1205,8 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
                 activeStopLots: activeLots,
                 uncoveredLots,
                 uncoveredMarketValueRub,
+                riskMarkPrice,
+                riskPriceSource,
                 softwareStopPrice,
                 softwareStopPercent,
                 distanceToSoftwareStopPercent,

@@ -2919,7 +2919,7 @@ function ProtectiveStops({ data, loading, onResync }) {
               { key: 'lots', label: 'Ledger', width: '78px', className: 'right', render: (row) => money(row.lots) },
               { key: 'activeStopLots', label: 'Stop lots', width: '86px', className: 'right', render: (row) => money(row.activeStopLots) },
               { key: 'uncoveredLots', label: 'Без стопа', width: '86px', className: 'right', render: (row) => <span className="bad">{money(row.uncoveredLots)}</span> },
-              { key: 'uncoveredMarketValueRub', label: 'Стоимость', width: '105px', className: 'right', render: (row) => money(row.uncoveredMarketValueRub) },
+              { key: 'uncoveredMarketValueRub', label: 'Стоимость', width: '110px', className: 'right', render: (row) => <span title={row.riskPriceSource === 'average' ? 'Оценка по средней цене входа: currentPrice сейчас недоступен.' : 'Оценка по текущей цене.'}>{money(row.uncoveredMarketValueRub)}{row.riskPriceSource === 'average' ? '*' : ''}</span> },
               { key: 'softwareStopPrice', label: 'Software stop', width: '115px', className: 'right', render: (row) => money(row.softwareStopPrice) },
               { key: 'distanceToSoftwareStopPercent', label: 'До стопа', width: '88px', className: 'right', render: (row) => <span className={row.softwareStopBreached ? 'bad' : ''}>{percent(row.distanceToSoftwareStopPercent)}</span> },
               { key: 'softwareStopRiskRub', label: 'Риск RUB', width: '95px', className: 'right', render: (row) => <span className={Number(row.softwareStopRiskRub) > 0 ? 'warn' : ''}>{money(row.softwareStopRiskRub)}</span> },
