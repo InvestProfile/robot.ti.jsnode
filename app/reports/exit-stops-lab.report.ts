@@ -1,6 +1,7 @@
 import sequelize from '../config/database';
 import { getRobotConfig } from '../config/robot.config';
 import DatabaseService from '../services/database.service';
+import InstrumentsService from '../services/instruments.service';
 import TradePnlService from '../services/trade-pnl.service';
 
 interface RoundTrip {
@@ -17,6 +18,9 @@ interface RoundTrip {
     entryDecisionReason?: unknown;
     exitSignalSource?: unknown;
     exitDecisionReason?: unknown;
+    figi?: unknown;
+    instrumentId?: unknown;
+    entryTradeIds?: unknown;
 }
 
 interface ExitGroup {
@@ -47,6 +51,53 @@ const formatRub = (value: number | undefined) => `${format(value)} RUB`;
 const sourceLabel = (value: unknown) => String(value || 'unknown');
 
 const tickerLabel = (row: RoundTrip) => String(row.ticker || 'UNKNOWN').toUpperCase();
+
+const dateLabel = (value: unknown) => {
+    const date = new Date(String(value || ''));
+    return Number.isFinite(date.getTime()) ? date.toISOString().slice(0, 10) : 'unknown-date';
+};
+
+const durationMinutes = (entryAt: unknown, exitAt: unknown) => {
+    const entry = new Date(String(entryAt || '')).getTime();
+    const exit = new Date(String(exitAt || '')).getTime();
+    if (!Number.isFinite(entry) || !Number.isFinite(exit) || exit < entry) return undefined;
+    return (exit - entry) / 60_000;
+};
+
+const ageBucket = (row: RoundTrip) => {
+    const minutes = durationMinutes(row.entryAt, row.exitAt);
+    if (minutes === undefined) return 'unknown-age';
+    if (minutes < 15) return '<15m';
+    if (minutes < 60) return '15-60m';
+    if (minutes < 240) return '1-4h';
+    if (minutes < 24 * 60) return '4-24h';
+    return '>1d';
+};
+
+const entryTradeCount = (row: RoundTrip) =>
+    Array.isArray(row.entryTradeIds) ? row.entryTradeIds.length : 1;
+
+const sameDayTickerKey = (row: RoundTrip) => `${dateLabel(row.entryAt)}:${tickerLabel(row)}`;
+
+const getSectorLookup = async () => {
+    const shares = await InstrumentsService.getShares();
+    const lookup = new Map<string, string>();
+
+    for (const instrument of shares?.instruments ?? []) {
+        const sector = String(instrument.sector || 'unknown-sector');
+        if (instrument.uid) lookup.set(String(instrument.uid), sector);
+        if (instrument.figi) lookup.set(String(instrument.figi), sector);
+        if (instrument.ticker) lookup.set(String(instrument.ticker).toUpperCase(), sector);
+    }
+
+    return lookup;
+};
+
+const sectorLabel = (row: RoundTrip, sectors: Map<string, string>) =>
+    sectors.get(String(row.instrumentId || ''))
+    ?? sectors.get(String(row.figi || ''))
+    ?? sectors.get(tickerLabel(row))
+    ?? 'unknown-sector';
 
 const parsePercentAfter = (reason: unknown, label: string) => {
     const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -196,6 +247,36 @@ const printWorstTrades = (rows: RoundTrip[]) => {
     console.log('');
 };
 
+const printClusteredTrades = (rows: RoundTrip[]) => {
+    const counts = new Map<string, number>();
+    for (const row of rows) counts.set(sameDayTickerKey(row), (counts.get(sameDayTickerKey(row)) ?? 0) + 1);
+
+    const clustered = rows
+        .filter(row => (counts.get(sameDayTickerKey(row)) ?? 0) >= 2)
+        .slice()
+        .sort((a, b) => (toNumber(a.netPnlRub ?? a.grossPnlRub) ?? 0) - (toNumber(b.netPnlRub ?? b.grossPnlRub) ?? 0))
+        .slice(0, 14);
+
+    console.log('Same-Day Ticker Clusters');
+    console.log('------------------------');
+    console.log('Entry day   Ticker  Trades  Source              Net RUB   Net%     Age      Entry fills');
+    console.log('----------  ------  ------  ------------------  --------  -------  -------  -----------');
+    for (const row of clustered) {
+        const minutes = durationMinutes(row.entryAt, row.exitAt);
+        console.log([
+            dateLabel(row.entryAt).padEnd(10),
+            tickerLabel(row).padEnd(6),
+            String(counts.get(sameDayTickerKey(row)) ?? 0).padStart(6),
+            sourceLabel(row.exitSignalSource).padEnd(18),
+            format(toNumber(row.netPnlRub ?? row.grossPnlRub)).padStart(8),
+            `${format(toNumber(row.netPnlPercent ?? row.pnlPercent))}%`.padStart(7),
+            (minutes === undefined ? '-' : `${format(minutes, 0)}m`).padStart(7),
+            String(entryTradeCount(row)).padStart(11)
+        ].join('  '));
+    }
+    console.log('');
+};
+
 const main = async () => {
     const limitArg = Number(process.argv[2]);
     const limit = Number.isFinite(limitArg) && limitArg > 0 ? Math.min(Math.trunc(limitArg), 2_000) : 500;
@@ -205,6 +286,7 @@ const main = async () => {
     await DatabaseService.init();
     const report = await TradePnlService.getRoundTripPnl(config, limit, { includeCommissions });
     const roundTrips = report.closedRoundTrips as RoundTrip[];
+    const sectors = await getSectorLookup();
 
     console.log('Exit / Stops Lab');
     console.log('================');
@@ -219,8 +301,12 @@ const main = async () => {
     console.log('');
 
     printSection('By Exit Source', groupBy(roundTrips, row => sourceLabel(row.exitSignalSource)));
+    printSection('By Exit Day', groupBy(roundTrips, row => dateLabel(row.exitAt)));
+    printSection('By Holding Time', groupBy(roundTrips, ageBucket));
+    printSection('By Sector', groupBy(roundTrips, row => sectorLabel(row, sectors)));
     printSection('Worst Ticker + Exit Source', groupBy(roundTrips, row => `${tickerLabel(row)}:${sourceLabel(row.exitSignalSource)}`).slice(0, 18));
     printWorstTrades(roundTrips);
+    printClusteredTrades(roundTrips);
 
     console.log('Notes');
     console.log('-----');
