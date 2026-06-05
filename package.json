@@ -23,6 +23,7 @@
     "evidence": "npm run build && node build/reports/strategy-evidence.report.js",
     "sell:brain": "npm run build && node build/reports/sell-brain.report.js",
     "exit:lab": "npm run build && node build/reports/exit-stops-lab.report.js",
+    "stop:whatif": "npm run build && node build/reports/stop-loss-what-if.report.js",
     "fomo:whatif": "npm run build && node build/reports/anti-fomo-what-if.report.js",
     "backfill:decisions": "npm run build && node build/reports/backfill-trade-decisions.report.js",
     "social:collect": "npm run build && node build/reports/social-collector.report.js",
