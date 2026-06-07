@@ -18,6 +18,7 @@ interface BuyRiskInput {
     positionValueRub?: number;
     portfolioPositionsCount?: number;
     alreadyInPortfolio?: boolean;
+    riskStopPercent?: number;
     signal?: TradeSignal;
     tradingStatus?: number;
 }
@@ -108,6 +109,7 @@ export default class RiskManagerService {
             alreadyInPortfolio: input.alreadyInPortfolio,
             estimatedOrderRub,
             requestedLots: input.signal.quantityLots,
+            riskStopPercent: input.riskStopPercent,
             lotRub: input.signal.quantityLots && input.signal.quantityLots > 0
                 ? estimatedOrderRub / input.signal.quantityLots
                 : estimatedOrderRub

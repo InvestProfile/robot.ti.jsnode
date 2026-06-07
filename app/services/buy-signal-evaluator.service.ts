@@ -5,7 +5,7 @@ import operationService from './operations.service';
 import RiskManagerService from './risk-manager.service';
 import TradesService from './trades.service';
 import StrategyEngine from '../strategies/strategy-engine';
-import { TradeSignal } from '../strategies/trade-signal';
+import { DailyCandle, TradeSignal } from '../strategies/trade-signal';
 import ScoreBuyStrategy, { BuyScoreAnalysis } from '../strategies/score-buy.strategy';
 import { quotationToNumber } from '../utils/money';
 import MarketRegimeService from './market-regime.service';
@@ -105,6 +105,34 @@ const selectTechnicalBudgetTickers = (input: {
     const selected = nearThreshold.length > 0 ? nearThreshold : ranked.slice(0, maxTickers);
 
     return selected.map(item => item.ticker);
+};
+
+const averageDailyRangePercent = (candles: DailyCandle[] | undefined) => {
+    const ranges = (candles ?? [])
+        .map(candle => {
+            const close = Number(candle.close);
+            const high = Number(candle.high);
+            const low = Number(candle.low);
+            if (!Number.isFinite(close) || close <= 0 || !Number.isFinite(high) || !Number.isFinite(low)) return undefined;
+            return Math.max(0, (high - low) / close * 100);
+        })
+        .filter((value): value is number => value !== undefined);
+
+    return ranges.length > 0
+        ? ranges.reduce((sum, value) => sum + value, 0) / ranges.length
+        : undefined;
+};
+
+const buyRiskStopPercent = (candles: DailyCandle[] | undefined, config: RobotConfig) => {
+    const avgRange = averageDailyRangePercent(candles);
+    const baseStop = Math.max(0, Number(config.stopLossPercent) || 0);
+    const volatilityStop = avgRange !== undefined
+        ? avgRange * Math.max(0, Number(config.stopLossVolatilityMultiplier) || 0)
+        : undefined;
+    const uncapped = Math.max(baseStop, volatilityStop ?? 0);
+    const maxStop = Math.max(0, Number(config.stopLossMaxPercent) || 0);
+
+    return maxStop > 0 ? Math.min(uncapped, maxStop) : uncapped;
 };
 
 export default class BuySignalEvaluatorService {
@@ -354,6 +382,7 @@ export default class BuySignalEvaluatorService {
                 positionValueRub,
                 portfolioPositionsCount,
                 alreadyInPortfolio,
+                riskStopPercent: buyRiskStopPercent(dailyCandles, buyConfig),
                 signal: marketRegime.passed ? signal : undefined,
                 tradingStatus: tradingStatus?.tradingStatus
             }, config);

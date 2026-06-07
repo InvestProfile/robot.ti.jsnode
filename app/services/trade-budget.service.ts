@@ -7,6 +7,7 @@ export interface TradeBudgetInput {
     estimatedOrderRub: number;
     requestedLots?: number;
     lotRub?: number;
+    riskStopPercent?: number;
     portfolioValueRub?: number;
     positionValueRub?: number;
     portfolioPositionsCount?: number;
@@ -21,6 +22,8 @@ export interface TradeBudgetResult {
     projectedPositionRub?: number;
     projectedPositionSharePercent?: number;
     maxPositionRub?: number;
+    maxRiskAdjustedOrderRub?: number;
+    riskStopPercent?: number;
 }
 
 export interface AccountBudgetPayload {
@@ -102,7 +105,13 @@ export default class TradeBudgetService {
         const remainingPositionRub = maxPositionRub === undefined
             ? Number.POSITIVE_INFINITY
             : Math.max(0, maxPositionRub - positionValueRub);
+        const baseStopPercent = Math.max(0, Number(config.stopLossPercent) || 0);
+        const riskStopPercent = Math.max(baseStopPercent, Number(input.riskStopPercent) || 0);
+        const maxRiskAdjustedOrderRub = baseStopPercent > 0 && riskStopPercent > baseStopPercent
+            ? config.maxOrderRub * baseStopPercent / riskStopPercent
+            : config.maxOrderRub;
         const maxLotsByOrder = config.maxOrderRub > 0 ? Math.floor(config.maxOrderRub / lotRub) : 0;
+        const maxLotsByRisk = maxRiskAdjustedOrderRub > 0 ? Math.floor(maxRiskAdjustedOrderRub / lotRub) : 0;
         const maxLotsByCash = Math.floor(Math.max(0, input.availableCashRub) / lotRub);
         const maxLotsByDailyRub = Math.floor(remainingDailyRub / lotRub);
         const maxLotsByPosition = Number.isFinite(remainingPositionRub)
@@ -113,6 +122,7 @@ export default class TradeBudgetService {
             requestedLots,
             maxLotsPerOrder,
             maxLotsByOrder,
+            maxLotsByRisk,
             maxLotsByCash,
             maxLotsByDailyRub,
             maxLotsByPosition
@@ -125,6 +135,16 @@ export default class TradeBudgetService {
 
         if (maxLotsByOrder <= 0) {
             return { allowed: false, reason: 'estimated lot is above max order RUB', estimatedOrderRub: rawEstimatedOrderRub };
+        }
+
+        if (maxLotsByRisk <= 0) {
+            return {
+                allowed: false,
+                reason: `risk budget limit reached: lot ${lotRub.toFixed(2)} RUB > risk-adjusted order ${maxRiskAdjustedOrderRub.toFixed(2)} RUB at stop ${riskStopPercent.toFixed(2)}%`,
+                estimatedOrderRub: rawEstimatedOrderRub,
+                maxRiskAdjustedOrderRub,
+                riskStopPercent
+            };
         }
 
         if (maxLotsByDailyRub <= 0) {
@@ -159,7 +179,9 @@ export default class TradeBudgetService {
                 quantityLots,
                 projectedPositionRub,
                 projectedPositionSharePercent,
-                maxPositionRub
+                maxPositionRub,
+                maxRiskAdjustedOrderRub,
+                riskStopPercent
             };
         }
 
@@ -175,20 +197,24 @@ export default class TradeBudgetService {
                 quantityLots,
                 projectedPositionRub,
                 projectedPositionSharePercent,
-                maxPositionRub
+                maxPositionRub,
+                maxRiskAdjustedOrderRub,
+                riskStopPercent
             };
         }
 
         return {
             allowed: true,
             reason: quantityLots < requestedLots
-                ? `trade budget resized: ${quantityLots}/${requestedLots} lots`
+                ? `trade budget resized: ${quantityLots}/${requestedLots} lots${riskStopPercent > baseStopPercent ? `, risk stop ${riskStopPercent.toFixed(2)}%` : ''}`
                 : 'trade budget passed',
             estimatedOrderRub,
             quantityLots,
             projectedPositionRub,
             projectedPositionSharePercent,
-            maxPositionRub
+            maxPositionRub,
+            maxRiskAdjustedOrderRub,
+            riskStopPercent
         };
     }
 }
