@@ -137,6 +137,15 @@ const buyRiskStopPercent = (candles: DailyCandle[] | undefined, config: RobotCon
     return maxStop > 0 ? Math.min(uncapped, maxStop) : uncapped;
 };
 
+const maxRiskAdjustedOrderRub = (config: RobotConfig, riskStopPercent: number) => {
+    const baseStop = Math.max(0, Number(config.stopLossPercent) || 0);
+    const maxOrderRub = Math.max(0, Number(config.maxOrderRub) || 0);
+
+    return baseStop > 0 && riskStopPercent > baseStop
+        ? maxOrderRub * baseStop / riskStopPercent
+        : maxOrderRub;
+};
+
 export default class BuySignalEvaluatorService {
     static async evaluateAccount(
         accountId: string,
@@ -328,6 +337,8 @@ export default class BuySignalEvaluatorService {
                 buyTickers: effectiveBuyTickers
             };
             const dailyCandles = dailyCandlesByUid.get(instrument.uid);
+            const riskStopPercent = buyRiskStopPercent(dailyCandles, buyConfig);
+            const riskAdjustedOrderRub = maxRiskAdjustedOrderRub(buyConfig, riskStopPercent);
             const dailyCloses = dailyClosesByUid.get(instrument.uid);
             const social = socialByTicker.get(instrument.ticker.toUpperCase());
             const analyst = scoreAdjustments.analyst.get(instrument.ticker.toUpperCase());
@@ -384,7 +395,7 @@ export default class BuySignalEvaluatorService {
                 positionValueRub,
                 portfolioPositionsCount,
                 alreadyInPortfolio,
-                riskStopPercent: buyRiskStopPercent(dailyCandles, buyConfig),
+                riskStopPercent,
                 signal: marketRegime.passed ? signal : undefined,
                 tradingStatus: tradingStatus?.tradingStatus
             }, config);
@@ -445,8 +456,8 @@ export default class BuySignalEvaluatorService {
                 projectedPositionValueRub: risk.projectedPositionRub,
                 projectedPositionSharePercent: risk.projectedPositionSharePercent,
                 maxPositionValueRub: risk.maxPositionRub,
-                maxRiskAdjustedOrderRub: risk.maxRiskAdjustedOrderRub,
-                riskStopPercent: risk.riskStopPercent,
+                maxRiskAdjustedOrderRub: risk.maxRiskAdjustedOrderRub ?? riskAdjustedOrderRub,
+                riskStopPercent: risk.riskStopPercent ?? riskStopPercent,
                 portfolioPositionsCount,
                 preBuyRisk
             };
