@@ -1036,7 +1036,7 @@ tbody tr:hover td {
 }
 
 .buy-preview-table {
-  min-width: 1780px;
+  min-width: 1930px;
 }
 
 .buy-preview-table th,
@@ -1046,6 +1046,24 @@ tbody tr:hover td {
 
 .buy-preview-table .reason {
   min-width: 340px;
+}
+
+.trade-risk-cell {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.risk-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.risk-main strong {
+  color: #e8eef8;
+  white-space: nowrap;
 }
 
 .trade-review-table {

@@ -395,6 +395,32 @@ const PreBuyRisk = ({ risk }) => {
   );
 };
 
+const TradeRiskBudget = ({ row }) => {
+  const stop = Number(row.riskStopPercent);
+  const amount = Number(row.estimatedOrderRub);
+  const riskRub = Number.isFinite(stop) && Number.isFinite(amount) ? amount * stop / 100 : undefined;
+  const maxRiskOrder = Number(row.maxRiskAdjustedOrderRub);
+  const baseOrder = Number(row.signal?.estimatedOrderRub ?? row.estimatedOrderRub);
+  const resized = Number.isFinite(maxRiskOrder) && Number.isFinite(baseOrder) && maxRiskOrder + 0.01 < baseOrder;
+  const tone = row.status !== 'allowed' && String(row.reason || '').includes('risk budget') ? 'bad' : resized ? 'warn' : 'good';
+  const title = [
+    Number.isFinite(stop) ? `Адаптивный стоп риска: ${percent(stop)}` : 'Адаптивный стоп риска неизвестен',
+    riskRub !== undefined ? `Риск этой заявки до стопа: ${money(riskRub)} RUB` : undefined,
+    Number.isFinite(maxRiskOrder) ? `Максимум заявки с учетом риска: ${money(maxRiskOrder)} RUB` : undefined,
+    resized ? 'Размер заявки уменьшен, чтобы широкий стоп не увеличил рублевый риск.' : 'Заявка помещается в риск-бюджет.'
+  ].filter(Boolean).join('\n');
+
+  return (
+    <div className="trade-risk-cell" title={title}>
+      <div className="risk-main">
+        <Pill tone={tone}>{Number.isFinite(stop) ? percent(stop) : 'N/A'}</Pill>
+        <strong>{riskRub !== undefined ? `${money(riskRub)} RUB` : EMPTY}</strong>
+      </div>
+      <div className="muted">{resized ? `лимит ${money(maxRiskOrder)}` : 'риск до стопа'}</div>
+    </div>
+  );
+};
+
 const buildSectorFilterRows = (previews) => {
   const groups = new Map();
 
@@ -1399,6 +1425,7 @@ function Buy({ data, loadingKeys }) {
             { key: 'score', label: 'Качество кандидата', width: '430px', render: (row) => <ScoreBreakdown analysis={row.scoreAnalysis} /> },
             { key: 'status', label: 'Исполнение', width: '150px', render: (row) => <ExecutionDecision status={row.status} reason={row.reason} /> },
             { key: 'estimatedOrderRub', label: 'Сумма', width: '105px', className: 'right', render: (row) => money(row.estimatedOrderRub) },
+            { key: 'tradeRisk', label: 'Риск сделки', width: '145px', render: (row) => <TradeRiskBudget row={row} /> },
             { key: 'projectedPositionSharePercent', label: 'Доля', width: '92px', className: 'right', render: (row) => percent(row.projectedPositionSharePercent) },
             { key: 'postSellConfirmation', label: 'После выхода', width: '165px', render: (row) => <PostSellConfirmation risk={row.preBuyRisk} /> },
             { key: 'preBuyRisk', label: 'Риск-фильтр', width: '180px', render: (row) => <PreBuyRisk risk={row.preBuyRisk} /> },

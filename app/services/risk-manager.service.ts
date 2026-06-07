@@ -32,6 +32,8 @@ interface RiskResult {
     projectedPositionRub?: number;
     projectedPositionSharePercent?: number;
     maxPositionRub?: number;
+    maxRiskAdjustedOrderRub?: number;
+    riskStopPercent?: number;
 }
 
 const NORMAL_TRADING_STATUS = 5;
@@ -123,7 +125,9 @@ export default class RiskManagerService {
                 estimatedOrderRub: budget.estimatedOrderRub,
                 projectedPositionRub: budget.projectedPositionRub,
                 projectedPositionSharePercent: budget.projectedPositionSharePercent,
-                maxPositionRub: budget.maxPositionRub
+                maxPositionRub: budget.maxPositionRub,
+                maxRiskAdjustedOrderRub: budget.maxRiskAdjustedOrderRub,
+                riskStopPercent: budget.riskStopPercent
             };
         }
 
@@ -140,7 +144,9 @@ export default class RiskManagerService {
             estimatedOrderRub: budget.estimatedOrderRub,
             projectedPositionRub: budget.projectedPositionRub,
             projectedPositionSharePercent: budget.projectedPositionSharePercent,
-            maxPositionRub: budget.maxPositionRub
+            maxPositionRub: budget.maxPositionRub,
+            maxRiskAdjustedOrderRub: budget.maxRiskAdjustedOrderRub,
+            riskStopPercent: budget.riskStopPercent
         };
     }
 }

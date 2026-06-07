@@ -44,6 +44,8 @@ export interface BuySignalPreview {
     projectedPositionValueRub?: number;
     projectedPositionSharePercent?: number;
     maxPositionValueRub?: number;
+    maxRiskAdjustedOrderRub?: number;
+    riskStopPercent?: number;
     portfolioPositionsCount?: number;
     preBuyRisk?: PreBuyRiskResult;
 }
@@ -443,6 +445,8 @@ export default class BuySignalEvaluatorService {
                 projectedPositionValueRub: risk.projectedPositionRub,
                 projectedPositionSharePercent: risk.projectedPositionSharePercent,
                 maxPositionValueRub: risk.maxPositionRub,
+                maxRiskAdjustedOrderRub: risk.maxRiskAdjustedOrderRub,
+                riskStopPercent: risk.riskStopPercent,
                 portfolioPositionsCount,
                 preBuyRisk
             };
