@@ -7,6 +7,8 @@ import marketData from './marketData.service';
 import { quotationToNumber } from '../utils/money';
 import SellPolicyService from './sell-policy.service';
 import ProtectiveStopService from './protective-stop.service';
+import RobotPositionLedgerService from './robot-position-ledger.service';
+import ExitPolicyCandidateService from './exit-policy-candidate.service';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -19,6 +21,13 @@ export default class SellBrainService {
     static async evaluate(config: RobotConfig) {
         const shares = await InstrumentsService.getShares();
         const instruments = shares?.instruments ?? [];
+        const ledger = await RobotPositionLedgerService.getLedger(config);
+        const ledgerEntries: Array<[string, { accountId?: string; lastTradeAt?: Date | string }]> = [];
+        for (const item of ledger.items || []) {
+            if (item.instrumentUid) ledgerEntries.push([`${item.accountId}:${item.instrumentUid}`, item]);
+            if (item.figi) ledgerEntries.push([`${item.accountId}:${item.figi}`, item]);
+        }
+        const ledgerByInstrument = new Map(ledgerEntries);
         const items = [];
 
         for (const account of getAllAccounts(config)) {
@@ -54,7 +63,9 @@ export default class SellBrainService {
                 }
 
                 const tradingStatus = tradingStatuses.get(position.instrumentUid);
-                const signal = await StrategyEngine.evaluate({
+                const ledgerItem = ledgerByInstrument.get(`${account.accountId}:${position.instrumentUid}`)
+                    ?? ledgerByInstrument.get(`${account.accountId}:${position.figi}`);
+                const strategyInput = {
                     accountId: account.accountId,
                     figi: position.figi,
                     instrumentUid: position.instrumentUid,
@@ -62,8 +73,11 @@ export default class SellBrainService {
                     name: instrument?.name,
                     averagePrice,
                     currentPrice,
-                    quantityLots
-                }, config);
+                    quantityLots,
+                    lastTradeAt: ledgerItem?.lastTradeAt
+                };
+                const signal = await StrategyEngine.evaluate(strategyInput, config);
+                const exitPolicy = await ExitPolicyCandidateService.evaluate(strategyInput, config, signal);
                 const risk = RiskManagerService.evaluateSignal({
                     averagePrice,
                     currentPrice,
@@ -127,7 +141,8 @@ export default class SellBrainService {
                     robotProfitPercent: sellPolicy?.robotProfitPercent,
                     sellPolicy: sellPolicy?.reason,
                     confidence: signal?.confidence,
-                    factors: signal?.factors
+                    factors: signal?.factors,
+                    exitPolicy
                 });
             }
         }
@@ -135,6 +150,9 @@ export default class SellBrainService {
         const sell = items.filter(item => item.action === 'sell' && item.status === 'allowed').length;
         const hold = items.filter(item => item.action === 'hold').length;
         const blocked = items.filter(item => item.status === 'blocked').length;
+        const exitPolicyDisagreements = items.filter(item => item.exitPolicy?.status === 'would-hold' || item.exitPolicy?.status === 'would-sell').length;
+        const exitPolicyWouldHold = items.filter(item => item.exitPolicy?.status === 'would-hold').length;
+        const exitPolicyWouldSell = items.filter(item => item.exitPolicy?.status === 'would-sell').length;
 
         return {
             generatedAt: new Date().toISOString(),
@@ -142,7 +160,14 @@ export default class SellBrainService {
                 positions: items.length,
                 sell,
                 hold,
-                blocked
+                blocked,
+                exitPolicy: {
+                    label: 'ATR x2 max10',
+                    mode: 'observe',
+                    disagreements: exitPolicyDisagreements,
+                    wouldHold: exitPolicyWouldHold,
+                    wouldSell: exitPolicyWouldSell
+                }
             },
             items
         };

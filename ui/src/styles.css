@@ -906,6 +906,27 @@ tbody tr:hover td {
   overflow: auto;
 }
 
+.policy-cell {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.policy-cell .pill {
+  width: fit-content;
+}
+
+.policy-cell small,
+.policy-cell span {
+  min-width: 0;
+  color: #93a1b2;
+  font-size: 12px;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .filters {
   display: grid;
   grid-template-columns: repeat(5, minmax(130px, 1fr));

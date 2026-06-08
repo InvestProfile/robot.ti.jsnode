@@ -553,6 +553,35 @@ const CompactReason = ({ children, title }) => {
   );
 };
 
+const exitPolicyTone = (status) => {
+  if (status === 'would-hold') return 'warn';
+  if (status === 'would-sell') return 'bad';
+  if (status === 'same-sell') return 'bad';
+  if (status === 'same-hold') return 'good';
+  return 'neutral';
+};
+
+const exitPolicyLabel = (status) => {
+  if (status === 'would-hold') return 'hold?';
+  if (status === 'would-sell') return 'sell?';
+  if (status === 'same-sell') return 'same sell';
+  if (status === 'same-hold') return 'same hold';
+  if (status === 'not-applicable') return 'n/a';
+  return status || EMPTY;
+};
+
+const ExitPolicyCell = ({ policy }) => {
+  if (!policy) return <span className="muted">-</span>;
+
+  return (
+    <div className="policy-cell" title={policy.reason}>
+      <Pill tone={exitPolicyTone(policy.status)}>{exitPolicyLabel(policy.status)}</Pill>
+      <small>{policy.label}</small>
+      <span>{money(policy.currentStopPercent)}% → {money(policy.candidateStopPercent)}%</span>
+    </div>
+  );
+};
+
 const Card = ({ title, icon: Icon, help, children, className }) => (
   <section className={cls('panel', className)}>
     <div className="panel-head">
@@ -1611,6 +1640,8 @@ function Sell({ data, loadingKeys }) {
   const observeSignals = items.filter((row) => row.accountMode === 'observe' && row.action === 'sell');
   const sellEvents = robotEvents.filter((row) => row.direction === 'sell');
   const lastSell = sellEvents[0];
+  const exitPolicy = data.sellBrain?.summary?.exitPolicy || {};
+  const exitPolicyDisagreements = Number(exitPolicy.disagreements || 0);
 
   const sellColumns = [
     { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
@@ -1621,6 +1652,7 @@ function Sell({ data, loadingKeys }) {
     { key: 'quantityLots', label: 'Total', className: 'right', render: (row) => row.quantityLots ?? '-' },
     { key: 'profitPercent', label: 'P/L', className: 'right', render: (row) => percent(row.profitPercent) },
     { key: 'robotProfitPercent', label: 'Robot P/L', className: 'right', render: (row) => percent(row.robotProfitPercent) },
+    { key: 'exitPolicy', label: 'Exit lab', width: '150px', render: (row) => <ExitPolicyCell policy={row.exitPolicy} /> },
     { key: 'reason', label: 'Reason', className: 'reason', render: (row) => <Reason>{row.reason}</Reason> }
   ];
 
@@ -1633,6 +1665,7 @@ function Sell({ data, loadingKeys }) {
             { label: 'Robot-owned', value: robotLedger.summary?.positions ?? 0, tone: Number(robotLedger.summary?.positions || 0) ? 'good' : 'warn', detail: 'позиций в ledger робота' },
             { label: 'Можно продать', value: executable.length, tone: executable.length ? 'bad' : 'good', detail: `${policyBlocked.length} заблокировано политикой` },
             { label: 'В фильтре', value: `${filteredExecutable.length} / ${filteredLiveCandidates.length}`, tone: filteredExecutable.length ? 'bad' : 'good', detail: `${filteredPolicyBlocked.length} блок/hold сейчас` },
+            { label: 'Exit lab', value: exitPolicyDisagreements, tone: exitPolicyDisagreements ? 'warn' : 'good', detail: `${exitPolicy.label || 'ATR x2 max10'} · ${exitPolicy.wouldHold || 0} hold / ${exitPolicy.wouldSell || 0} sell` },
             { label: 'Live-продажа', value: sellArmed ? 'ON' : 'OFF', tone: sellArmed ? 'bad' : 'good', detail: liveActions.join(', ') || EMPTY },
             { label: 'Последняя продажа', value: lastSell?.ticker || EMPTY, tone: lastSell ? 'warn' : 'neutral', detail: lastSell ? `${time(lastSell.at)} · ${money(lastSell.price)} RUB` : 'продаж в ledger пока нет' }
           ]}
@@ -1647,6 +1680,7 @@ function Sell({ data, loadingKeys }) {
         <div className="stats compact">
           <Stat label="Можно исполнить" value={executable.length} tone={executable.length ? 'bad' : 'good'} />
           <Stat label="Блок политикой" value={policyBlocked.length} />
+          <Stat label="Exit lab спорит" value={exitPolicyDisagreements} tone={exitPolicyDisagreements ? 'warn' : 'good'} title={`${exitPolicy.label || 'ATR x2 max10'} observe-only: не меняет реальные продажи.`} />
           <Stat label="Лоты робота" value={money(executable.reduce((sum, row) => sum + Number(row.orderLots || 0), 0))} />
           <Stat label="Live-действия" value={liveActions.join(', ') || '-'} tone={sellArmed ? 'bad' : 'good'} />
         </div>

@@ -24,6 +24,7 @@ Last updated: 2026-06-08.
 - Added broker-rejected software-stop watch diagnostics: uncovered positions now show whether they are losing, near software stop, or already breached.
 - Added recent broker SELL sync: the runtime periodically imports filled broker sell operations missing from local `trades`, so protective-stop exits do not disappear from P/L until a manual report is run.
 - Expanded `npm run stop:whatif` into an exit lab for wider stops, soft grace, confirmation buffer, and trailing activation thresholds. It is read-only and must not be treated as proof that deferred stops would have become profitable.
+- Added live sell-page `Exit lab` diagnostics: every current position compares the active exit decision with observe-only `ATR x2 max10`, showing where the candidate would hold or sell differently without changing real orders.
 
 ## Protective Stop Orders
 
