@@ -18,7 +18,21 @@ const envVariables = getEnv();
 const FAILED_STOP_RETRY_COOLDOWN_MS = 30 * 60 * 1000;
 const STOP_DRIFT_RESYNC_PERCENT = 0.5;
 const STOP_LIMIT_FALLBACK_BUFFER_PERCENT = 0.5;
-const failedStopAttempts = new Map<string, { failedAt: number; reason: string }>();
+type ProtectiveStopFailureKind =
+    | 'price-limits'
+    | 'invalid-argument'
+    | 'fallback-rejected'
+    | 'broker-api'
+    | 'unknown';
+
+interface ProtectiveStopFailure {
+    failedAt: number;
+    kind: ProtectiveStopFailureKind;
+    reason: string;
+    shortReason: string;
+}
+
+const failedStopAttempts = new Map<string, ProtectiveStopFailure>();
 
 const roundSellStopPrice = (price: number, minPriceIncrement?: number) => {
     if (!Number.isFinite(minPriceIncrement) || !minPriceIncrement || minPriceIncrement <= 0) return price;
@@ -32,6 +46,56 @@ const failedStopKey = (accountId: string, instrumentUid: string) => `${accountId
 const isInvalidStopOrderArgument = (error: unknown) => {
     const message = error instanceof Error ? error.message : String(error);
     return message.includes('INVALID_ARGUMENT') && message.includes('30099');
+};
+
+const classifyStopFailure = (reason: string): Omit<ProtectiveStopFailure, 'failedAt'> => {
+    const lower = reason.toLowerCase();
+
+    if (lower.includes('outside the limits') || lower.includes('outside limits')) {
+        return {
+            kind: 'price-limits',
+            shortReason: 'broker price limits',
+            reason
+        };
+    }
+
+    if (lower.includes('fallback post failed')) {
+        return {
+            kind: 'fallback-rejected',
+            shortReason: 'fallback rejected',
+            reason
+        };
+    }
+
+    if (lower.includes('invalid_argument') && lower.includes('30099')) {
+        return {
+            kind: 'invalid-argument',
+            shortReason: 'invalid stop arguments',
+            reason
+        };
+    }
+
+    if (lower.includes('resource_exhausted') || lower.includes('unavailable') || lower.includes('deadline')) {
+        return {
+            kind: 'broker-api',
+            shortReason: 'broker api error',
+            reason
+        };
+    }
+
+    return {
+        kind: 'unknown',
+        shortReason: 'stop rejected',
+        reason
+    };
+};
+
+const rememberStopFailure = (key: string, reason: string) => {
+    const classified = classifyStopFailure(reason);
+    failedStopAttempts.set(key, {
+        ...classified,
+        failedAt: Date.now()
+    });
 };
 
 const buildStopLimitFallbackPrice = (stopPrice: number, minPriceIncrement?: number) => {
@@ -68,7 +132,9 @@ export default class ProtectiveStopService {
         const cooldownLeftMs = Math.max(0, FAILED_STOP_RETRY_COOLDOWN_MS - (Date.now() - failure.failedAt));
         return {
             failedAt: new Date(failure.failedAt).toISOString(),
+            kind: failure.kind,
             reason: failure.reason,
+            shortReason: failure.shortReason,
             cooldownLeftMs
         };
     }
@@ -303,15 +369,15 @@ export default class ProtectiveStopService {
 
                     if (!response && fallbackErrors.length > 0) {
                         const reason = fallbackErrors.join(' | ');
-                        failedStopAttempts.set(failureKey, { failedAt: Date.now(), reason });
+                        rememberStopFailure(failureKey, `fallback post failed: ${reason}`);
                         throw new Error(`protective stop fallback post failed: ${reason}`);
                     }
                 }
             }
 
             if (!response) {
-            const reason = error instanceof Error ? error.message : String(error);
-            failedStopAttempts.set(failureKey, { failedAt: Date.now(), reason });
+                const reason = error instanceof Error ? error.message : String(error);
+                rememberStopFailure(failureKey, reason);
                 throw new Error(`protective stop post failed: ${reason}; diagnostics=${JSON.stringify(baseDiagnostics)}`);
             }
         }

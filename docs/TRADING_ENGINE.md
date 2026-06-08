@@ -27,6 +27,7 @@ Current buy guards:
 - Daily order/budget caps.
 - Available cash.
 - Per-position concentration cap.
+- Volatility-aware trade budget: when the adaptive stop for a candidate is wider than the base stop, the allowed order size is reduced so nominal risk stays closer to the configured budget.
 - Add-on buy requires existing robot position to be profitable enough.
 - Same-day add-on for the same ticker requires price confirmation above the latest robot buy; this is price-based, not a timer cooldown.
 - Same-day re-entry after stop-loss is blocked.
@@ -35,6 +36,7 @@ Current buy guards:
 - Negative technical adjustment requires a higher final score.
 - Anti-FOMO blocks buys when price is close to the recent high and either same-day momentum is hot or the move is already too large versus the instrument's normal daily range.
 - External analyst/social/technical data may adjust score, but stale positive analyst data should not make the robot more aggressive.
+- Dashboard buy preview has a `Риск сделки` column with adaptive stop %, approximate RUB risk to stop, and risk-adjusted max order.
 
 ## Sell Pipeline
 

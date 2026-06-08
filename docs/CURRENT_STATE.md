@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: 2026-05-28.
+Last updated: 2026-06-08.
 
 ## Operating Mode
 
@@ -18,6 +18,8 @@ Last updated: 2026-05-28.
 - Added same-day stop-loss re-entry protection.
 - Added net P/L support using broker report commissions where matched.
 - Added protective stop handling for robot-owned positions.
+- Added volatility-aware trade budget sizing: buy preview now exposes adaptive `riskStopPercent` and `maxRiskAdjustedOrderRub` so the UI can show per-trade risk instead of only order amount.
+- Added structured protective stop rejection diagnostics: remembered broker/API failures include `kind`, `shortReason`, full `reason`, `failedAt`, and retry cooldown.
 
 ## Protective Stop Orders
 
@@ -30,13 +32,14 @@ Changes already made:
 - If broker rejects market stop-loss with `INVALID_ARGUMENT: 30099`, the robot retries once as stop-limit with a limit price below the stop trigger.
 - Failed protective stop attempts are throttled for 30 minutes per account/instrument.
 - Safe diagnostics are logged without secrets.
+- Latest protective stop failure is exposed to `/api/protective-stops` and shown in the dashboard as a short reason such as `broker price limits`, with the full broker/API error in details.
 - Sync skips stale protective stops when current price is already at or below the calculated stop.
 - Sync now skips robot-ledger positions that are absent from the broker portfolio (`currentPrice` missing/zero), because stop orders against absent positions produced `30099`.
 
 Current observation:
 
-- Fresh real buys received active protective stops.
-- After skipping absent broker positions, logs showed `active sell stops already cover ...` without new `30099` spam.
+- Fresh real buys usually receive active protective stops; if the broker rejects one, the position is marked as `broker-rejected`/software fallback instead of silently looking covered.
+- `INVALID_ARGUMENT: 30099` with text like `price is outside the limits for this instrument` is classified as `price-limits`; the robot cools down retries and blocks new buys for that account/instrument until a protective stop is accepted.
 - There are still historical/ledger mismatches to audit separately: some old robot-owned ledger positions are no longer present in the broker portfolio.
 
 ## Recent Server Commands

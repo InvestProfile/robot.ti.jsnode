@@ -51,9 +51,20 @@ Current implementation:
 - Skips stale stop creation when current price is already at/below calculated stop.
 - Cools down failed attempts for 30 minutes per account/instrument.
 - Logs diagnostics without secrets when stop placement fails.
+- Remembers the latest failed attempt in process memory with:
+  - `kind`: `price-limits`, `invalid-argument`, `fallback-rejected`, `broker-api`, or `unknown`;
+  - `shortReason`: compact dashboard label;
+  - full broker/API `reason`;
+  - `failedAt` and retry cooldown.
 - Dashboard marks uncovered robot positions as `broker rejected` when the latest protective stop attempt was rejected by the broker/API, counts active stop-limit fallbacks separately, and shows `software` fallback coverage when live sell is enabled.
 - Software fallback means the normal sell loop still evaluates `StopLossStrategy` and submits a sell through the regular order/accounting path. It is not as strong as broker-side protection because it depends on the robot process being alive.
 - New buys are blocked while the current process remembers a broker protective stop rejection for the same account/instrument.
+
+Interpretation:
+
+- `price-limits` usually means the broker rejected the stop/limit price as outside the current exchange limits for that instrument. Do not keep blindly retrying the same request; inspect the position and let the next sync recalculate after the market moves.
+- `fallback-rejected` means both the market stop-loss attempt and stop-limit fallback failed.
+- A `broker-rejected` uncovered position is not unmonitored: the software sell loop can still exit it when live sell is enabled, but broker-side protection is missing.
 
 Useful log query:
 

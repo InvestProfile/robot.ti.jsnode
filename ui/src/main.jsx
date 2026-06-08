@@ -537,17 +537,18 @@ const Reason = ({ children }) => {
   );
 };
 
-const CompactReason = ({ children }) => {
+const CompactReason = ({ children, title }) => {
   const text = String(children || EMPTY);
   const label = classifyBlocker(text);
   const displayLabel = label !== text && label !== EMPTY ? label : shortReason(text);
+  const tooltip = title || text;
 
   if (!text || text === EMPTY) return <span className="muted">-</span>;
 
   return (
-    <details className="compact-reason" title={text}>
+    <details className="compact-reason" title={tooltip}>
       <summary>{displayLabel}</summary>
-      <p>{text}</p>
+      <p>{tooltip}</p>
     </details>
   );
 };
@@ -2885,9 +2886,24 @@ const protectiveStopTone = (status) => {
 const protectiveStopFailureText = (row) => {
   const failure = row?.protectiveStopFailure;
   if (!failure) return EMPTY;
+  const shortReason = String(failure.shortReason || failure.kind || EMPTY);
   const reason = String(failure.reason || failure.message || failure.error || EMPTY);
-  const at = failure.at || failure.createdAt || failure.timestamp;
-  return at ? `${reason} (${time(at)})` : reason;
+  const cooldownMs = Number(failure.cooldownLeftMs || 0);
+  const cooldown = cooldownMs > 0 ? `, retry через ${Math.ceil(cooldownMs / 60000)} мин` : '';
+  const at = failure.failedAt || failure.at || failure.createdAt || failure.timestamp;
+  const visible = shortReason && shortReason !== EMPTY ? shortReason : reason;
+  return at ? `${visible}${cooldown} (${time(at)})` : `${visible}${cooldown}`;
+};
+
+const protectiveStopFailureTitle = (row) => {
+  const failure = row?.protectiveStopFailure;
+  if (!failure) return EMPTY;
+  return [
+    failure.kind ? `kind: ${failure.kind}` : '',
+    failure.shortReason ? `short: ${failure.shortReason}` : '',
+    failure.cooldownLeftMs ? `cooldown: ${Math.ceil(Number(failure.cooldownLeftMs) / 60000)} min` : '',
+    failure.reason || failure.message || failure.error || ''
+  ].filter(Boolean).join('\n');
 };
 
 const stopOrderTypeText = (row) => {
@@ -2958,10 +2974,10 @@ function ProtectiveStops({ data, loading, onResync }) {
           <div className="audit-callout">
             <Pill tone="bad">{uncovered.length} без стопа</Pill>
             {rejected ? <Pill tone="bad">{rejected} broker rejected</Pill> : null}
-            <span title={uncovered.map(protectiveStopFailureText).filter((value) => value && value !== EMPTY).join('\n')}>
+            <span title={uncovered.map(protectiveStopFailureTitle).filter((value) => value && value !== EMPTY).join('\n')}>
               {uncovered.slice(0, 5).map((row) => {
                 const label = row.ticker || row.figi || row.instrumentUid;
-                return row.protectiveStopFailure ? `${label}: broker rejected` : label;
+                return row.protectiveStopFailure ? `${label}: ${row.protectiveStopFailure.shortReason || 'broker rejected'}` : label;
               }).join(', ')}
             </span>
             <strong>{rejected ? 'Брокер отклонил protective stop. Позиция остается без брокерского аварийного стопа.' : 'Нужно проверить постановку protective stop.'}</strong>
@@ -2979,7 +2995,7 @@ function ProtectiveStops({ data, loading, onResync }) {
               { key: 'distanceToSoftwareStopPercent', label: 'До стопа', width: '88px', className: 'right', render: (row) => <span className={row.softwareStopBreached ? 'bad' : ''}>{percent(row.distanceToSoftwareStopPercent)}</span> },
               { key: 'softwareStopRiskRub', label: 'Риск RUB', width: '95px', className: 'right', render: (row) => <span className={Number(row.softwareStopRiskRub) > 0 ? 'warn' : ''}>{money(row.softwareStopRiskRub)}</span> },
               { key: 'protectiveStopStatus', label: 'Статус', width: '140px', render: (row) => <Pill tone={protectiveStopTone(row.protectiveStopStatus)}>{row.protectiveStopStatus || 'uncovered'}</Pill> },
-              { key: 'protectiveStopFailure', label: 'Причина', render: (row) => <CompactReason>{protectiveStopFailureText(row)}</CompactReason> }
+              { key: 'protectiveStopFailure', label: 'Причина', render: (row) => <CompactReason title={protectiveStopFailureTitle(row)}>{protectiveStopFailureText(row)}</CompactReason> }
             ]}
             rows={uncovered}
             empty="Все robot-owned позиции покрыты защитными стопами"
