@@ -2906,6 +2906,24 @@ const protectiveStopFailureTitle = (row) => {
   ].filter(Boolean).join('\n');
 };
 
+const softwareStopWatchLabel = (row) => {
+  if (row?.softwareStopBreached) return 'breached';
+  const distance = Number(row?.distanceToSoftwareStopPercent);
+  if (Number.isFinite(distance) && distance >= 0 && distance <= 1) return 'near stop';
+  const current = Number(row?.riskMarkPrice);
+  const average = Number(row?.averagePrice);
+  if (Number.isFinite(current) && Number.isFinite(average) && average > 0 && current < average) return 'losing';
+  return 'watch';
+};
+
+const softwareStopWatchTone = (row) => {
+  const label = softwareStopWatchLabel(row);
+  if (label === 'breached') return 'bad';
+  if (label === 'near stop') return 'warn';
+  if (label === 'losing') return 'warn';
+  return 'neutral';
+};
+
 const stopOrderTypeText = (row) => {
   const orderType = String(row?.orderType || EMPTY).replace('STOP_ORDER_TYPE_', '').toLowerCase();
   const exchangeType = String(row?.exchangeOrderType || EMPTY).replace('EXCHANGE_ORDER_TYPE_', '').toLowerCase();
@@ -2934,6 +2952,8 @@ function ProtectiveStops({ data, loading, onResync }) {
           { label: 'Software', value: summary.softwareFallbacks ?? 0, tone: summary.softwareFallbacks ? 'warn' : 'good', detail: 'страхует sell-loop, не брокер' },
           { label: 'Risk', value: money(summary.unprotectedRiskRub), tone: summary.unprotectedRiskRub ? 'warn' : 'good', detail: `позиции ${money(summary.unprotectedMarketValueRub)}` },
           { label: 'Breached', value: summary.softwareStopBreached ?? 0, tone: summary.softwareStopBreached ? 'bad' : 'good', detail: 'ниже software stop' },
+          { label: 'Near stop', value: summary.nearSoftwareStop ?? 0, tone: summary.nearSoftwareStop ? 'warn' : 'good', detail: 'до software stop <= 1%' },
+          { label: 'Losing', value: summary.losingUncovered ?? 0, tone: summary.losingUncovered ? 'warn' : 'good', detail: 'uncovered позиции в минусе' },
           { label: 'Fallback', value: summary.stopLimitFallbacks ?? 0, tone: summary.stopLimitFallbacks ? 'warn' : 'good', detail: 'stop-limit вместо market-stop' },
           { label: 'Errors', value: summary.errors ?? 0, tone: summary.errors ? 'bad' : 'good', detail: 'ошибки API стопов' },
           { label: 'Auto sync', value: runtime.lastSyncFinishedAt ? time(runtime.lastSyncFinishedAt) : EMPTY, tone: runtime.lastError ? 'bad' : 'good', detail: runtime.lastResyncAt ? `resync ${time(runtime.lastResyncAt)}` : `${runtime.checked ?? 0} checked, ${runtime.resynced ?? 0} resynced` }
@@ -2993,6 +3013,7 @@ function ProtectiveStops({ data, loading, onResync }) {
               { key: 'uncoveredMarketValueRub', label: 'Стоимость', width: '110px', className: 'right', render: (row) => <span title={row.riskPriceSource === 'average' ? 'Оценка по средней цене входа: currentPrice сейчас недоступен.' : 'Оценка по текущей цене.'}>{money(row.uncoveredMarketValueRub)}{row.riskPriceSource === 'average' ? '*' : ''}</span> },
               { key: 'softwareStopPrice', label: 'Software stop', width: '115px', className: 'right', render: (row) => money(row.softwareStopPrice) },
               { key: 'distanceToSoftwareStopPercent', label: 'До стопа', width: '88px', className: 'right', render: (row) => <span className={row.softwareStopBreached ? 'bad' : ''}>{percent(row.distanceToSoftwareStopPercent)}</span> },
+              { key: 'softwareStopWatch', label: 'Watch', width: '105px', render: (row) => <Pill tone={softwareStopWatchTone(row)}>{softwareStopWatchLabel(row)}</Pill> },
               { key: 'softwareStopRiskRub', label: 'Риск RUB', width: '95px', className: 'right', render: (row) => <span className={Number(row.softwareStopRiskRub) > 0 ? 'warn' : ''}>{money(row.softwareStopRiskRub)}</span> },
               { key: 'protectiveStopStatus', label: 'Статус', width: '140px', render: (row) => <Pill tone={protectiveStopTone(row.protectiveStopStatus)}>{row.protectiveStopStatus || 'uncovered'}</Pill> },
               { key: 'protectiveStopFailure', label: 'Причина', render: (row) => <CompactReason title={protectiveStopFailureTitle(row)}>{protectiveStopFailureText(row)}</CompactReason> }

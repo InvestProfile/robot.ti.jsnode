@@ -52,7 +52,7 @@ Current implementation:
 - Cools down failed attempts for 30 minutes per account/instrument.
 - Logs diagnostics without secrets when stop placement fails.
 - Remembers the latest failed attempt in process memory with:
-  - `kind`: `price-limits`, `invalid-argument`, `fallback-rejected`, `broker-api`, or `unknown`;
+  - `kind`: `price-limits`, `stop-order-rejected`, `invalid-argument`, `fallback-rejected`, `broker-api`, or `unknown`;
   - `shortReason`: compact dashboard label;
   - full broker/API `reason`;
   - `failedAt` and retry cooldown.
@@ -63,8 +63,10 @@ Current implementation:
 Interpretation:
 
 - `price-limits` usually means the broker rejected the stop/limit price as outside the current exchange limits for that instrument. Do not keep blindly retrying the same request; inspect the position and let the next sync recalculate after the market moves.
-- `fallback-rejected` means both the market stop-loss attempt and stop-limit fallback failed.
+- `stop-order-rejected` means the market stop-loss attempt and both fallback variants were rejected with `INVALID_ARGUMENT: 30099`; treat this as broker/instrument rejection until proven otherwise.
+- `fallback-rejected` means both the market stop-loss attempt and stop-limit fallback failed for another reason.
 - A `broker-rejected` uncovered position is not unmonitored: the software sell loop can still exit it when live sell is enabled, but broker-side protection is missing.
+- `/api/protective-stops` also exposes `nearSoftwareStop` and `losingUncovered` so the dashboard can highlight broker-rejected positions that are already close to the software stop. This is monitoring only; it does not cancel or widen stops.
 
 Useful log query:
 

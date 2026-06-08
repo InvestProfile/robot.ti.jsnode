@@ -20,6 +20,7 @@ const STOP_DRIFT_RESYNC_PERCENT = 0.5;
 const STOP_LIMIT_FALLBACK_BUFFER_PERCENT = 0.5;
 type ProtectiveStopFailureKind =
     | 'price-limits'
+    | 'stop-order-rejected'
     | 'invalid-argument'
     | 'fallback-rejected'
     | 'broker-api'
@@ -55,6 +56,14 @@ const classifyStopFailure = (reason: string): Omit<ProtectiveStopFailure, 'faile
         return {
             kind: 'price-limits',
             shortReason: 'broker price limits',
+            reason
+        };
+    }
+
+    if (lower.includes('fallback post failed') && lower.includes('invalid_argument') && lower.includes('30099')) {
+        return {
+            kind: 'stop-order-rejected',
+            shortReason: 'broker rejected stop-order',
             reason
         };
     }

@@ -1219,6 +1219,21 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
             };
         }));
 
+    const nearSoftwareStopPositions = uncoveredPositions.filter(item =>
+        item.distanceToSoftwareStopPercent !== undefined
+        && Number.isFinite(Number(item.distanceToSoftwareStopPercent))
+        && Number(item.distanceToSoftwareStopPercent) >= 0
+        && Number(item.distanceToSoftwareStopPercent) <= 1
+    );
+    const losingUncoveredPositions = uncoveredPositions.filter(item => {
+        const riskMarkPrice = Number(item.riskMarkPrice);
+        const averagePrice = Number(item.averagePrice);
+        return Number.isFinite(riskMarkPrice)
+            && Number.isFinite(averagePrice)
+            && averagePrice > 0
+            && riskMarkPrice < averagePrice;
+    });
+
     return {
         summary: {
             enabled: config.protectiveStopsEnabled,
@@ -1241,6 +1256,8 @@ const getProtectiveStopsPayload = async (config: RobotConfig) => {
             unprotectedMarketValueRub: uncoveredPositions.reduce((sum, item) => sum + Number(item.uncoveredMarketValueRub ?? 0), 0),
             unprotectedRiskRub: uncoveredPositions.reduce((sum, item) => sum + Number(item.softwareStopRiskRub ?? 0), 0),
             softwareStopBreached: uncoveredPositions.filter(item => item.softwareStopBreached).length,
+            nearSoftwareStop: nearSoftwareStopPositions.length,
+            losingUncovered: losingUncoveredPositions.length,
             errors: errors.length
         },
         stops,

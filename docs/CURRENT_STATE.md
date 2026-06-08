@@ -20,6 +20,7 @@ Last updated: 2026-06-08.
 - Added protective stop handling for robot-owned positions.
 - Added volatility-aware trade budget sizing: buy preview now exposes adaptive `riskStopPercent` and `maxRiskAdjustedOrderRub` so the UI can show per-trade risk instead of only order amount.
 - Added structured protective stop rejection diagnostics: remembered broker/API failures include `kind`, `shortReason`, full `reason`, `failedAt`, and retry cooldown.
+- Added broker-rejected software-stop watch diagnostics: uncovered positions now show whether they are losing, near software stop, or already breached.
 
 ## Protective Stop Orders
 
@@ -40,6 +41,8 @@ Current observation:
 
 - Fresh real buys usually receive active protective stops; if the broker rejects one, the position is marked as `broker-rejected`/software fallback instead of silently looking covered.
 - `INVALID_ARGUMENT: 30099` with text like `price is outside the limits for this instrument` is classified as `price-limits`; the robot cools down retries and blocks new buys for that account/instrument until a protective stop is accepted.
+- If market stop and both fallback attempts are rejected with `INVALID_ARGUMENT: 30099`, the failure is classified as `stop-order-rejected`.
+- The dashboard shows `Near stop` and `Losing` counters for uncovered/software fallback positions; this is monitoring and does not relax stop-loss rules.
 - There are still historical/ledger mismatches to audit separately: some old robot-owned ledger positions are no longer present in the broker portfolio.
 
 ## Recent Server Commands
