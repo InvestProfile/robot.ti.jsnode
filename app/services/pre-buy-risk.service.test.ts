@@ -384,6 +384,9 @@ describe('PreBuyRiskService', () => {
                     wins: 0,
                     losses: 4,
                     pnlRub: -64,
+                    stopLosses: 4,
+                    brokerStopLosses: 2,
+                    stopLossPnlRub: -64,
                     winRatePercent: 0
                 }
             }
@@ -415,6 +418,9 @@ describe('PreBuyRiskService', () => {
                     wins: 0,
                     losses: 4,
                     pnlRub: -64,
+                    stopLosses: 4,
+                    brokerStopLosses: 2,
+                    stopLossPnlRub: -64,
                     winRatePercent: 0
                 }
             }
@@ -423,6 +429,75 @@ describe('PreBuyRiskService', () => {
             buyLossGuardEnabled: true,
             buyLossGuardEnforced: true,
             buyLossGuardScoreBuffer: 10
+        } as RobotConfig);
+
+        assert.strictEqual(result.passed, true);
+        assert.ok(result.checks.some(check => check.key === 'ticker-loss-guard' && check.status === 'pass'));
+    });
+
+    it('blocks a ticker after large broker stop damage even with a small sample', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([]);
+
+        const result = await PreBuyRiskService.evaluate({
+            ...baseInput,
+            buyScore: 74,
+            buyRequiredScore: 70,
+            lossGuard: {
+                ticker: {
+                    type: 'ticker',
+                    key: 'FLOT',
+                    closed: 1,
+                    wins: 0,
+                    losses: 1,
+                    pnlRub: -129,
+                    stopLosses: 1,
+                    brokerStopLosses: 1,
+                    stopLossPnlRub: -129,
+                    winRatePercent: 0
+                }
+            }
+        }, {
+            ...config,
+            buyLossGuardEnabled: true,
+            buyLossGuardEnforced: true,
+            buyLossGuardScoreBuffer: 10,
+            buyLossGuardMinPnlRub: -30
+        } as RobotConfig);
+
+        assert.strictEqual(result.passed, false);
+        assert.ok(result.blockingReasons.some(reason => reason.includes('stop-losses 1')));
+        assert.ok(result.checks.some(check => check.key === 'ticker-loss-guard' && check.status === 'block'));
+    });
+
+    it('allows a ticker with stop damage when score clears the loss guard buffer', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([]);
+
+        const result = await PreBuyRiskService.evaluate({
+            ...baseInput,
+            buyScore: 84,
+            buyRequiredScore: 70,
+            lossGuard: {
+                ticker: {
+                    type: 'ticker',
+                    key: 'FLOT',
+                    closed: 1,
+                    wins: 0,
+                    losses: 1,
+                    pnlRub: -129,
+                    stopLosses: 1,
+                    brokerStopLosses: 1,
+                    stopLossPnlRub: -129,
+                    winRatePercent: 0
+                }
+            }
+        }, {
+            ...config,
+            buyLossGuardEnabled: true,
+            buyLossGuardEnforced: true,
+            buyLossGuardScoreBuffer: 10,
+            buyLossGuardMinPnlRub: -30
         } as RobotConfig);
 
         assert.strictEqual(result.passed, true);

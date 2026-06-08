@@ -83,18 +83,24 @@ const formatRub = (value: number | undefined) =>
 
 const isWeakLossGuardStats = (stats: LossGuardStats | undefined, config: RobotConfig) => {
     if (!stats) return false;
-    if (stats.closed < config.buyLossGuardMinClosed) return false;
-    if (stats.losses < config.buyLossGuardMinLosses) return false;
 
     const winRate = stats.winRatePercent ?? 0;
     const weakByPnl = stats.pnlRub <= config.buyLossGuardMinPnlRub;
     const weakByWinRate = winRate < config.buyLossGuardMinWinRatePercent;
+    const enoughClosed = stats.closed >= config.buyLossGuardMinClosed;
+    const enoughLosses = stats.losses >= config.buyLossGuardMinLosses;
+    const stopDamageThreshold = Math.min(config.buyLossGuardMinPnlRub, config.buyLossGuardMinPnlRub * 2);
+    const weakByStopCluster = stats.stopLosses >= config.buyLossGuardMinLosses
+        && stats.stopLossPnlRub <= config.buyLossGuardMinPnlRub;
+    const weakByLargeStopDamage = stats.stopLosses > 0 && stats.stopLossPnlRub <= stopDamageThreshold;
 
-    return weakByPnl || weakByWinRate;
+    return (enoughClosed && enoughLosses && (weakByPnl || weakByWinRate))
+        || weakByStopCluster
+        || weakByLargeStopDamage;
 };
 
 const lossGuardReason = (label: string, stats: LossGuardStats, score: number | undefined, requiredScore: number, config: RobotConfig) =>
-    `${label} loss guard: score ${score ?? '-'} < required ${requiredScore}; closed ${stats.closed}, losses ${stats.losses}, P/L ${formatRub(stats.pnlRub)}, WR ${formatPercent(stats.winRatePercent)}, buffer ${formatPercent(config.buyLossGuardScoreBuffer)}${stats.stale ? ', stale cache' : ''}`;
+    `${label} loss guard: score ${score ?? '-'} < required ${requiredScore}; closed ${stats.closed}, losses ${stats.losses}, P/L ${formatRub(stats.pnlRub)}, WR ${formatPercent(stats.winRatePercent)}, stop-losses ${stats.stopLosses ?? 0}, broker stops ${stats.brokerStopLosses ?? 0}, stop P/L ${formatRub(stats.stopLossPnlRub)}, buffer ${formatPercent(config.buyLossGuardScoreBuffer)}${stats.stale ? ', stale cache' : ''}`;
 
 const getAvgDailyTurnoverRub = (candles: DailyCandle[] | undefined, lot: number) => {
     const values = candles
@@ -335,7 +341,7 @@ export default class PreBuyRiskService {
                     addCheck({
                         key,
                         status: 'pass',
-                        reason: `${label} loss guard passed: closed ${stats.closed}, losses ${stats.losses}, P/L ${formatRub(stats.pnlRub)}, WR ${formatPercent(stats.winRatePercent)}`,
+                        reason: `${label} loss guard passed: closed ${stats.closed}, losses ${stats.losses}, P/L ${formatRub(stats.pnlRub)}, WR ${formatPercent(stats.winRatePercent)}, stop-losses ${stats.stopLosses ?? 0}, stop P/L ${formatRub(stats.stopLossPnlRub)}`,
                         enforced: config.buyLossGuardEnforced,
                         value: scoreKnown ? score : undefined,
                         limit: requiredScore
@@ -348,7 +354,7 @@ export default class PreBuyRiskService {
                     status: !scoreKnown || score < requiredScore ? 'block' : 'pass',
                     reason: !scoreKnown || score < requiredScore
                         ? lossGuardReason(label, stats, scoreKnown ? score : undefined, requiredScore, config)
-                        : `${label} loss guard passed by strong score ${score}/${requiredScore}: closed ${stats.closed}, losses ${stats.losses}, P/L ${formatRub(stats.pnlRub)}, WR ${formatPercent(stats.winRatePercent)}`,
+                        : `${label} loss guard passed by strong score ${score}/${requiredScore}: closed ${stats.closed}, losses ${stats.losses}, P/L ${formatRub(stats.pnlRub)}, WR ${formatPercent(stats.winRatePercent)}, stop-losses ${stats.stopLosses ?? 0}, stop P/L ${formatRub(stats.stopLossPnlRub)}`,
                     enforced: config.buyLossGuardEnforced,
                     value: scoreKnown ? score : undefined,
                     limit: requiredScore

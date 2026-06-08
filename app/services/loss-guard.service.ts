@@ -9,7 +9,11 @@ export interface LossGuardStats {
     wins: number;
     losses: number;
     pnlRub: number;
+    stopLosses: number;
+    brokerStopLosses: number;
+    stopLossPnlRub: number;
     averagePnlRub?: number;
+    averageStopLossPnlRub?: number;
     winRatePercent?: number;
     stale?: boolean;
 }
@@ -43,10 +47,29 @@ const createGroup = (type: 'ticker' | 'sector', key: string): LossGuardStats => 
     closed: 0,
     wins: 0,
     losses: 0,
-    pnlRub: 0
+    pnlRub: 0,
+    stopLosses: 0,
+    brokerStopLosses: 0,
+    stopLossPnlRub: 0
 });
 
-const addPnl = (groups: Map<string, LossGuardStats>, type: 'ticker' | 'sector', key: string, pnlRub: number) => {
+const sourceLabel = (value: unknown) => String(value || 'unknown').trim().toLowerCase();
+
+const isStopLossExit = (data: Record<string, unknown>) => {
+    const signal = sourceLabel(data.exitSignalSource);
+    const reason = sourceLabel(data.exitDecisionReason ?? data.reason);
+
+    return signal === 'stop-loss'
+        || signal === 'broker-stop-loss'
+        || reason.includes('stop-loss')
+        || reason.includes('protective stop');
+};
+
+const isBrokerStopLossExit = (data: Record<string, unknown>) =>
+    sourceLabel(data.exitSignalSource) === 'broker-stop-loss'
+    || sourceLabel(data.exitDecisionReason ?? data.reason).includes('broker protective stop');
+
+const addPnl = (groups: Map<string, LossGuardStats>, type: 'ticker' | 'sector', key: string, pnlRub: number, data: Record<string, unknown>) => {
     if (!key) return;
 
     const group = groups.get(key) ?? createGroup(type, key);
@@ -54,12 +77,23 @@ const addPnl = (groups: Map<string, LossGuardStats>, type: 'ticker' | 'sector', 
     group.pnlRub += pnlRub;
     if (pnlRub > 0) group.wins += 1;
     if (pnlRub < 0) group.losses += 1;
+
+    if (isStopLossExit(data)) {
+        group.stopLosses += 1;
+        group.stopLossPnlRub += pnlRub;
+    }
+
+    if (isBrokerStopLossExit(data)) {
+        group.brokerStopLosses += 1;
+    }
+
     groups.set(key, group);
 };
 
 const finalizeGroups = (groups: Map<string, LossGuardStats>) => {
     for (const group of groups.values()) {
         group.averagePnlRub = group.closed > 0 ? group.pnlRub / group.closed : undefined;
+        group.averageStopLossPnlRub = group.stopLosses > 0 ? group.stopLossPnlRub / group.stopLosses : undefined;
         group.winRatePercent = group.closed > 0 ? group.wins / group.closed * 100 : undefined;
     }
 };
@@ -103,8 +137,8 @@ export default class LossGuardService {
                     ?? byTicker.get(ticker);
                 const sector = normalizeSector(instrument?.sector);
 
-                addPnl(tickerGroups, 'ticker', ticker, pnlRub);
-                addPnl(sectorGroups, 'sector', sector, pnlRub);
+                addPnl(tickerGroups, 'ticker', ticker, pnlRub, data);
+                addPnl(sectorGroups, 'sector', sector, pnlRub, data);
             }
 
             finalizeGroups(tickerGroups);

@@ -16,6 +16,7 @@ Last updated: 2026-06-08.
 - Added negative technical score buffer: if technical adjustment is negative, the buy score must clear a higher threshold.
 - Added add-on buy protection: do not add to an existing robot-owned ticker unless the current robot position is already profitable enough.
 - Added same-day stop-loss re-entry protection.
+- Extended buy loss guard with stop-loss damage stats: tickers/sectors with painful broker protective stops now need a stronger buy score before another entry.
 - Added net P/L support using broker report commissions where matched.
 - Added protective stop handling for robot-owned positions.
 - Added volatility-aware trade budget sizing: buy preview now exposes adaptive `riskStopPercent` and `maxRiskAdjustedOrderRub` so the UI can show per-trade risk instead of only order amount.

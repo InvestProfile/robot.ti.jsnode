@@ -33,6 +33,7 @@ Current buy guards:
 - Same-day re-entry after stop-loss is blocked.
 - Weak add-on protection blocks adding to a losing robot-owned position.
 - Loss guard raises the required buy score for tickers/sectors with recent stop-heavy negative round-trips; it is a score buffer, not a permanent ban.
+- Loss guard also counts broker protective stop exits separately. A single large broker-stop loss or a small cluster of stop losses can require the configured score buffer even before the broader closed-trade sample is large.
 - Negative technical adjustment requires a higher final score.
 - Anti-FOMO blocks buys when price is close to the recent high and either same-day momentum is hot or the move is already too large versus the instrument's normal daily range.
 - External analyst/social/technical data may adjust score, but stale positive analyst data should not make the robot more aggressive.
