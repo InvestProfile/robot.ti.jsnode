@@ -19,6 +19,8 @@ import PositionStateService from '../services/position-state.service';
 import ProtectiveStopService from '../services/protective-stop.service';
 import RobotPositionLedgerService from '../services/robot-position-ledger.service';
 import BrokerMissingSellImportService from '../services/broker-missing-sell-import.service';
+import ExitPolicyCandidateService from '../services/exit-policy-candidate.service';
+import ExitPolicyObservationService from '../services/exit-policy-observation.service';
 import StrategyEngine from '../strategies/strategy-engine';
 import StopLossStrategy from '../strategies/stop-loss.strategy';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
@@ -836,7 +838,7 @@ export const executeTrades = async (
 
         const tradingStatus = tradingStatuses.get(position.instrumentUid);
         const ledgerItem = ledgerByInstrument.get(position.instrumentUid) ?? ledgerByInstrument.get(position.figi);
-        const signal = await StrategyEngine.evaluate({
+        const strategyInput = {
             accountId,
             figi: position.figi,
             instrumentUid: position.instrumentUid,
@@ -846,7 +848,8 @@ export const executeTrades = async (
             currentPrice,
             quantityLots: position.quantityLots?.units,
             lastTradeAt: ledgerItem?.lastTradeAt
-        }, config);
+        };
+        const signal = await StrategyEngine.evaluate(strategyInput, config);
         const risk = RiskManagerService.evaluateSignal({
             averagePrice,
             currentPrice,
@@ -859,6 +862,22 @@ export const executeTrades = async (
             instrumentUid: position.instrumentUid,
             signalSource: signal?.source,
             reason: risk.reason
+        });
+        const exitPolicy = await ExitPolicyCandidateService.evaluate(strategyInput, config, signal);
+        await ExitPolicyObservationService.recordSafely({
+            accountId,
+            accountAlias,
+            accountMode,
+            figi: position.figi,
+            instrumentUid: position.instrumentUid,
+            ticker: instrument?.ticker,
+            name: instrument?.name,
+            averagePrice,
+            currentPrice,
+            quantityLots: position.quantityLots?.units,
+            currentSignal: signal,
+            currentReason: riskReason,
+            exitPolicy
         });
 
         if (!risk.allowed) {

@@ -75,6 +75,7 @@ Notes:
 - `sell-policy` only allows robot-owned lots to be sold.
 - Non-emergency sells can be blocked when the latest robot action was a buy and the robot-owned position is not profitable enough.
 - The dashboard sell page has an observe-only `Exit lab` column. It compares the current exit decision with a candidate stop policy `ATR x2 max10`; this is diagnostic only and does not change real sell orders.
+- Exit-lab disagreements are stored in `exit_policy_observations` from the runtime sell loop. Only `would-hold` / `would-sell` rows are recorded, deduped into 15-minute buckets per account/instrument/source.
 
 ## Research Reports
 

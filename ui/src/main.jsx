@@ -36,6 +36,7 @@ const endpoints = {
   socialProfiles: '/api/social-profiles',
   socialEvidence: '/api/social-evidence?limit=80',
   sellBrain: '/api/sell-brain',
+  exitPolicyObservations: '/api/exit-policy-observations?limit=80',
   buyScan: '/api/buy-scan',
   buyLab: '/api/buy-lab?hours=24&limit=30',
   buyRecommendations: '/api/buy-recommendations?limit=30',
@@ -58,7 +59,7 @@ const endpointGroups = {
   socialProfiles: ['socialProfiles'],
   evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
-  sell: ['sellBrain', 'positions', 'robotPositions'],
+  sell: ['sellBrain', 'exitPolicyObservations', 'positions', 'robotPositions'],
   trades: ['trades', 'tradePnl', 'robotPositions', 'accountingAudit', 'decisions', 'orderSafety', 'protectiveStops'],
   logs: ['decisions', 'trades', 'robotPositions', 'orderSafety', 'protectiveStops']
 };
@@ -1642,6 +1643,8 @@ function Sell({ data, loadingKeys }) {
   const lastSell = sellEvents[0];
   const exitPolicy = data.sellBrain?.summary?.exitPolicy || {};
   const exitPolicyDisagreements = Number(exitPolicy.disagreements || 0);
+  const exitPolicyHistory = data.exitPolicyObservations?.items || [];
+  const exitPolicyHistorySummary = data.exitPolicyObservations?.summary || {};
 
   const sellColumns = [
     { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
@@ -1666,6 +1669,7 @@ function Sell({ data, loadingKeys }) {
             { label: 'Можно продать', value: executable.length, tone: executable.length ? 'bad' : 'good', detail: `${policyBlocked.length} заблокировано политикой` },
             { label: 'В фильтре', value: `${filteredExecutable.length} / ${filteredLiveCandidates.length}`, tone: filteredExecutable.length ? 'bad' : 'good', detail: `${filteredPolicyBlocked.length} блок/hold сейчас` },
             { label: 'Exit lab', value: exitPolicyDisagreements, tone: exitPolicyDisagreements ? 'warn' : 'good', detail: `${exitPolicy.label || 'ATR x2 max10'} · ${exitPolicy.wouldHold || 0} hold / ${exitPolicy.wouldSell || 0} sell` },
+            { label: 'История lab', value: exitPolicyHistorySummary.total || 0, tone: Number(exitPolicyHistorySummary.total || 0) ? 'warn' : 'good', detail: `${exitPolicyHistorySummary.wouldHold || 0} hold / ${exitPolicyHistorySummary.wouldSell || 0} sell` },
             { label: 'Live-продажа', value: sellArmed ? 'ON' : 'OFF', tone: sellArmed ? 'bad' : 'good', detail: liveActions.join(', ') || EMPTY },
             { label: 'Последняя продажа', value: lastSell?.ticker || EMPTY, tone: lastSell ? 'warn' : 'neutral', detail: lastSell ? `${time(lastSell.at)} · ${money(lastSell.price)} RUB` : 'продаж в ledger пока нет' }
           ]}
@@ -1691,6 +1695,30 @@ function Sell({ data, loadingKeys }) {
           rows={filteredLiveCandidates}
           empty="Нет sell-сигналов под выбранные фильтры"
           loading={loadingKeys.sellBrain}
+        />
+      </Card>
+
+      <Card title="Exit lab история" icon={LineChart} help="История observe-only расхождений. Записывается автоматически из торгового тика раз в 15-минутный bucket, только когда кандидат ATR x2 max10 спорит с текущей stop-loss политикой.">
+        <div className="stats compact">
+          <Stat label="Наблюдений" value={exitPolicyHistorySummary.total || 0} />
+          <Stat label="Кандидат держал бы" value={exitPolicyHistorySummary.wouldHold || 0} tone={Number(exitPolicyHistorySummary.wouldHold || 0) ? 'warn' : 'good'} />
+          <Stat label="Кандидат продал бы" value={exitPolicyHistorySummary.wouldSell || 0} tone={Number(exitPolicyHistorySummary.wouldSell || 0) ? 'bad' : 'good'} />
+        </div>
+        <Table
+          columns={[
+            { key: 'observedAt', label: 'Time', width: '120px', render: (row) => time(row.observedAt) },
+            { key: 'ticker', label: 'Ticker', render: (row) => <><strong>{row.ticker || row.figi || row.instrumentUid}</strong><div className="muted">{row.name}</div></> },
+            { key: 'accountAlias', label: 'Account', render: (row) => row.accountAlias || row.accountId },
+            { key: 'candidateStatus', label: 'Lab', width: '110px', render: (row) => <Pill tone={exitPolicyTone(row.candidateStatus)}>{exitPolicyLabel(row.candidateStatus)}</Pill> },
+            { key: 'lossPercent', label: 'Loss', className: 'right', render: (row) => percent(Number(row.lossPercent) ? -Number(row.lossPercent) : row.lossPercent) },
+            { key: 'currentStopPercent', label: 'Stop now', className: 'right', render: (row) => `${money(row.currentStopPercent)}%` },
+            { key: 'candidateStopPercent', label: 'Candidate', className: 'right', render: (row) => `${money(row.candidateStopPercent)}%` },
+            { key: 'currentReason', label: 'Current', className: 'reason', render: (row) => <CompactReason title={row.currentReason}>{row.currentSource || row.currentReason}</CompactReason> },
+            { key: 'candidateReason', label: 'Reason', className: 'reason', render: (row) => <CompactReason>{row.candidateReason}</CompactReason> }
+          ]}
+          rows={exitPolicyHistory}
+          empty="Пока нет сохраненных расхождений exit lab"
+          loading={loadingKeys.exitPolicyObservations}
         />
       </Card>
 

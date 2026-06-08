@@ -47,6 +47,7 @@ import ProfileManagementService from '../services/profile-management.service';
 import MarketDataService from '../services/marketData.service';
 import ProtectiveStopService from '../services/protective-stop.service';
 import AccountingAuditService from '../services/accounting-audit.service';
+import ExitPolicyObservationService from '../services/exit-policy-observation.service';
 import { isOpenOrderStatus, isRejectedOrderStatus } from '../utils/order-status';
 import StopLossStrategy from '../strategies/stop-loss.strategy';
 
@@ -2140,6 +2141,14 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/sell-brain') {
         json(res, 200, await SellBrainService.evaluate(config));
+        return;
+    }
+
+    if (url.pathname === '/api/exit-policy-observations') {
+        const requestedLimit = Number(url.searchParams.get('limit') ?? 80);
+        json(res, 200, await ExitPolicyObservationService.list(
+            Number.isFinite(requestedLimit) ? requestedLimit : 80
+        ));
         return;
     }
 
