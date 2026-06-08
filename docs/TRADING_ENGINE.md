@@ -75,6 +75,12 @@ Notes:
 - `sell-policy` only allows robot-owned lots to be sold.
 - Non-emergency sells can be blocked when the latest robot action was a buy and the robot-owned position is not profitable enough.
 
+## Research Reports
+
+- `npm run exit:lab -- --net` summarizes real closed exits by signal source, holding time, sector, and ticker.
+- `npm run stop:whatif -- 500 --net` compares stop-loss scenarios on real closed stop exits, including wider stops, soft grace, confirmation buffer, and trailing activation thresholds. Treat deferred rows as "would hold for live observation", not guaranteed saved profit.
+- `npm run fomo:whatif -- 500 --net` checks whether anti-FOMO filters would have avoided bad entries.
+
 ## Important Env Values
 
 - `ROBOT_MIN_PROFIT_PERCENT`
