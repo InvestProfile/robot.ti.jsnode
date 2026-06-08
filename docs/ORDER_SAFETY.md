@@ -39,6 +39,16 @@ Accounting includes:
 - filled/executed orders;
 - confirmed broker orders eligible for P/L matching.
 
+## Broker Sell Sync
+
+Broker-side protective stops can fill without the main robot sell path creating a local trade row first. To keep P/L honest:
+
+- `BrokerMissingSellImportService` scans broker SELL operations and imports fills missing from local `trades`.
+- Runtime auto-sync runs periodically when `ROBOT_BROKER_SELL_SYNC_ENABLED=true`.
+- Default interval is `ROBOT_BROKER_SELL_SYNC_INTERVAL_MS=300000`.
+- Sync is idempotent by `orderId` and only writes local accounting rows with `orderType=broker-import`.
+- Sync must never retry or place orders; it only reconciles already-filled broker operations.
+
 ## Protective Stops
 
 Current implementation:

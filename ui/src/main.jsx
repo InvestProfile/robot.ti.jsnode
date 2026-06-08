@@ -1206,6 +1206,8 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
   const liveActions = status?.config?.liveAllowedActions || [];
   const orderType = status?.config?.orderType || EMPTY;
   const statusKnown = Boolean(status);
+  const brokerSellSync = status?.runtime?.brokerSellSync || {};
+  const brokerSellSyncEnabled = Boolean(status?.config?.brokerSellSyncEnabled);
   const marketKnown = Boolean(data.market);
   const orderSafetyKnown = Boolean(data.orderSafety);
   const protectiveStopsKnown = Boolean(data.protectiveStops);
@@ -1290,6 +1292,16 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
       detail: orderSafetyKnown ? unknownOrders ? 'Есть заявки с неизвестным статусом, повторять их нельзя.' : 'Неизвестных заявок нет.' : 'Ждем order safety API.'
     },
     {
+      label: 'Broker sell sync',
+      status: statusKnown ? !brokerSellSyncEnabled ? 'OFF' : brokerSellSync.lastError ? 'ERROR' : brokerSellSync.isRunning ? 'RUNNING' : 'OK' : 'WAIT',
+      tone: statusKnown ? !brokerSellSyncEnabled ? 'warn' : brokerSellSync.lastError ? 'bad' : 'good' : 'warn',
+      detail: statusKnown
+        ? brokerSellSync.lastError
+          ? brokerSellSync.lastError
+          : `last ${brokerSellSync.lastFinishedAt ? time(brokerSellSync.lastFinishedAt) : EMPTY}, imported ${brokerSellSync.imported ?? 0}/${brokerSellSync.candidates ?? 0}`
+        : 'Ждем runtime status.'
+    },
+    {
       label: 'Protective stops',
       status: protectiveStopsKnown ? rejectedStops ? 'BROKER REJECTED' : uncoveredStops ? 'UNCOVERED' : 'OK' : 'WAIT',
       tone: protectiveStopsKnown ? rejectedStops || uncoveredStops ? 'bad' : 'good' : 'warn',
@@ -1319,6 +1331,7 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
           <Stat label="Tick" value={statusKnown ? status?.runtime?.isTickRunning ? 'running' : 'idle' : EMPTY} tone={statusKnown ? status?.runtime?.isTickRunning ? 'blue' : 'good' : ''} />
           <Stat label="Interval" value={`${status?.config?.intervalMs ? status.config.intervalMs / 1000 : '-'} sec`} />
           <Stat label="Errors" value={`${status?.runtime?.consecutiveTickErrors || 0} / ${status?.config?.maxConsecutiveTickErrors || '-'}`} />
+          <Stat label="Broker sync" value={statusKnown ? brokerSellSync.isRunning ? 'running' : brokerSellSync.lastFinishedAt ? time(brokerSellSync.lastFinishedAt) : brokerSellSyncEnabled ? 'waiting' : 'off' : EMPTY} tone={statusKnown ? brokerSellSync.lastError ? 'bad' : brokerSellSyncEnabled ? 'good' : 'warn' : ''} title="Автосверка свежих SELL-операций брокера с локальной таблицей trades, чтобы P/L не терял продажи по защитным стопам." />
         </div>
       </Card>
 

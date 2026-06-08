@@ -21,6 +21,7 @@ Last updated: 2026-06-08.
 - Added volatility-aware trade budget sizing: buy preview now exposes adaptive `riskStopPercent` and `maxRiskAdjustedOrderRub` so the UI can show per-trade risk instead of only order amount.
 - Added structured protective stop rejection diagnostics: remembered broker/API failures include `kind`, `shortReason`, full `reason`, `failedAt`, and retry cooldown.
 - Added broker-rejected software-stop watch diagnostics: uncovered positions now show whether they are losing, near software stop, or already breached.
+- Added recent broker SELL sync: the runtime periodically imports filled broker sell operations missing from local `trades`, so protective-stop exits do not disappear from P/L until a manual report is run.
 
 ## Protective Stop Orders
 
@@ -44,6 +45,18 @@ Current observation:
 - If market stop and both fallback attempts are rejected with `INVALID_ARGUMENT: 30099`, the failure is classified as `stop-order-rejected`.
 - The dashboard shows `Near stop` and `Losing` counters for uncovered/software fallback positions; this is monitoring and does not relax stop-loss rules.
 - There are still historical/ledger mismatches to audit separately: some old robot-owned ledger positions are no longer present in the broker portfolio.
+
+## Accounting Sync
+
+- `BrokerMissingSellImportService` imports missing broker SELL fills by `orderId`.
+- It handles two cases:
+  - ledger/audit mismatches where local robot-owned lots overstate broker lots;
+  - recent broker SELL operations that are not yet present locally, even before the ledger audit exposes a mismatch.
+- Runtime auto-sync is controlled by:
+  - `ROBOT_BROKER_SELL_SYNC_ENABLED` (default `true`);
+  - `ROBOT_BROKER_SELL_SYNC_INTERVAL_MS` (default `300000`, five minutes).
+- Dashboard `/api/status` exposes `runtime.brokerSellSync` with the latest run time, import count, candidate count, skipped count, and last error.
+- This sync only writes missing filled broker sells. It must remain idempotent by `orderId` and must not create or retry broker orders.
 
 ## Recent Server Commands
 

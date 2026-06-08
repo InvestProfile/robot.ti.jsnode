@@ -18,6 +18,7 @@ import SellPolicyService from '../services/sell-policy.service';
 import PositionStateService from '../services/position-state.service';
 import ProtectiveStopService from '../services/protective-stop.service';
 import RobotPositionLedgerService from '../services/robot-position-ledger.service';
+import BrokerMissingSellImportService from '../services/broker-missing-sell-import.service';
 import StrategyEngine from '../strategies/strategy-engine';
 import StopLossStrategy from '../strategies/stop-loss.strategy';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
@@ -39,6 +40,13 @@ let circuitBreakerOpen = false;
 let circuitBreakerReason: string | undefined;
 let isBuySignalJournalRunning = false;
 let isPaperTradingRunning = false;
+let isBrokerSellSyncRunning = false;
+let brokerSellSyncLastStartedAt: string | undefined;
+let brokerSellSyncLastFinishedAt: string | undefined;
+let brokerSellSyncLastError: string | undefined;
+let brokerSellSyncLastImported = 0;
+let brokerSellSyncLastCandidates = 0;
+let brokerSellSyncLastSkipped = 0;
 let protectiveStopLastSyncStartedAt: string | undefined;
 let protectiveStopLastSyncFinishedAt: string | undefined;
 let protectiveStopLastResyncAt: string | undefined;
@@ -67,6 +75,15 @@ export const getTradingRuntimeState = () => ({
         lastError: protectiveStopLastError,
         checked: protectiveStopLastChecked,
         resynced: protectiveStopLastResynced
+    },
+    brokerSellSync: {
+        isRunning: isBrokerSellSyncRunning,
+        lastStartedAt: brokerSellSyncLastStartedAt,
+        lastFinishedAt: brokerSellSyncLastFinishedAt,
+        lastError: brokerSellSyncLastError,
+        imported: brokerSellSyncLastImported,
+        candidates: brokerSellSyncLastCandidates,
+        skipped: brokerSellSyncLastSkipped
     }
 });
 
@@ -1132,6 +1149,36 @@ const executePaperTradingTick = async (config: RobotConfig) => {
     }
 };
 
+const executeBrokerSellSyncTick = async (config: RobotConfig) => {
+    if (!config.brokerSellSyncEnabled || config.brokerSellSyncIntervalMs <= 0) return;
+
+    if (isBrokerSellSyncRunning) {
+        console.log('Broker sell sync is still running, skip this interval.');
+        return;
+    }
+
+    isBrokerSellSyncRunning = true;
+    brokerSellSyncLastStartedAt = new Date().toISOString();
+    brokerSellSyncLastError = undefined;
+
+    try {
+        const result = await BrokerMissingSellImportService.importMissingSells(config, { apply: true });
+        brokerSellSyncLastImported = result.imported.length;
+        brokerSellSyncLastCandidates = result.candidates.length;
+        brokerSellSyncLastSkipped = result.skipped.length;
+
+        console.log(
+            `Broker sell sync finished. checked=${result.checkedIssues} candidates=${result.candidates.length} imported=${result.imported.length} skipped=${result.skipped.length}`
+        );
+    } catch (error) {
+        brokerSellSyncLastError = getErrorMessage(error);
+        console.error('Error occurred in broker sell sync:', error);
+    } finally {
+        brokerSellSyncLastFinishedAt = new Date().toISOString();
+        isBrokerSellSyncRunning = false;
+    }
+};
+
 export function startTradingProcess(config: RobotConfig = getRobotConfig()): TradingProcess {
     console.log('Trading process started.');
     console.log('Accounts: ' + config.accountIds.join(', '));
@@ -1156,6 +1203,8 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
     console.log('Trading paused: ' + config.tradingPaused);
     console.log('Max consecutive tick errors: ' + config.maxConsecutiveTickErrors);
     console.log('Snapshot interval: ' + config.snapshotIntervalMs + ' ms');
+    console.log('Broker sell sync: ' + config.brokerSellSyncEnabled);
+    console.log('Broker sell sync interval: ' + config.brokerSellSyncIntervalMs + ' ms');
     console.log('Buy signal journal interval: ' + config.buySignalJournalIntervalMs + ' ms');
     console.log('Paper trading: ' + config.paperTradingEnabled);
     console.log('Paper trading interval: ' + config.paperTradingIntervalMs + ' ms');
@@ -1174,6 +1223,12 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
     const buySignalJournalInterval = config.buySignalJournalIntervalMs > 0
         ? setInterval(() => void withEffectiveConfig(executeBuySignalJournalTick), config.buySignalJournalIntervalMs)
         : undefined;
+    const brokerSellSyncInterval = config.brokerSellSyncEnabled && config.brokerSellSyncIntervalMs > 0
+        ? setInterval(() => void withEffectiveConfig(executeBrokerSellSyncTick), config.brokerSellSyncIntervalMs)
+        : undefined;
+    const initialBrokerSellSyncTimeout = config.brokerSellSyncEnabled && config.brokerSellSyncIntervalMs > 0
+        ? setTimeout(() => void withEffectiveConfig(executeBrokerSellSyncTick), Math.min(30_000, config.brokerSellSyncIntervalMs))
+        : undefined;
 
     if (config.buySignalJournalIntervalMs > 0) {
         void withEffectiveConfig(executeBuySignalJournalTick);
@@ -1191,6 +1246,8 @@ export function startTradingProcess(config: RobotConfig = getRobotConfig()): Tra
         stop: () => {
             clearInterval(interval);
             if (buySignalJournalInterval) clearInterval(buySignalJournalInterval);
+            if (brokerSellSyncInterval) clearInterval(brokerSellSyncInterval);
+            if (initialBrokerSellSyncTimeout) clearTimeout(initialBrokerSellSyncTimeout);
             if (paperTradingInterval) clearInterval(paperTradingInterval);
             console.log('Trading process stopped.');
         }

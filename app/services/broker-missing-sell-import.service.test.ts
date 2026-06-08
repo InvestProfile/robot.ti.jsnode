@@ -119,6 +119,35 @@ describe('BrokerMissingSellImportService', () => {
         assert.strictEqual(result.imported.length, 0);
     });
 
+    it('finds recent broker sells even before ledger audit exposes a mismatch', async () => {
+        (AccountingAuditService.getLedgerBrokerAudit as unknown) = async () => ({ issues: [] });
+        (OperationsService.getOperationsByCursorItems as unknown) = async () => [operation];
+        (TradesModel.findAll as unknown) = async () => [];
+
+        const result = await BrokerMissingSellImportService.importMissingSells(config);
+
+        assert.strictEqual(result.checkedIssues, 0);
+        assert.strictEqual(result.candidates.length, 1);
+        assert.strictEqual(result.candidates[0].orderId, 'sell-order-1');
+        assert.match(result.candidates[0].reason, /recent broker sell/);
+    });
+
+    it('does not duplicate recent broker sells that are already present locally', async () => {
+        (AccountingAuditService.getLedgerBrokerAudit as unknown) = async () => ({ issues: [] });
+        (OperationsService.getOperationsByCursorItems as unknown) = async () => [operation];
+        (TradesModel.findAll as unknown) = async () => [{
+            getDataValue: () => 'sell-order-1'
+        }];
+        (TradesModel.create as unknown) = async () => {
+            throw new Error('should not write duplicate recent broker operation');
+        };
+
+        const result = await BrokerMissingSellImportService.importMissingSells(config, { apply: true });
+
+        assert.strictEqual(result.candidates.length, 0);
+        assert.strictEqual(result.imported.length, 0);
+    });
+
     it('finds missing broker sells for ledger ghost positions', async () => {
         (AccountingAuditService.getLedgerBrokerAudit as unknown) = async () => ({
             issues: [{

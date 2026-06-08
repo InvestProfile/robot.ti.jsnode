@@ -176,6 +176,8 @@ export interface RobotConfig {
     tradingPaused: boolean;
     maxConsecutiveTickErrors: number;
     snapshotIntervalMs: number;
+    brokerSellSyncEnabled: boolean;
+    brokerSellSyncIntervalMs: number;
     intervalMs: number;
     positionDelayMs: number;
     enabledStrategies: string[];
@@ -317,6 +319,8 @@ export const getRobotConfig = (): RobotConfig => {
         tradingPaused: parseBoolean(env.ROBOT_TRADING_PAUSED, false),
         maxConsecutiveTickErrors: Math.max(1, Math.trunc(parseNumber(env.ROBOT_MAX_CONSECUTIVE_TICK_ERRORS, 3))),
         snapshotIntervalMs: Math.max(0, parseNumber(env.ROBOT_SNAPSHOT_INTERVAL_MS, 15 * 60 * 1000)),
+        brokerSellSyncEnabled: parseBoolean(env.ROBOT_BROKER_SELL_SYNC_ENABLED, true),
+        brokerSellSyncIntervalMs: Math.max(0, parseNumber(env.ROBOT_BROKER_SELL_SYNC_INTERVAL_MS, 5 * 60 * 1000)),
         intervalMs: parseNumber(env.ROBOT_INTERVAL_MS, 60_000),
         positionDelayMs: parseNumber(env.ROBOT_POSITION_DELAY_MS, 1_000),
         enabledStrategies: parseStrategies(env.ROBOT_ENABLED_STRATEGIES),

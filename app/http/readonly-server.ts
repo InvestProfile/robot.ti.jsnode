@@ -681,6 +681,8 @@ const safeConfig = (config: RobotConfig) => ({
     tradingPaused: config.tradingPaused,
     maxConsecutiveTickErrors: config.maxConsecutiveTickErrors,
     intervalMs: config.intervalMs,
+    brokerSellSyncEnabled: config.brokerSellSyncEnabled,
+    brokerSellSyncIntervalMs: config.brokerSellSyncIntervalMs,
     positionDelayMs: config.positionDelayMs,
     enabledStrategies: config.enabledStrategies,
     minProfitPercent: config.minProfitPercent,
