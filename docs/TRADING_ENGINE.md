@@ -82,6 +82,7 @@ Notes:
 - `npm run exit:lab -- --net` summarizes real closed exits by signal source, holding time, sector, and ticker.
 - `npm run stop:whatif -- 500 --net` compares stop-loss scenarios on real closed stop exits, including wider stops, soft grace, confirmation buffer, and trailing activation thresholds. Treat deferred rows as "would hold for live observation", not guaranteed saved profit.
 - `npm run fomo:whatif -- 500 --net` checks whether anti-FOMO filters would have avoided bad entries.
+- `npm run quality:buy -- 500` summarizes recent score-buy entries bought near the stored recent high, their later P/L/stop exits, and which anti-peak filters would have caught them. It is read-only and uses saved entry decision factors.
 
 ## Important Env Values
 

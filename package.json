@@ -25,6 +25,7 @@
     "exit:lab": "npm run build && node build/reports/exit-stops-lab.report.js",
     "stop:whatif": "npm run build && node build/reports/stop-loss-what-if.report.js",
     "fomo:whatif": "npm run build && node build/reports/anti-fomo-what-if.report.js",
+    "quality:buy": "npm run build && node build/reports/buy-quality.report.js",
     "backfill:decisions": "npm run build && node build/reports/backfill-trade-decisions.report.js",
     "social:collect": "npm run build && node build/reports/social-collector.report.js",
     "social:collector": "npm run build && node build/reports/social-collector.report.js --loop",
