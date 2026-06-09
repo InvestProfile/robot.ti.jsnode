@@ -865,6 +865,11 @@ const getTradePnlPayload = async (url: URL, config: RobotConfig) => {
     return await enrichTradePnlWithSectors(payload);
 };
 
+const getPnlReconciliationPayload = async (url: URL, config: RobotConfig) => {
+    const requestedLimit = Number(url.searchParams.get('limit') ?? 500);
+    return await TradePnlService.getPnlReconciliation(config, { limit: requestedLimit });
+};
+
 const summarizeSectorPnl = (rows: Record<string, unknown>[]) => {
     const groups = new Map<string, {
         key: string;
@@ -1969,6 +1974,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/trade-pnl') {
         json(res, 200, await getTradePnlPayload(url, config));
+        return;
+    }
+
+    if (url.pathname === '/api/pnl-reconciliation') {
+        json(res, 200, await getPnlReconciliationPayload(url, config));
         return;
     }
 

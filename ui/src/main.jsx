@@ -45,6 +45,7 @@ const endpoints = {
   robotPositions: '/api/robot-positions',
   trades: '/api/trades?limit=200',
   tradePnl: '/api/trade-pnl?limit=500',
+  pnlReconciliation: '/api/pnl-reconciliation?limit=500',
   accountingAudit: '/api/accounting-audit',
   orderSafety: '/api/order-safety?limit=80',
   protectiveStops: '/api/protective-stops',
@@ -53,14 +54,14 @@ const endpoints = {
 
 const endpointGroups = {
   core: ['status', 'limits', 'performance', 'paper', 'socialCollector', 'market', 'orderSafety'],
-  overview: ['market', 'orderSafety', 'protectiveStops', 'snapshots', 'positions'],
+  overview: ['market', 'orderSafety', 'protectiveStops', 'snapshots', 'positions', 'pnlReconciliation'],
   buy: ['dailyBuyList', 'preview', 'buyRecommendations', 'buyScan'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   socialProfiles: ['socialProfiles'],
   evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
   sell: ['sellBrain', 'exitPolicyObservations', 'positions', 'robotPositions'],
-  trades: ['trades', 'tradePnl', 'robotPositions', 'accountingAudit', 'decisions', 'orderSafety', 'protectiveStops'],
+  trades: ['trades', 'tradePnl', 'pnlReconciliation', 'robotPositions', 'accountingAudit', 'decisions', 'orderSafety', 'protectiveStops'],
   logs: ['decisions', 'trades', 'robotPositions', 'orderSafety', 'protectiveStops']
 };
 
@@ -1372,6 +1373,8 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
       <ExecutionOverview data={data} className="wide" />
 
       <PnlForecastChart data={data} />
+
+      <PnlReconciliation report={data.pnlReconciliation} loading={loadingKeys.pnlReconciliation} className="wide" />
 
       <SectorExposureCard data={data} loading={loadingKeys.positions} />
 
@@ -3233,6 +3236,46 @@ function AccountingAudit({ audit, loading }) {
   );
 }
 
+function PnlReconciliation({ report, loading, className }) {
+  const headline = report?.headline || {};
+  const quality = report?.quality || {};
+  const cashflows = report?.cashflows || {};
+  const brokerAccount = report?.brokerAccount || {};
+  const window = report?.window || {};
+  const realizedNet = Number(headline.realizedNetPnlRub || 0);
+  const robotDelta = Number(headline.robotOwnedDeltaRub || 0);
+  const brokerDelta = Number(headline.brokerAccountTotalDeltaRub || 0);
+  const tradingLikeDelta = Number(headline.brokerTradingLikeDeltaRub || 0);
+  const issues = Number(quality.accountingIssues || 0) + Number(quality.unmatchedSells || 0);
+
+  return (
+    <Card title="P&L reconciliation" icon={LineChart} className={className} help="Read-only сверка: главная торговая цифра - realized net P/L закрытых robot round-trip. Дельта брокерского счета может отличаться из-за пополнений/выводов, открытых позиций, ручных сделок, налогов, дивидендов и не-robot позиций.">
+      <StageStrip
+        items={[
+          { label: 'Главная цифра', value: `${money(realizedNet)} RUB`, tone: realizedNet >= 0 ? 'good' : 'bad', detail: `realized net, fees ${money(headline.commissionRub)}` },
+          { label: 'Gross / fees', value: `${money(headline.realizedGrossPnlRub)} / ${money(headline.commissionRub)}`, detail: 'закрытые пары' },
+          { label: 'Unrealized', value: `${money(headline.unrealizedPnlRub)} RUB`, tone: Number(headline.unrealizedPnlRub || 0) >= 0 ? 'good' : 'bad', detail: 'открытые robot-owned лоты' },
+          { label: 'Robot delta', value: `${money(robotDelta)} RUB`, tone: robotDelta >= 0 ? 'good' : 'bad', detail: 'realized net + unrealized' },
+          { label: 'Broker delta', value: headline.brokerAccountTotalDeltaRub === undefined ? EMPTY : `${money(brokerDelta)} RUB`, tone: brokerDelta >= 0 ? 'good' : 'bad', detail: `${money(brokerAccount.firstTotalRub)} -> ${money(brokerAccount.lastTotalRub)}` },
+          { label: 'Cash in / out', value: `${money(cashflows.cashInRub)} / ${money(cashflows.cashOutRub)}`, detail: `${cashflows.operations || 0} operations` },
+          { label: 'Broker - cashflow', value: headline.brokerTradingLikeDeltaRub === undefined ? EMPTY : `${money(tradingLikeDelta)} RUB`, tone: tradingLikeDelta >= 0 ? 'good' : 'bad', detail: 'не чистый P/L робота' },
+          { label: 'Quality', value: issues, tone: issues ? 'warn' : 'good', detail: `${quality.unmatchedSells || 0} unmatched, ${quality.accountingIssues || 0} audit` }
+        ]}
+      />
+      <div className="audit-callout">
+        <Pill tone={issues ? 'warn' : 'good'}>{quality.accounting || 'loading'}</Pill>
+        <span>
+          Считать главным: realized net P/L закрытых robot-owned пар. Открытые позиции смотреть отдельно как unrealized.
+        </span>
+        <strong>
+          Окно: {window.from ? time(window.from) : EMPTY} - {window.to ? time(window.to) : EMPTY}; snapshots {window.snapshots ?? EMPTY}, trades {window.trades ?? EMPTY}.
+        </strong>
+      </div>
+      {loading ? <div className="muted">Обновляю P&L reconciliation...</div> : null}
+    </Card>
+  );
+}
+
 function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange, onProtectiveStopResync }) {
   const [filters, setFilters] = useState({ side: 'all', status: 'all', ledger: 'all', ticker: '', pnl: 'all', sort: 'newest' });
   const rows = buildTradeRows(data);
@@ -3304,6 +3347,8 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange, onP
           ]}
         />
       </Card>
+
+      <PnlReconciliation report={data.pnlReconciliation} loading={loadingKeys.pnlReconciliation} className="wide" />
 
       <TradeReview rows={filteredRows} loading={loadingKeys.trades || loadingKeys.robotPositions || loadingKeys.decisions} className="wide">
         <TradeFilters rows={rows} filters={filters} onChange={setFilters} />

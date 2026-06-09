@@ -7,9 +7,13 @@ import { isIgnoredAccountingOrderStatus } from '../utils/order-status';
 import OperationsService from './operations.service';
 import { quotationToNumber } from '../utils/money';
 import { OperationItem, OperationState, OperationType } from 'tinkoff-sdk-grpc-js/dist/generated/operations';
+import { PortfolioSnapshotModel } from '../models/portfolio-snapshot.model';
+import RobotPositionLedgerService from './robot-position-ledger.service';
+import AccountingAuditService from './accounting-audit.service';
 
 const BUY_DIRECTION = '1';
 const SELL_DIRECTION = '2';
+const BROKER_REPORT_MAX_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 interface OpenBuy {
     row: Record<string, unknown>;
@@ -43,6 +47,11 @@ interface DecisionMatch {
 
 interface RoundTripPnlOptions {
     includeCommissions?: boolean;
+}
+
+interface PnlReconciliationOptions {
+    limit?: number;
+    includeCashflows?: boolean;
 }
 
 const toNumber = (value: unknown) => {
@@ -259,10 +268,28 @@ const commissionTimeWindow = (rows: Record<string, unknown>[]) => {
 
     if (timestamps.length === 0) return undefined;
 
+    const from = Math.min(...timestamps) - 24 * 60 * 60 * 1000;
+    const to = Math.min(Date.now(), Math.max(...timestamps) + 24 * 60 * 60 * 1000);
+    if (from >= to) return undefined;
+
     return {
-        from: new Date(Math.min(...timestamps) - 24 * 60 * 60 * 1000),
-        to: new Date(Math.max(...timestamps) + 24 * 60 * 60 * 1000)
+        from: new Date(from),
+        to: new Date(to)
     };
+};
+
+const splitDateWindow = (from: Date, to: Date, maxWindowMs = BROKER_REPORT_MAX_WINDOW_MS) => {
+    const chunks = [];
+    let chunkFrom = new Date(from);
+    const finalTo = new Date(to);
+
+    while (chunkFrom.getTime() < finalTo.getTime()) {
+        const chunkTo = new Date(Math.min(finalTo.getTime(), chunkFrom.getTime() + maxWindowMs));
+        chunks.push({ from: chunkFrom, to: chunkTo });
+        chunkFrom = new Date(chunkTo.getTime() + 1);
+    }
+
+    return chunks.length ? chunks : [{ from, to }];
 };
 
 const moneyValueToRub = (value: unknown) => {
@@ -413,19 +440,21 @@ const buildCommissionByOrderId = async (
 
     await Promise.all(reportAccountIds.map(async accountId => {
         try {
-            const reportRows = await OperationsService.getBrokerReportRows(accountId, window.from, window.to);
+            for (const chunk of splitDateWindow(window.from, window.to)) {
+                const reportRows = await OperationsService.getBrokerReportRows(accountId, chunk.from, chunk.to);
 
-            for (const reportRow of reportRows) {
-                const data = reportRow as Record<string, unknown>;
-                const orderId = data.orderId ? String(data.orderId) : undefined;
-                if (!orderId) continue;
+                for (const reportRow of reportRows) {
+                    const data = reportRow as Record<string, unknown>;
+                    const orderId = data.orderId ? String(data.orderId) : undefined;
+                    if (!orderId) continue;
 
-                const commissionRub = moneyValueToRub(data.brokerCommission)
-                    + moneyValueToRub(data.exchangeCommission)
-                    + moneyValueToRub(data.exchangeClearingCommission);
-                if (commissionRub <= 0) continue;
+                    const commissionRub = moneyValueToRub(data.brokerCommission)
+                        + moneyValueToRub(data.exchangeCommission)
+                        + moneyValueToRub(data.exchangeClearingCommission);
+                    if (commissionRub <= 0) continue;
 
-                commissionByOrderId.set(orderId, (commissionByOrderId.get(orderId) ?? 0) + commissionRub);
+                    commissionByOrderId.set(orderId, (commissionByOrderId.get(orderId) ?? 0) + commissionRub);
+                }
             }
         } catch (error) {
             console.warn('Trade P/L commission fetch failed:', {
@@ -574,7 +603,177 @@ const flattenOpenLots = (openBuys: Map<string, OpenBuy[]>, config: RobotConfig):
     })
     .sort((a, b) => new Date(b.entryAt).getTime() - new Date(a.entryAt).getTime());
 
+const CASH_IN_OPERATION_TYPES = new Set<OperationType>([
+    OperationType.OPERATION_TYPE_INPUT,
+    OperationType.OPERATION_TYPE_INPUT_SECURITIES,
+    OperationType.OPERATION_TYPE_INPUT_SWIFT,
+    OperationType.OPERATION_TYPE_INPUT_ACQUIRING
+]);
+
+const CASH_OUT_OPERATION_TYPES = new Set<OperationType>([
+    OperationType.OPERATION_TYPE_OUTPUT,
+    OperationType.OPERATION_TYPE_OUTPUT_SECURITIES,
+    OperationType.OPERATION_TYPE_OUTPUT_SWIFT,
+    OperationType.OPERATION_TYPE_OUTPUT_ACQUIRING,
+    OperationType.OPERATION_TYPE_OUTPUT_PENALTY
+]);
+
+const cashPaymentRub = (operation: OperationItem) => moneyValueToRub(operation.payment);
+
+const cashflowTypes = () => [...CASH_IN_OPERATION_TYPES, ...CASH_OUT_OPERATION_TYPES];
+
+const summarizeCashflows = async (accountIds: string[], from: Date | undefined, to: Date | undefined, includeCashflows: boolean) => {
+    if (!includeCashflows || !from || !to || accountIds.length === 0) {
+        return {
+            cashInRub: 0,
+            cashOutRub: 0,
+            netCashflowRub: 0,
+            operations: 0,
+            available: Boolean(includeCashflows && from && to && accountIds.length)
+        };
+    }
+
+    let cashInRub = 0;
+    let cashOutRub = 0;
+    let operationsCount = 0;
+
+    await Promise.all(accountIds.map(async accountId => {
+        try {
+            const operations = await OperationsService.getOperationsByCursorItems(accountId, from, to, {
+                operationTypes: cashflowTypes(),
+                state: OperationState.OPERATION_STATE_EXECUTED,
+                withoutCommissions: true,
+                withoutTrades: true,
+                withoutOvernights: true
+            });
+
+            for (const operation of operations) {
+                const amount = cashPaymentRub(operation);
+                if (amount <= 0) continue;
+
+                if (CASH_IN_OPERATION_TYPES.has(operation.type)) {
+                    cashInRub += amount;
+                    operationsCount += 1;
+                } else if (CASH_OUT_OPERATION_TYPES.has(operation.type)) {
+                    cashOutRub += amount;
+                    operationsCount += 1;
+                }
+            }
+        } catch (error) {
+            console.warn('P/L reconciliation cashflow fetch failed:', {
+                accountId,
+                error: error instanceof Error ? error.message : String(error)
+            });
+        }
+    }));
+
+    return {
+        cashInRub,
+        cashOutRub,
+        netCashflowRub: cashInRub - cashOutRub,
+        operations: operationsCount,
+        available: true
+    };
+};
+
 export default class TradePnlService {
+    static async getPnlReconciliation(config: RobotConfig, options: PnlReconciliationOptions = {}) {
+        const limit = Math.min(Math.max(Number.isFinite(options.limit) ? Number(options.limit) : 500, 2), 2_000);
+        const [pnl, ledger, audit, snapshotModels] = await Promise.all([
+            this.getRoundTripPnl(config, limit),
+            RobotPositionLedgerService.getLedger(config),
+            AccountingAuditService.getLedgerBrokerAudit(config),
+            PortfolioSnapshotModel.findAll({
+                where: {
+                    accountId: { [Op.in]: config.accountIds }
+                } as any,
+                order: [['createdAt', 'DESC']],
+                limit
+            })
+        ]);
+        const snapshots = snapshotModels
+            .map(snapshot => snapshot.get({ plain: true }) as Record<string, unknown>)
+            .sort((a, b) => new Date(String(a.createdAt || '')).getTime() - new Date(String(b.createdAt || '')).getTime());
+        const firstSnapshot = snapshots[0];
+        const lastSnapshot = snapshots[snapshots.length - 1];
+        const firstTotalRub = firstSnapshot ? Number(firstSnapshot.totalRub) : undefined;
+        const lastTotalRub = lastSnapshot ? Number(lastSnapshot.totalRub) : undefined;
+        const firstCashRub = firstSnapshot ? Number(firstSnapshot.cashRub) : undefined;
+        const lastCashRub = lastSnapshot ? Number(lastSnapshot.cashRub) : undefined;
+        const brokerAccountTotalDeltaRub = firstTotalRub !== undefined && lastTotalRub !== undefined
+            ? lastTotalRub - firstTotalRub
+            : undefined;
+        const brokerCashDeltaRub = firstCashRub !== undefined && lastCashRub !== undefined
+            ? lastCashRub - firstCashRub
+            : undefined;
+        const from = firstSnapshot?.createdAt ? new Date(String(firstSnapshot.createdAt)) : undefined;
+        const to = lastSnapshot?.createdAt ? new Date(String(lastSnapshot.createdAt)) : undefined;
+        const cashflows = await summarizeCashflows(config.accountIds, from, to, options.includeCashflows !== false);
+        const realizedGrossPnlRub = Number(pnl.summary.realizedGrossPnlRub ?? pnl.summary.realizedPnlRub ?? 0);
+        const commissionRub = Number(pnl.summary.commissionRub ?? 0);
+        const realizedNetPnlRub = Number(pnl.summary.realizedNetPnlRub ?? pnl.summary.realizedPnlRub ?? 0);
+        const unrealizedPnlRub = Number(ledger.summary.unrealizedPnl ?? 0);
+        const robotOwnedDeltaRub = realizedNetPnlRub + unrealizedPnlRub;
+        const brokerTradingLikeDeltaRub = brokerAccountTotalDeltaRub !== undefined
+            ? brokerAccountTotalDeltaRub - cashflows.netCashflowRub
+            : undefined;
+
+        return {
+            generatedAt: new Date().toISOString(),
+            window: {
+                from: firstSnapshot?.createdAt,
+                to: lastSnapshot?.createdAt,
+                snapshots: snapshots.length,
+                trades: pnl.summary.scannedTrades,
+                note: 'Snapshot deltas are broker account movement over the loaded window, not pure trading profit.'
+            },
+            headline: {
+                primaryMetric: 'realizedNetPnlRub',
+                realizedNetPnlRub,
+                realizedGrossPnlRub,
+                commissionRub,
+                unrealizedPnlRub,
+                robotOwnedDeltaRub,
+                brokerAccountTotalDeltaRub,
+                brokerTradingLikeDeltaRub
+            },
+            cashflows,
+            brokerAccount: {
+                firstTotalRub,
+                lastTotalRub,
+                totalDeltaRub: brokerAccountTotalDeltaRub,
+                firstCashRub,
+                lastCashRub,
+                cashDeltaRub: brokerCashDeltaRub,
+                totalDeltaMinusCashflowRub: brokerTradingLikeDeltaRub
+            },
+            robotOwned: {
+                realizedNetPnlRub,
+                realizedGrossPnlRub,
+                commissionRub,
+                unrealizedPnlRub,
+                deltaRub: robotOwnedDeltaRub,
+                openLots: pnl.summary.openLots,
+                openPositions: pnl.summary.openPositions,
+                ledgerMarketValueRub: ledger.summary.marketValue,
+                ledgerPositions: ledger.summary.positions
+            },
+            quality: {
+                accounting: pnl.summary.accounting,
+                closedRoundTrips: pnl.summary.closed,
+                unmatchedSells: pnl.summary.unmatchedSells,
+                matchingQuality: pnl.summary.matchingQuality,
+                accountingIssues: audit.summary.issues,
+                ledgerGhosts: audit.summary.ghosts,
+                quantityMismatches: audit.summary.quantityMismatches,
+                note: 'Realized net P/L is the main trading result for closed robot round-trips. Broker deltas also include open mark-to-market, cashflows, manual activity, dividends, taxes, and non-robot positions.'
+            },
+            recentClosedRoundTrips: pnl.closedRoundTrips.slice(0, 10),
+            unmatchedSells: pnl.unmatchedSells.slice(0, 10),
+            accountingIssues: audit.issues.slice(0, 10)
+        };
+    }
+
     static async getRoundTripPnl(config: RobotConfig, limit = 500, options: RoundTripPnlOptions = {}) {
         const includeCommissions = options.includeCommissions !== false;
         const safeLimit = Math.min(Math.max(Number.isFinite(limit) ? limit : 500, 1), 2_000);

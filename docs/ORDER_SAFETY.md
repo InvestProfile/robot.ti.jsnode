@@ -94,3 +94,9 @@ Important:
 - Gross P/L is before commissions.
 - Net P/L subtracts matched commissions.
 - If broker report matching is incomplete, net P/L can still be optimistic.
+- `/api/pnl-reconciliation` is the read-only truth summary for the dashboard:
+  - main trading result is realized net P/L from closed robot-owned FIFO round-trips;
+  - cash in/out is shown separately from trading result when operations cursor data is available;
+  - unrealized P/L is only open robot-owned mark-to-market from the ledger;
+  - broker account delta comes from portfolio snapshots and can include cashflows, open market repricing, manual/non-robot activity, taxes, dividends, and the whole trading account.
+- Use broker snapshot delta as an account movement diagnostic, not as proof that the robot strategy earned that amount.
