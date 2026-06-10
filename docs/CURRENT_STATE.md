@@ -26,6 +26,8 @@ Last updated: 2026-06-08.
 - Expanded `npm run stop:whatif` into an exit lab for wider stops, soft grace, confirmation buffer, and trailing activation thresholds. It is read-only and must not be treated as proof that deferred stops would have become profitable.
 - Added live sell-page `Exit lab` diagnostics: every current position compares the active exit decision with observe-only `ATR x2 max10`, showing where the candidate would hold or sell differently without changing real orders.
 - Added `exit_policy_observations`: runtime sell ticks persist only exit-lab disagreements (`would-hold` / `would-sell`) in 15-minute buckets, and the sell page shows the latest history.
+- Added P&L reconciliation dashboard/API locally (`/api/pnl-reconciliation`) to separate realized net P/L, unrealized robot P/L, broker account delta, and cash in/out.
+- Added recent-sell re-entry guard locally: new buys after any filled sell are blocked for the configured window unless price confirms above the exit. This is meant to prevent immediate buybacks after broker-stop losses.
 
 ## Protective Stop Orders
 
