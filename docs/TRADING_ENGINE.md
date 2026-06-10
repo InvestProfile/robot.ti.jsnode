@@ -31,6 +31,7 @@ Current buy guards:
 - Add-on buy requires existing robot position to be profitable enough.
 - Same-day add-on for the same ticker requires price confirmation above the latest robot buy; this is price-based, not a timer cooldown.
 - Same-day re-entry after stop-loss is blocked.
+- Recent re-entry after any filled sell is blocked unless price confirms above the latest sell by the configured buffer. This prevents buying back lower/flat shortly after the robot exited.
 - Weak add-on protection blocks adding to a losing robot-owned position.
 - Loss guard raises the required buy score for tickers/sectors with recent stop-heavy negative round-trips; it is a score buffer, not a permanent ban.
 - Loss guard also counts broker protective stop exits separately. A single large broker-stop loss or a small cluster of stop losses can require the configured score buffer even before the broader closed-trade sample is large.
@@ -98,6 +99,11 @@ Notes:
 - `ROBOT_MAX_ORDER_RUB`
 - `ROBOT_MAX_POSITION_SHARE_PERCENT`
 - `ROBOT_BUY_ADD_ON_MIN_PROFIT_PERCENT`
+- `ROBOT_BUY_REENTRY_AFTER_SELL_MIN_GAIN_PERCENT`
+- `ROBOT_BUY_RECENT_SELL_REENTRY_ENABLED`
+- `ROBOT_BUY_RECENT_SELL_REENTRY_ENFORCED`
+- `ROBOT_BUY_RECENT_SELL_REENTRY_WINDOW_MS`
+- `ROBOT_BUY_RECENT_SELL_REENTRY_MIN_GAIN_PERCENT`
 - `ROBOT_BUY_ANTI_FOMO_ENABLED`
 - `ROBOT_BUY_ANTI_FOMO_ENFORCED`
 - `ROBOT_BUY_ANTI_FOMO_MAX_MOMENTUM_PERCENT`

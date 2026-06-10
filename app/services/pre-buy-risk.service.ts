@@ -257,6 +257,40 @@ export default class PreBuyRiskService {
         return undefined;
     }
 
+    static async getLatestSellSince(input: Pick<PreBuyRiskInput, 'accountId' | 'figi' | 'instrumentUid' | 'ticker'>, since: Date) {
+        if (!input.accountId || (!input.figi && !input.instrumentUid && !input.ticker)) return undefined;
+        if (!Number.isFinite(since.getTime())) return undefined;
+
+        const trades = await TradesModel.findAll({
+            where: {
+                accountId: input.accountId,
+                direction: SELL_DIRECTION,
+                createdAt: {
+                    [Op.gte]: since
+                }
+            } as any,
+            order: [['createdAt', 'DESC']],
+            limit: 200
+        });
+
+        for (const trade of trades) {
+            const data = trade.get({ plain: true }) as Record<string, unknown>;
+            if (!sameInstrument(data, input.figi, input.instrumentUid, input.ticker)) continue;
+            if (isIgnoredAccountingOrderStatus(data.status ? String(data.status) : undefined)) continue;
+
+            const lots = lotsFromTrade(data);
+            const amount = TradesService.amountFromTrade(data);
+            if (lots <= 0 || amount === undefined) continue;
+
+            return {
+                at: data.tradeDateTime || data.createdAt,
+                lotValueRub: amount / lots
+            };
+        }
+
+        return undefined;
+    }
+
     static async getLatestBuyToday(input: Pick<PreBuyRiskInput, 'accountId' | 'figi' | 'instrumentUid' | 'ticker'>) {
         if (!input.accountId || (!input.figi && !input.instrumentUid && !input.ticker)) return undefined;
 
@@ -448,6 +482,35 @@ export default class PreBuyRiskService {
             }
         }
 
+        if (config.buyRecentSellReentryEnabled && (!robotOwnedLots || robotOwnedLots <= 0)) {
+            const windowMs = Math.max(0, Number(config.buyRecentSellReentryWindowMs ?? 0));
+            const minGainPercent = Math.max(0, Number(config.buyRecentSellReentryMinGainPercent ?? 0));
+            const currentLotValueRub = Number(input.currentPrice) * Math.max(1, Number(input.lot || 1));
+            const since = new Date(Date.now() - windowMs);
+            const latestSell = windowMs > 0 ? await this.getLatestSellSince(input, since) : undefined;
+            const requiredLotValueRub = latestSell?.lotValueRub
+                ? latestSell.lotValueRub * (1 + minGainPercent / 100)
+                : undefined;
+
+            if (
+                latestSell
+                && requiredLotValueRub
+                && Number.isFinite(currentLotValueRub)
+                && currentLotValueRub > 0
+            ) {
+                addCheck({
+                    key: 'recent-sell-reentry',
+                    status: currentLotValueRub >= requiredLotValueRub ? 'pass' : 'block',
+                    reason: currentLotValueRub >= requiredLotValueRub
+                        ? `recent sell re-entry passed: current lot ${formatRub(currentLotValueRub)} >= required ${formatRub(requiredLotValueRub)} (${formatPercent(minGainPercent)} above latest sell within ${Math.round(windowMs / 60 / 60 / 1000)}h)`
+                        : `recent sell re-entry blocked: current lot ${formatRub(currentLotValueRub)} < required ${formatRub(requiredLotValueRub)} (${formatPercent(minGainPercent)} above latest sell within ${Math.round(windowMs / 60 / 60 / 1000)}h)`,
+                    enforced: config.buyRecentSellReentryEnforced,
+                    value: currentLotValueRub,
+                    limit: requiredLotValueRub
+                });
+            }
+        }
+
         if (config.buyAntiFomoEnabled) {
             const antiFomoMetrics = getAntiFomoMetrics(input.dailyCandles, input.currentPrice, config);
             if (!antiFomoMetrics) {
@@ -627,7 +690,7 @@ export default class PreBuyRiskService {
 
         return {
             passed: blockingReasons.length === 0,
-            mode: config.liquidityRiskEnforced || config.sectorRiskEnforced || config.sectorPerformanceRiskEnforced || config.buyAntiFomoEnforced || config.buyLossGuardEnforced ? 'enforced' : 'observe',
+            mode: config.liquidityRiskEnforced || config.sectorRiskEnforced || config.sectorPerformanceRiskEnforced || config.buyAntiFomoEnforced || config.buyLossGuardEnforced || config.buyRecentSellReentryEnforced ? 'enforced' : 'observe',
             warnings,
             blockingReasons,
             checks,

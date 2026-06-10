@@ -208,6 +208,10 @@ export interface RobotConfig {
     buyMinScore: number;
     buyAddOnMinProfitPercent: number;
     buyReentryAfterSellMinGainPercent: number;
+    buyRecentSellReentryEnabled: boolean;
+    buyRecentSellReentryEnforced: boolean;
+    buyRecentSellReentryWindowMs: number;
+    buyRecentSellReentryMinGainPercent: number;
     buyNegativeTechScoreBuffer: number;
     buyAntiFomoEnabled: boolean;
     buyAntiFomoEnforced: boolean;
@@ -354,6 +358,10 @@ export const getRobotConfig = (): RobotConfig => {
         buyMinScore: Math.max(1, Math.min(100, parseNumber(env.ROBOT_BUY_MIN_SCORE, 70))),
         buyAddOnMinProfitPercent: Math.max(0, Math.min(20, parseNumber(env.ROBOT_BUY_ADD_ON_MIN_PROFIT_PERCENT, 1))),
         buyReentryAfterSellMinGainPercent: Math.max(0, Math.min(20, parseNumber(env.ROBOT_BUY_REENTRY_AFTER_SELL_MIN_GAIN_PERCENT, 1))),
+        buyRecentSellReentryEnabled: parseBoolean(env.ROBOT_BUY_RECENT_SELL_REENTRY_ENABLED, true),
+        buyRecentSellReentryEnforced: parseBoolean(env.ROBOT_BUY_RECENT_SELL_REENTRY_ENFORCED, true),
+        buyRecentSellReentryWindowMs: Math.max(0, parseNumber(env.ROBOT_BUY_RECENT_SELL_REENTRY_WINDOW_MS, 48 * 60 * 60 * 1000)),
+        buyRecentSellReentryMinGainPercent: Math.max(0, Math.min(20, parseNumber(env.ROBOT_BUY_RECENT_SELL_REENTRY_MIN_GAIN_PERCENT, 1))),
         buyNegativeTechScoreBuffer: Math.max(0, Math.min(30, parseNumber(env.ROBOT_BUY_NEGATIVE_TECH_SCORE_BUFFER, 10))),
         buyAntiFomoEnabled: parseBoolean(env.ROBOT_BUY_ANTI_FOMO_ENABLED, true),
         buyAntiFomoEnforced: parseBoolean(env.ROBOT_BUY_ANTI_FOMO_ENFORCED, true),

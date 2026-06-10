@@ -155,6 +155,98 @@ describe('PreBuyRiskService', () => {
         assert.ok(result.checks.some(check => check.key === 'post-sell-price-confirmation' && check.status === 'pass'));
     });
 
+    it('blocks re-entry after a recent sell until price confirms above the exit', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([{
+            accountId: 'acc-1',
+            figi: 'figi-1',
+            instrumentId: 'uid-1',
+            ticker: 'SBER',
+            direction: '2',
+            status: 'EXECUTION_REPORT_STATUS_FILL',
+            lotsExecuted: 1,
+            totalAmountUnits: '100',
+            totalAmountNano: '0',
+            createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000)
+        }]);
+
+        const result = await PreBuyRiskService.evaluate(baseInput, {
+            ...config,
+            buyAddOnMinProfitPercent: 0,
+            buyReentryAfterSellMinGainPercent: 0,
+            buyRecentSellReentryEnabled: true,
+            buyRecentSellReentryEnforced: true,
+            buyRecentSellReentryWindowMs: 48 * 60 * 60 * 1000,
+            buyRecentSellReentryMinGainPercent: 1
+        } as RobotConfig);
+
+        assert.strictEqual(result.passed, false);
+        assert.ok(result.blockingReasons.some(reason => reason.includes('recent sell re-entry blocked')));
+        assert.ok(result.checks.some(check => check.key === 'recent-sell-reentry' && check.status === 'block' && check.enforced));
+    });
+
+    it('allows re-entry after a recent sell when price confirms above the exit', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([{
+            accountId: 'acc-1',
+            figi: 'figi-1',
+            instrumentId: 'uid-1',
+            ticker: 'SBER',
+            direction: '2',
+            status: 'EXECUTION_REPORT_STATUS_FILL',
+            lotsExecuted: 1,
+            totalAmountUnits: '100',
+            totalAmountNano: '0',
+            createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000)
+        }]);
+
+        const result = await PreBuyRiskService.evaluate({
+            ...baseInput,
+            currentPrice: 102
+        }, {
+            ...config,
+            buyAddOnMinProfitPercent: 0,
+            buyReentryAfterSellMinGainPercent: 0,
+            buyRecentSellReentryEnabled: true,
+            buyRecentSellReentryEnforced: true,
+            buyRecentSellReentryWindowMs: 48 * 60 * 60 * 1000,
+            buyRecentSellReentryMinGainPercent: 1
+        } as RobotConfig);
+
+        assert.strictEqual(result.passed, true);
+        assert.ok(result.checks.some(check => check.key === 'recent-sell-reentry' && check.status === 'pass'));
+    });
+
+    it('keeps recent sell re-entry observe-only when not enforced', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([{
+            accountId: 'acc-1',
+            figi: 'figi-1',
+            instrumentId: 'uid-1',
+            ticker: 'SBER',
+            direction: '2',
+            status: 'EXECUTION_REPORT_STATUS_FILL',
+            lotsExecuted: 1,
+            totalAmountUnits: '100',
+            totalAmountNano: '0',
+            createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000)
+        }]);
+
+        const result = await PreBuyRiskService.evaluate(baseInput, {
+            ...config,
+            buyAddOnMinProfitPercent: 0,
+            buyReentryAfterSellMinGainPercent: 0,
+            buyRecentSellReentryEnabled: true,
+            buyRecentSellReentryEnforced: false,
+            buyRecentSellReentryWindowMs: 48 * 60 * 60 * 1000,
+            buyRecentSellReentryMinGainPercent: 1
+        } as RobotConfig);
+
+        assert.strictEqual(result.passed, true);
+        assert.ok(result.warnings.some(reason => reason.includes('observe-only: recent sell re-entry blocked')));
+        assert.ok(result.checks.some(check => check.key === 'recent-sell-reentry' && check.status === 'block' && !check.enforced));
+    });
+
     it('blocks add-on buy when existing robot position is not profitable enough', async () => {
         (TradeDecisionModel.count as unknown) = async () => 0;
         mockTrades([{
