@@ -57,6 +57,7 @@ const PREVIEW_CACHE_TTL_MS = 30_000;
 const PREVIEW_CACHE_MAX_STALE_MS = 30 * 60_000;
 const PREVIEW_CACHE_PATH = process.env.ROBOT_PREVIEW_CACHE_PATH
     || path.resolve(process.cwd(), '.runtime', 'preview-cache.json');
+const ACCOUNTING_PAYLOAD_CACHE_TTL_MS = 2 * 60_000;
 
 interface PreviewPayload {
     mode: 'dry-run' | 'live';
@@ -72,10 +73,45 @@ interface PreviewCacheEntry {
 }
 
 const previewPayloadCache = new Map<string, PreviewCacheEntry>();
+const accountingPayloadCache = new Map<string, {
+    payload?: unknown;
+    createdAt: number;
+    refreshing?: Promise<unknown>;
+}>();
 let previewDiskCacheLoaded = false;
 
 const invalidatePreviewCache = () => {
     previewPayloadCache.clear();
+};
+
+const cachedAccountingPayload = async <T>(key: string, load: () => Promise<T>): Promise<T> => {
+    const now = Date.now();
+    const existing = accountingPayloadCache.get(key);
+
+    if (existing?.payload && now - existing.createdAt < ACCOUNTING_PAYLOAD_CACHE_TTL_MS) {
+        return existing.payload as T;
+    }
+
+    if (existing?.refreshing) return await existing.refreshing as T;
+
+    const refreshing = load().then(payload => {
+        accountingPayloadCache.set(key, {
+            payload,
+            createdAt: Date.now()
+        });
+        return payload;
+    }).catch(error => {
+        accountingPayloadCache.delete(key);
+        throw error;
+    });
+
+    accountingPayloadCache.set(key, {
+        payload: existing?.payload,
+        createdAt: existing?.createdAt ?? 0,
+        refreshing
+    });
+
+    return await refreshing;
 };
 
 const loadPreviewCacheFromDisk = async () => {
@@ -861,13 +897,23 @@ const getTradesPayload = async (url: URL) => {
 
 const getTradePnlPayload = async (url: URL, config: RobotConfig) => {
     const requestedLimit = Number(url.searchParams.get('limit') ?? 500);
-    const payload = await TradePnlService.getRoundTripPnl(config, requestedLimit);
-    return await enrichTradePnlWithSectors(payload);
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 500, 1), 2_000);
+    return await cachedAccountingPayload(
+        `trade-pnl:${config.accountIds.join(',')}:${limit}`,
+        async () => {
+            const payload = await TradePnlService.getRoundTripPnl(config, limit);
+            return await enrichTradePnlWithSectors(payload);
+        }
+    );
 };
 
 const getPnlReconciliationPayload = async (url: URL, config: RobotConfig) => {
     const requestedLimit = Number(url.searchParams.get('limit') ?? 500);
-    return await TradePnlService.getPnlReconciliation(config, { limit: requestedLimit });
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 500, 2), 2_000);
+    return await cachedAccountingPayload(
+        `pnl-reconciliation:${config.accountIds.join(',')}:${limit}`,
+        async () => await TradePnlService.getPnlReconciliation(config, { limit })
+    );
 };
 
 const summarizeSectorPnl = (rows: Record<string, unknown>[]) => {
