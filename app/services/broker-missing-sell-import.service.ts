@@ -132,14 +132,6 @@ const operationToRecentCandidate = (
     };
 };
 
-const issueScanFrom = (issue: AuditIssue, fallbackFrom: Date) => {
-    const lastTradeAt = issue.lastTradeAt ? new Date(issue.lastTradeAt) : undefined;
-    if (!lastTradeAt || Number.isNaN(lastTradeAt.getTime())) return fallbackFrom;
-
-    const fromBeforeLastLocalTrade = new Date(lastTradeAt.getTime() - 24 * 60 * 60 * 1000);
-    return fromBeforeLastLocalTrade > fallbackFrom ? fromBeforeLastLocalTrade : fallbackFrom;
-};
-
 export default class BrokerMissingSellImportService {
     private static async importCandidates(
         result: MissingBrokerSellImportResult,
@@ -328,7 +320,7 @@ export default class BrokerMissingSellImportService {
                 || item.ticker === issue.ticker
             );
             const lotSize = Math.max(1, Math.trunc(toNumber(instrument?.lot) || 1));
-            const brokerCandidates = await this.getBrokerSellCandidates(issue, issueScanFrom(issue, from), to, missingLots, lotSize);
+            const brokerCandidates = await this.getBrokerSellCandidates(issue, from, to, missingLots, lotSize);
             await this.importCandidates(result, brokerCandidates, missingLots, options.apply);
         }
 

@@ -173,6 +173,39 @@ describe('BrokerMissingSellImportService', () => {
         assert.match(result.candidates[0].reason, /ledger-ghost/);
     });
 
+    it('scans the full lookback for audit issues even when the last local trade is newer', async () => {
+        (AccountingAuditService.getLedgerBrokerAudit as unknown) = async () => ({
+            issues: [{
+                type: 'ledger-ghost',
+                accountId: 'acc-1',
+                accountAlias: 'trade',
+                ticker: 'VKCO',
+                name: 'VK',
+                figi: 'figi-1',
+                instrumentUid: 'uid-1',
+                ledgerLots: 1,
+                brokerLots: 0,
+                lastTradeAt: '2026-06-10T12:00:00.000Z'
+            }]
+        });
+        const requestedWindows: Array<{ from: Date; to: Date }> = [];
+        (OperationsService.getOperationsByCursorItems as unknown) = async (_accountId: string, from: Date, to: Date) => {
+            requestedWindows.push({ from, to });
+            return from <= operation.date && operation.date < to ? [operation] : [];
+        };
+        (TradesModel.findAll as unknown) = async () => [];
+
+        const result = await BrokerMissingSellImportService.importMissingSells(config, {
+            from: new Date('2026-05-20T00:00:00.000Z'),
+            to: new Date('2026-06-11T00:00:00.000Z')
+        });
+
+        assert.strictEqual(result.checkedIssues, 1);
+        assert.strictEqual(result.candidates.length, 1);
+        assert.strictEqual(result.candidates[0].orderId, 'sell-order-1');
+        assert.ok(requestedWindows.some(window => window.from <= operation.date && operation.date < window.to));
+    });
+
     it('converts broker operation quantity to lots using instrument lot size', async () => {
         (InstrumentsService.getShares as unknown) = async () => ({
             instruments: [{ uid: 'uid-1', figi: 'figi-1', ticker: 'VKCO', lot: 10 }]
