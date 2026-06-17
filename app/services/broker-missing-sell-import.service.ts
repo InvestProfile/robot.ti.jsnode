@@ -197,7 +197,7 @@ export default class BrokerMissingSellImportService {
         }
     }
 
-    private static async getBrokerSellCandidates(issue: AuditIssue, from: Date, to: Date, missingLots: number, lotSize: number) {
+    private static async getBrokerSellCandidates(issue: AuditIssue, from: Date, to: Date, _missingLots: number, lotSize: number) {
         const candidates: MissingBrokerSellCandidate[] = [];
         const seenOrderIds = new Set<string>();
         const fromDay = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), from.getUTCDate()));
@@ -234,9 +234,6 @@ export default class BrokerMissingSellImportService {
                 seenOrderIds.add(candidate.orderId);
                 candidates.push(candidate);
             }
-
-            const foundLots = candidates.reduce((sum, candidate) => sum + candidate.lots, 0);
-            if (foundLots >= missingLots) break;
 
             cursorTo = cursorFrom;
         }
