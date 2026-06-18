@@ -18,6 +18,7 @@ import {
 import './styles.css';
 
 const endpoints = {
+  health: '/api/health',
   status: '/api/status',
   accounts: '/api/accounts',
   limits: '/api/limits',
@@ -53,8 +54,8 @@ const endpoints = {
 };
 
 const endpointGroups = {
-  core: ['status', 'limits', 'performance', 'paper', 'socialCollector', 'market', 'orderSafety'],
-  overview: ['market', 'orderSafety', 'protectiveStops', 'snapshots', 'positions', 'pnlReconciliation'],
+  core: ['health', 'status', 'limits', 'performance', 'paper', 'socialCollector', 'market', 'orderSafety'],
+  overview: ['health', 'market', 'orderSafety', 'protectiveStops', 'snapshots', 'positions', 'pnlReconciliation'],
   buy: ['dailyBuyList', 'preview', 'buyRecommendations', 'buyScan'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   socialProfiles: ['socialProfiles'],
@@ -124,6 +125,13 @@ const duration = (milliseconds) => {
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
   return rest ? `${hours} ч ${rest} мин` : `${hours} ч`;
+};
+
+const secondsDuration = (seconds) => {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value < 0) return EMPTY;
+  if (value < 60) return `${Math.round(value)} сек`;
+  return duration(value * 1000);
 };
 
 const recTone = (recommendation) => {
@@ -710,7 +718,7 @@ const useDashboardData = (activeTab) => {
   }, [activeTab]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => void load(['status']), 30_000);
+    const interval = window.setInterval(() => void load(['health', 'status']), 30_000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -1226,6 +1234,7 @@ const filterBuyPreviews = (rows, filters) => {
 
 function Overview({ data, loadingKeys, onMarketRegimeChange }) {
   const blockers = getReadiness(data);
+  const health = data.health;
   const status = data.status;
   const social = data.socialCollector;
   const paper = data.paper?.summary;
@@ -1239,6 +1248,7 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
   const statusKnown = Boolean(status);
   const brokerSellSync = status?.runtime?.brokerSellSync || {};
   const brokerSellSyncEnabled = Boolean(status?.config?.brokerSellSyncEnabled);
+  const healthKnown = Boolean(health);
   const marketKnown = Boolean(data.market);
   const orderSafetyKnown = Boolean(data.orderSafety);
   const protectiveStopsKnown = Boolean(data.protectiveStops);
@@ -1250,6 +1260,10 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
   const openOrders = Number(orderSafety.open || 0);
   const uncoveredStops = Number(protectiveSummary.uncoveredPositions || 0);
   const rejectedStops = Number(protectiveSummary.brokerRejected || 0);
+  const tickAgeSeconds = Number(health?.runtime?.lastTickAgeSeconds);
+  const tickStaleSeconds = Math.max(180, Number(status?.config?.intervalMs || 60_000) / 1000 * 3);
+  const tickStale = Number.isFinite(tickAgeSeconds) && tickAgeSeconds > tickStaleSeconds && !health?.runtime?.isTickRunning;
+  const circuitBreakerOpen = Boolean(health?.runtime?.circuitBreakerOpen || status?.runtime?.circuitBreakerOpen);
   const protectiveStopProblemLabels = protectiveUncovered
     .slice(0, 3)
     .map((row) => {
@@ -1291,13 +1305,59 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
       detail: `paper ${paper?.open ?? EMPTY} open, P/L ${money(paper?.totalProfitRub)} RUB`
     }
   ];
-  const safetyItems = [
+  const infrastructureItems = [
     {
-      label: 'HTTP/API доступ',
-      status: status ? 'OK' : 'WAIT',
-      tone: status ? 'good' : 'warn',
-      detail: status ? 'Dashboard получил runtime status через защищенный API.' : 'Ждем ответ /api/status.'
+      label: 'HTTP API',
+      status: healthKnown ? health.ok ? 'OK' : 'ERROR' : 'WAIT',
+      tone: healthKnown ? health.ok ? 'good' : 'bad' : 'warn',
+      detail: healthKnown ? `health checked ${time(health.checkedAt)}` : 'Ждем /api/health.'
     },
+    {
+      label: 'База данных',
+      status: healthKnown ? health.database?.ok ? 'OK' : 'ERROR' : 'WAIT',
+      tone: healthKnown ? health.database?.ok ? 'good' : 'bad' : 'warn',
+      detail: healthKnown ? health.database?.ok ? 'Postgres отвечает на health-check.' : 'Postgres health-check не прошел.' : 'Ждем health-check базы.'
+    },
+    {
+      label: 'Trading tick',
+      status: healthKnown
+        ? circuitBreakerOpen
+          ? 'CIRCUIT'
+          : health.runtime?.isTickRunning
+            ? 'RUNNING'
+            : tickStale
+              ? 'STALE'
+              : 'FRESH'
+        : 'WAIT',
+      tone: healthKnown ? circuitBreakerOpen || tickStale ? 'bad' : health.runtime?.isTickRunning ? 'warn' : 'good' : 'warn',
+      detail: healthKnown
+        ? circuitBreakerOpen
+          ? health.runtime?.circuitBreakerReason || 'Circuit breaker открыт.'
+          : `last finished ${time(health.runtime?.lastTickFinishedAt)}, age ${secondsDuration(tickAgeSeconds)}`
+        : 'Ждем runtime heartbeat.'
+    },
+    {
+      label: 'Protective stops sync',
+      status: protectiveStopsKnown ? rejectedStops ? 'REJECTED' : uncoveredStops ? 'UNCOVERED' : 'OK' : health?.protectiveStops?.lastError ? 'ERROR' : health?.protectiveStops?.lastSyncFinishedAt ? 'RECENT' : 'WAIT',
+      tone: protectiveStopsKnown ? rejectedStops || uncoveredStops ? 'bad' : 'good' : health?.protectiveStops?.lastError ? 'bad' : health?.protectiveStops?.lastSyncFinishedAt ? 'good' : 'warn',
+      detail: protectiveStopsKnown
+        ? rejectedStops || uncoveredStops
+          ? `${protectiveStopProblemLabels || uncoveredStops + ' позиций без стопа'}`
+          : 'Все robot-owned позиции покрыты защитными стопами.'
+        : health?.protectiveStops?.lastError || `last ${time(health?.protectiveStops?.lastSyncFinishedAt)}`
+    },
+    {
+      label: 'Broker sell sync',
+      status: healthKnown ? !brokerSellSyncEnabled ? 'OFF' : health.brokerSellSync?.lastError ? 'ERROR' : health.brokerSellSync?.isRunning ? 'RUNNING' : 'OK' : 'WAIT',
+      tone: healthKnown ? !brokerSellSyncEnabled ? 'warn' : health.brokerSellSync?.lastError ? 'bad' : health.brokerSellSync?.isRunning ? 'warn' : 'good' : 'warn',
+      detail: healthKnown
+        ? health.brokerSellSync?.lastError
+          ? health.brokerSellSync.lastError
+          : `last ${time(health.brokerSellSync?.lastFinishedAt)}, imported ${health.brokerSellSync?.imported ?? 0}/${health.brokerSellSync?.candidates ?? 0}`
+        : 'Ждем broker sync heartbeat.'
+    }
+  ];
+  const safetyItems = [
     {
       label: 'Режим робота',
       status: statusKnown ? dryRun ? 'DRY RUN' : 'LIVE' : 'WAIT',
@@ -1321,26 +1381,6 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
       status: orderSafetyKnown ? unknownOrders ? String(unknownOrders) : '0' : 'WAIT',
       tone: orderSafetyKnown ? stageTone(unknownOrders) : 'warn',
       detail: orderSafetyKnown ? unknownOrders ? 'Есть заявки с неизвестным статусом, повторять их нельзя.' : 'Неизвестных заявок нет.' : 'Ждем order safety API.'
-    },
-    {
-      label: 'Broker sell sync',
-      status: statusKnown ? !brokerSellSyncEnabled ? 'OFF' : brokerSellSync.lastError ? 'ERROR' : brokerSellSync.isRunning ? 'RUNNING' : 'OK' : 'WAIT',
-      tone: statusKnown ? !brokerSellSyncEnabled ? 'warn' : brokerSellSync.lastError ? 'bad' : 'good' : 'warn',
-      detail: statusKnown
-        ? brokerSellSync.lastError
-          ? brokerSellSync.lastError
-          : `last ${brokerSellSync.lastFinishedAt ? time(brokerSellSync.lastFinishedAt) : EMPTY}, imported ${brokerSellSync.imported ?? 0}/${brokerSellSync.candidates ?? 0}`
-        : 'Ждем runtime status.'
-    },
-    {
-      label: 'Protective stops',
-      status: protectiveStopsKnown ? rejectedStops ? 'BROKER REJECTED' : uncoveredStops ? 'UNCOVERED' : 'OK' : 'WAIT',
-      tone: protectiveStopsKnown ? rejectedStops || uncoveredStops ? 'bad' : 'good' : 'warn',
-      detail: protectiveStopsKnown
-        ? rejectedStops || uncoveredStops
-          ? `${protectiveStopProblemLabels || uncoveredStops + ' позиций без стопа'}`
-          : 'Все robot-owned позиции покрыты защитными стопами.'
-        : 'Ждем protective stops API.'
     },
     {
       label: 'Social collector',
@@ -1370,6 +1410,10 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
         <Pipeline steps={pipelineSteps} />
       </Card>
 
+      <Card title="Инфраструктура" icon={Database} help="Техническая живучесть: отвечает ли API, доступна ли база, свежий ли торговый тик, прошли ли синки защитных стопов и брокерских продаж.">
+        <Checklist items={infrastructureItems} />
+      </Card>
+
       <ExecutionOverview data={data} className="wide" />
 
       <PnlForecastChart data={data} />
@@ -1391,7 +1435,7 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
         </div>
       </Card>
 
-      <Card title="Безопасность live" icon={ShieldCheck} help="Короткий чеклист перед доверием денег роботу: доступ, режим, рынок, дневные лимиты, неизвестные заявки и cookie-сборщик.">
+      <Card title="Безопасность live" icon={ShieldCheck} help="Торговые стопоры перед доверием денег роботу: режим, рынок, дневные лимиты, неизвестные заявки и cookie-сборщик.">
         <Checklist items={safetyItems} />
       </Card>
 

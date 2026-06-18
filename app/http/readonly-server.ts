@@ -4,6 +4,7 @@ import path from 'path';
 import { chmod, chown, mkdir, readFile, rename, stat, writeFile } from 'fs/promises';
 import { OrderIdType } from 'tinkoff-sdk-grpc-js/dist/generated/orders';
 import { ExchangeOrderType, StopOrderType } from 'tinkoff-sdk-grpc-js/dist/generated/stoporders';
+import sequelize from '../config/database';
 import { getEnv } from '../config/env.config';
 import { getRobotConfig, RobotConfig } from '../config/robot.config';
 import { ensureProtectiveStopsForOpenRobotPositions, getTradingRuntimeState } from '../modules/common.module';
@@ -1893,7 +1894,59 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
     const url = new URL(req.url ?? '/', 'http://localhost');
 
     if (url.pathname === '/api/health') {
-        json(res, 200, { ok: true, startedAt, uptimeSeconds: Math.round(process.uptime()) });
+        const runtime = getTradingRuntimeState();
+        const checkedAt = new Date().toISOString();
+        let databaseOk = true;
+
+        try {
+            await sequelize.authenticate();
+        } catch {
+            databaseOk = false;
+        }
+
+        const lastTickFinishedAt = runtime.lastTickFinishedAt;
+        const lastTickAgeSeconds = lastTickFinishedAt
+            ? Math.max(0, Math.round((Date.now() - new Date(lastTickFinishedAt).getTime()) / 1000))
+            : undefined;
+
+        json(res, databaseOk ? 200 : 503, {
+            ok: databaseOk,
+            checkedAt,
+            startedAt,
+            uptimeSeconds: Math.round(process.uptime()),
+            database: {
+                ok: databaseOk,
+                checkedAt,
+                error: databaseOk ? undefined : 'database check failed'
+            },
+            runtime: {
+                isTickRunning: runtime.isTickRunning,
+                lastTickStartedAt: runtime.lastTickStartedAt,
+                lastTickFinishedAt,
+                lastTickAgeSeconds,
+                consecutiveTickErrors: runtime.consecutiveTickErrors,
+                circuitBreakerOpen: runtime.circuitBreakerOpen,
+                circuitBreakerReason: runtime.circuitBreakerReason,
+                lastTickError: runtime.lastTickError
+            },
+            protectiveStops: {
+                lastSyncStartedAt: runtime.protectiveStops.lastSyncStartedAt,
+                lastSyncFinishedAt: runtime.protectiveStops.lastSyncFinishedAt,
+                lastResyncAt: runtime.protectiveStops.lastResyncAt,
+                lastResyncReason: runtime.protectiveStops.lastResyncReason,
+                checked: runtime.protectiveStops.checked,
+                resynced: runtime.protectiveStops.resynced,
+                lastError: runtime.protectiveStops.lastError
+            },
+            brokerSellSync: {
+                isRunning: runtime.brokerSellSync.isRunning,
+                lastStartedAt: runtime.brokerSellSync.lastStartedAt,
+                lastFinishedAt: runtime.brokerSellSync.lastFinishedAt,
+                candidates: runtime.brokerSellSync.candidates,
+                imported: runtime.brokerSellSync.imported,
+                lastError: runtime.brokerSellSync.lastError
+            }
+        });
         return;
     }
 
