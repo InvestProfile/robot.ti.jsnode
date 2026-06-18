@@ -6,6 +6,7 @@ import InstrumentsService from './instruments.service';
 import OperationsService from './operations.service';
 import TradesService from './trades.service';
 import TradePnlService from './trade-pnl.service';
+import ExitQualityService from './exit-quality.service';
 import RobotPositionLedgerService from './robot-position-ledger.service';
 import AccountingAuditService from './accounting-audit.service';
 import { RobotConfig } from '../config/robot.config';
@@ -332,6 +333,74 @@ describe('trade accounting lifecycle safety', () => {
 
         assert.strictEqual(pnl.closedRoundTrips[0].exitSignalSource, 'broker-stop-loss');
         assert.match(String(pnl.closedRoundTrips[0].exitDecisionReason), /inferred broker protective stop/);
+    });
+
+    it('summarizes stop damage using net P/L and commissions', async () => {
+        setTrades([
+            {
+                id: 4,
+                accountId: 'acc-1',
+                ticker: 'STOP',
+                direction: '2',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                orderId: 'sell-stop',
+                lotsExecuted: 1,
+                executedPriceUnits: 96,
+                totalAmountUnits: 96,
+                tradeDateTime: '2026-05-20T10:00:00.000Z'
+            },
+            {
+                id: 3,
+                accountId: 'acc-1',
+                ticker: 'STOP',
+                direction: '1',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                orderId: 'buy-stop',
+                lotsExecuted: 1,
+                executedPriceUnits: 100,
+                totalAmountUnits: 100,
+                tradeDateTime: '2026-05-20T09:00:00.000Z'
+            },
+            {
+                id: 2,
+                accountId: 'acc-1',
+                ticker: 'WIN',
+                direction: '2',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                orderId: 'sell-win',
+                lotsExecuted: 1,
+                executedPriceUnits: 120,
+                totalAmountUnits: 120,
+                tradeDateTime: '2026-05-20T08:00:00.000Z'
+            },
+            {
+                id: 1,
+                accountId: 'acc-1',
+                ticker: 'WIN',
+                direction: '1',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                orderId: 'buy-win',
+                lotsExecuted: 1,
+                executedPriceUnits: 100,
+                totalAmountUnits: 100,
+                tradeDateTime: '2026-05-20T07:00:00.000Z'
+            }
+        ]);
+        (TradeDecisionModel.findAll as unknown) = async () => [];
+        (OperationsService.getBrokerReportRows as unknown) = async () => [
+            { orderId: 'buy-stop', brokerCommission: { units: -1, nano: 0 } },
+            { orderId: 'sell-stop', brokerCommission: { units: -2, nano: 0 } }
+        ];
+
+        const report = await ExitQualityService.getExitQuality(config, 50);
+
+        assert.strictEqual(report.summary.closedRoundTrips, 2);
+        assert.strictEqual(report.summary.stopExits, 1);
+        assert.strictEqual(report.summary.brokerStopLossExits, 1);
+        assert.strictEqual(report.summary.stopDamageNetRub, -7);
+        assert.strictEqual(report.summary.stopCommissionRub, 3);
+        assert.strictEqual(report.summary.worstTicker, 'STOP');
+        assert.match(report.summary.topCause, /stop-loss \/ broker-stop-loss/);
     });
 
     it('falls back to operations cursor commissions when broker report has no matching order id', async () => {

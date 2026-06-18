@@ -47,6 +47,7 @@ const endpoints = {
   trades: '/api/trades?limit=200',
   tradePnl: '/api/trade-pnl?limit=500',
   pnlReconciliation: '/api/pnl-reconciliation?limit=500',
+  exitQuality: '/api/exit-quality?limit=500',
   accountingAudit: '/api/accounting-audit',
   orderSafety: '/api/order-safety?limit=80',
   protectiveStops: '/api/protective-stops',
@@ -55,14 +56,14 @@ const endpoints = {
 
 const endpointGroups = {
   core: ['health', 'status', 'limits', 'performance', 'paper', 'socialCollector', 'market', 'orderSafety'],
-  overview: ['health', 'market', 'orderSafety', 'protectiveStops', 'snapshots', 'positions', 'pnlReconciliation'],
+  overview: ['health', 'market', 'orderSafety', 'protectiveStops', 'snapshots', 'positions', 'pnlReconciliation', 'exitQuality'],
   buy: ['dailyBuyList', 'preview', 'buyRecommendations', 'buyScan'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   socialProfiles: ['socialProfiles'],
   evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
   sell: ['sellBrain', 'exitPolicyObservations', 'positions', 'robotPositions'],
-  trades: ['trades', 'tradePnl', 'pnlReconciliation', 'robotPositions', 'accountingAudit', 'decisions', 'orderSafety', 'protectiveStops'],
+  trades: ['trades', 'tradePnl', 'pnlReconciliation', 'exitQuality', 'robotPositions', 'accountingAudit', 'decisions', 'orderSafety', 'protectiveStops'],
   logs: ['decisions', 'trades', 'robotPositions', 'orderSafety', 'protectiveStops']
 };
 
@@ -170,6 +171,13 @@ const cacheTone = (value) => {
   if (value === 'fresh' || value === 'cached') return 'good';
   if (value === 'stale' || value === 'skipped') return 'warn';
   if (value === 'error') return 'bad';
+  return 'neutral';
+};
+
+const qualityTone = (value) => {
+  if (value === 'good') return 'good';
+  if (value === 'bad') return 'bad';
+  if (value === 'watch') return 'warn';
   return 'neutral';
 };
 
@@ -1419,6 +1427,8 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
       <PnlForecastChart data={data} />
 
       <PnlReconciliation report={data.pnlReconciliation} loading={loadingKeys.pnlReconciliation} className="wide" />
+
+      <PnlCauseCard report={data.exitQuality} loading={loadingKeys.exitQuality} className="wide" />
 
       <SectorExposureCard data={data} loading={loadingKeys.positions} />
 
@@ -3320,6 +3330,97 @@ function PnlReconciliation({ report, loading, className }) {
   );
 }
 
+function PnlCauseCard({ report, loading, className }) {
+  const summary = report?.summary || {};
+  const quality = summary.quality || 'watch';
+  const stopDamage = Number(summary.stopDamageNetRub || 0);
+  const realizedNet = Number(summary.realizedNetPnlRub || 0);
+  const fees = Number(summary.commissionRub || 0);
+
+  return (
+    <Card title="Почему P/L такой" icon={ShieldCheck} className={className} help="Read-only объяснение результата: главная цифра, ущерб от stop-loss/broker-stop-loss, комиссии и худший повторяющийся тикер. Это диагностика, она не меняет торговлю.">
+      <StageStrip
+        items={[
+          { label: 'Realized net', value: `${money(realizedNet)} RUB`, tone: realizedNet >= 0 ? 'good' : 'bad', detail: `${summary.closedRoundTrips || 0} закрытых robot-пар` },
+          { label: 'Stop damage', value: `${money(stopDamage)} RUB`, tone: stopDamage < 0 ? 'bad' : 'good', detail: `${summary.stopExits || 0} stop exits, ${summary.brokerStopLossExits || 0} broker` },
+          { label: 'Fees', value: `${money(fees)} RUB`, tone: fees ? 'warn' : 'good', detail: summary.accounting || 'accounting' },
+          { label: 'Open lots', value: summary.openLots ?? EMPTY, detail: `${summary.openPositions || 0} позиций` },
+          { label: 'Worst ticker', value: summary.worstTicker || EMPTY, tone: summary.worstTickerNetPnlRub < 0 ? 'bad' : 'neutral', detail: summary.worstTickerNetPnlRub === undefined ? 'нет stop damage' : `${money(summary.worstTickerNetPnlRub)} RUB` },
+          { label: 'Exit quality', value: String(quality).toUpperCase(), tone: qualityTone(quality), detail: `${summary.unmatchedSells || 0} unmatched, ${percent(summary.matchingQuality)}` }
+        ]}
+      />
+      <div className="audit-callout">
+        <Pill tone={qualityTone(quality)}>{String(quality).toUpperCase()}</Pill>
+        <span>{summary.topCause || 'Ждем закрытых robot-owned сделок для анализа.'}</span>
+        {loading ? <strong>Обновляю exit quality...</strong> : null}
+      </div>
+    </Card>
+  );
+}
+
+function ExitQuality({ report, loading }) {
+  const summary = report?.summary || {};
+  const byExitSignal = report?.breakdowns?.byExitSignal || [];
+  const stopByTicker = report?.breakdowns?.stopByTicker || [];
+  const worstExits = report?.worstExits || [];
+
+  return (
+    <Card title="Exit quality / Stop damage" icon={ShieldCheck} className="wide" help="Разбор закрытых robot-owned пар: какие типы выхода дают прибыль или убыток, какие тикеры чаще всего режутся стопами, и где самые дорогие закрытия net после комиссий.">
+      <StageStrip
+        items={[
+          { label: 'Exit quality', value: String(summary.quality || 'watch').toUpperCase(), tone: qualityTone(summary.quality), detail: summary.topCause || 'read-only' },
+          { label: 'Stop exits', value: summary.stopExits || 0, tone: summary.stopDamageNetRub < 0 ? 'bad' : 'good', detail: `${summary.stopLossExits || 0} soft, ${summary.brokerStopLossExits || 0} broker` },
+          { label: 'Stop damage', value: `${money(summary.stopDamageNetRub)} RUB`, tone: summary.stopDamageNetRub < 0 ? 'bad' : 'good', detail: `gross ${money(summary.stopGrossPnlRub)}, fees ${money(summary.stopCommissionRub)}` },
+          { label: 'Worst ticker', value: summary.worstTicker || EMPTY, tone: summary.worstTickerNetPnlRub < 0 ? 'bad' : 'neutral', detail: summary.worstTickerNetPnlRub === undefined ? 'нет данных' : `${money(summary.worstTickerNetPnlRub)} RUB` },
+          { label: 'Losing pairs', value: summary.losingRoundTrips || 0, tone: summary.losingRoundTrips ? 'warn' : 'good', detail: `${summary.closedRoundTrips || 0} closed` },
+          { label: 'Accounting', value: summary.accounting || EMPTY, tone: summary.unmatchedSells ? 'warn' : 'good', detail: `${summary.unmatchedSells || 0} unmatched` }
+        ]}
+      />
+      <div className="exit-quality-grid">
+        <Table
+          columns={[
+            { key: 'key', label: 'Exit signal', render: (row) => <><strong>{row.label || row.key}</strong><div className="muted">worst {row.worstTicker || EMPTY}</div></> },
+            { key: 'count', label: 'Пар', width: '70px', className: 'right', render: (row) => money(row.count) },
+            { key: 'wins', label: 'W/L', width: '82px', className: 'right', render: (row) => `${row.wins || 0}/${row.losses || 0}` },
+            { key: 'netPnlRub', label: 'Net', width: '100px', className: 'right', render: (row) => <span className={Number(row.netPnlRub) >= 0 ? 'good' : 'bad'}>{money(row.netPnlRub)}</span> },
+            { key: 'averageNetPnlRub', label: 'Avg', width: '88px', className: 'right', render: (row) => money(row.averageNetPnlRub) },
+            { key: 'quality', label: 'Quality', width: '90px', render: (row) => <Pill tone={qualityTone(row.quality)}>{row.quality}</Pill> }
+          ]}
+          rows={byExitSignal}
+          empty="Exit quality пока пуст"
+          loading={loading}
+        />
+        <Table
+          columns={[
+            { key: 'key', label: 'Stop ticker', render: (row) => <strong>{row.key}</strong> },
+            { key: 'count', label: 'Стопов', width: '78px', className: 'right', render: (row) => money(row.count) },
+            { key: 'netPnlRub', label: 'Net', width: '100px', className: 'right', render: (row) => <span className={Number(row.netPnlRub) >= 0 ? 'good' : 'bad'}>{money(row.netPnlRub)}</span> },
+            { key: 'averageNetPnlRub', label: 'Avg', width: '88px', className: 'right', render: (row) => money(row.averageNetPnlRub) },
+            { key: 'winRate', label: 'WR', width: '72px', className: 'right', render: (row) => percent(row.winRate) }
+          ]}
+          rows={stopByTicker}
+          empty="Stop damage по тикерам пока нет"
+          loading={loading}
+        />
+      </div>
+      <Table
+        columns={[
+          { key: 'exitAt', label: 'Выход', width: '145px', render: (row) => time(row.exitAt) },
+          { key: 'ticker', label: 'Тикер', width: '110px', render: (row) => <><strong>{row.ticker || EMPTY}</strong><div className="muted">{row.name}</div></> },
+          { key: 'exitSignalSource', label: 'Exit', width: '135px', render: (row) => <TextCell>{row.exitSignalSource || EMPTY}</TextCell> },
+          { key: 'netPnlRub', label: 'Net', width: '95px', className: 'right', render: (row) => <span className={Number(row.netPnlRub) >= 0 ? 'good' : 'bad'}>{money(row.netPnlRub)}</span> },
+          { key: 'commissionRub', label: 'Fees', width: '74px', className: 'right', render: (row) => money(row.commissionRub) },
+          { key: 'netPnlPercent', label: 'Net %', width: '78px', className: 'right', render: (row) => percent(row.netPnlPercent) },
+          { key: 'exitDecisionReason', label: 'Причина выхода', className: 'reason', render: (row) => <CompactReason>{row.exitDecisionReason || EMPTY}</CompactReason> }
+        ]}
+        rows={worstExits}
+        empty="Убыточных выходов пока нет"
+        loading={loading}
+      />
+    </Card>
+  );
+}
+
 function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange, onProtectiveStopResync }) {
   const [filters, setFilters] = useState({ side: 'all', status: 'all', ledger: 'all', ticker: '', pnl: 'all', sort: 'newest' });
   const rows = buildTradeRows(data);
@@ -3393,6 +3494,8 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange, onP
       </Card>
 
       <PnlReconciliation report={data.pnlReconciliation} loading={loadingKeys.pnlReconciliation} className="wide" />
+
+      <ExitQuality report={data.exitQuality} loading={loadingKeys.exitQuality} />
 
       <TradeReview rows={filteredRows} loading={loadingKeys.trades || loadingKeys.robotPositions || loadingKeys.decisions} className="wide">
         <TradeFilters rows={rows} filters={filters} onChange={setFilters} />

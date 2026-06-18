@@ -49,6 +49,7 @@ import MarketDataService from '../services/marketData.service';
 import ProtectiveStopService from '../services/protective-stop.service';
 import AccountingAuditService from '../services/accounting-audit.service';
 import ExitPolicyObservationService from '../services/exit-policy-observation.service';
+import ExitQualityService from '../services/exit-quality.service';
 import { isOpenOrderStatus, isRejectedOrderStatus } from '../utils/order-status';
 import StopLossStrategy from '../strategies/stop-loss.strategy';
 
@@ -914,6 +915,15 @@ const getPnlReconciliationPayload = async (url: URL, config: RobotConfig) => {
     return await cachedAccountingPayload(
         `pnl-reconciliation:${config.accountIds.join(',')}:${limit}`,
         async () => await TradePnlService.getPnlReconciliation(config, { limit })
+    );
+};
+
+const getExitQualityPayload = async (url: URL, config: RobotConfig) => {
+    const requestedLimit = Number(url.searchParams.get('limit') ?? 500);
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 500, 1), 2_000);
+    return await cachedAccountingPayload(
+        `exit-quality:${config.accountIds.join(',')}:${limit}`,
+        async () => await ExitQualityService.getExitQuality(config, limit)
     );
 };
 
@@ -2078,6 +2088,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/pnl-reconciliation') {
         json(res, 200, await getPnlReconciliationPayload(url, config));
+        return;
+    }
+
+    if (url.pathname === '/api/exit-quality') {
+        json(res, 200, await getExitQualityPayload(url, config));
         return;
     }
 
