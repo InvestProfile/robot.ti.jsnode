@@ -7,6 +7,7 @@ import OperationsService from './operations.service';
 import TradesService from './trades.service';
 import TradePnlService from './trade-pnl.service';
 import ExitQualityService from './exit-quality.service';
+import ExitEntryQualityService from './exit-entry-quality.service';
 import RobotPositionLedgerService from './robot-position-ledger.service';
 import AccountingAuditService from './accounting-audit.service';
 import { RobotConfig } from '../config/robot.config';
@@ -29,7 +30,10 @@ const originalGetLedgerBrokerAudit = AccountingAuditService.getLedgerBrokerAudit
 const config = {
     accountIds: ['acc-1'],
     accountAliases: { 'acc-1': 'Trade' },
-    stopLossPercent: 3
+    stopLossPercent: 3,
+    buyAntiFomoMaxMomentumPercent: 2,
+    buyAntiFomoMinBelowHighPercent: 1,
+    buyAntiFomoMaxRangeMultiplier: 2
 } as unknown as RobotConfig;
 
 const asModel = (row: PlainTrade) => ({
@@ -401,6 +405,67 @@ describe('trade accounting lifecycle safety', () => {
         assert.strictEqual(report.summary.stopCommissionRub, 3);
         assert.strictEqual(report.summary.worstTicker, 'STOP');
         assert.match(report.summary.topCause, /stop-loss \/ broker-stop-loss/);
+    });
+
+    it('links score-buy stop damage to stored entry factors without mixing other entries', async () => {
+        (TradePnlService.getRoundTripPnl as unknown) = async () => ({
+            summary: {
+                scannedTrades: 5,
+                accounting: 'net',
+                matchingQuality: 100
+            },
+            closedRoundTrips: [
+                {
+                    id: 'bad-1',
+                    ticker: 'PEAK',
+                    name: 'Peak',
+                    entryAt: '2026-06-18T10:00:00.000Z',
+                    exitAt: '2026-06-18T10:20:00.000Z',
+                    entrySignalSource: 'score-buy',
+                    exitSignalSource: 'broker-stop-loss',
+                    grossPnlRub: -10,
+                    commissionRub: 2,
+                    netPnlRub: -12,
+                    entryDecisionReason: 'score 72/70: base 68, adj 4, social 0, analyst 5, tech -1, trend 1.50%, momentum 1.20%, below high 0.40%, volatility 0.80%'
+                },
+                {
+                    id: 'missing-1',
+                    ticker: 'OLD',
+                    entryAt: '2026-06-18T09:00:00.000Z',
+                    exitAt: '2026-06-18T12:00:00.000Z',
+                    entrySignalSource: 'score-buy',
+                    exitSignalSource: 'stop-loss',
+                    grossPnlRub: -5,
+                    commissionRub: 1,
+                    netPnlRub: -6
+                },
+                {
+                    id: 'manual-1',
+                    ticker: 'MANUAL',
+                    entryAt: '2026-06-18T09:00:00.000Z',
+                    exitAt: '2026-06-18T12:00:00.000Z',
+                    entrySignalSource: 'watchlist-buy',
+                    exitSignalSource: 'stop-loss',
+                    grossPnlRub: -100,
+                    commissionRub: 1,
+                    netPnlRub: -101,
+                    entryDecisionReason: 'score 99/70: base 99, adj 0, social 0, analyst 0, tech 0, trend 0%, momentum 0%, below high 0%, volatility 1%'
+                }
+            ]
+        });
+
+        const report = await ExitEntryQualityService.getExitEntryQuality(config, 50);
+
+        assert.strictEqual(report.summary.scoreBuyStopExits, 2);
+        assert.strictEqual(report.summary.missingEntryFactors, 1);
+        assert.strictEqual(report.summary.stopDamageNetRub, -18);
+        assert.strictEqual(report.summary.nearPeakStopExits, 1);
+        assert.strictEqual(report.summary.negativeTechStopExits, 1);
+        assert.strictEqual(report.summary.fastStopExits, 1);
+        assert.strictEqual(report.worstStopEntries[0].ticker, 'PEAK');
+        assert.strictEqual(report.worstStopEntries[0].factors.technicalScoreAdjustment, -1);
+        assert.ok(report.breakdowns.byPattern.some(row => row.key === 'near high' && row.netPnlRub === -12));
+        assert.ok(!report.breakdowns.byTicker.some(row => row.key === 'MANUAL'));
     });
 
     it('falls back to operations cursor commissions when broker report has no matching order id', async () => {

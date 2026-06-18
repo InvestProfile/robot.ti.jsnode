@@ -50,6 +50,7 @@ import ProtectiveStopService from '../services/protective-stop.service';
 import AccountingAuditService from '../services/accounting-audit.service';
 import ExitPolicyObservationService from '../services/exit-policy-observation.service';
 import ExitQualityService from '../services/exit-quality.service';
+import ExitEntryQualityService from '../services/exit-entry-quality.service';
 import { isOpenOrderStatus, isRejectedOrderStatus } from '../utils/order-status';
 import StopLossStrategy from '../strategies/stop-loss.strategy';
 
@@ -924,6 +925,15 @@ const getExitQualityPayload = async (url: URL, config: RobotConfig) => {
     return await cachedAccountingPayload(
         `exit-quality:${config.accountIds.join(',')}:${limit}`,
         async () => await ExitQualityService.getExitQuality(config, limit)
+    );
+};
+
+const getExitEntryQualityPayload = async (url: URL, config: RobotConfig) => {
+    const requestedLimit = Number(url.searchParams.get('limit') ?? 500);
+    const limit = Math.min(Math.max(Number.isFinite(requestedLimit) ? requestedLimit : 500, 1), 2_000);
+    return await cachedAccountingPayload(
+        `exit-entry-quality:${config.accountIds.join(',')}:${limit}`,
+        async () => await ExitEntryQualityService.getExitEntryQuality(config, limit)
     );
 };
 
@@ -2093,6 +2103,11 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
 
     if (url.pathname === '/api/exit-quality') {
         json(res, 200, await getExitQualityPayload(url, config));
+        return;
+    }
+
+    if (url.pathname === '/api/exit-entry-quality') {
+        json(res, 200, await getExitEntryQualityPayload(url, config));
         return;
     }
 

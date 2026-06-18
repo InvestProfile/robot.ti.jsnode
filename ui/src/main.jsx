@@ -48,6 +48,7 @@ const endpoints = {
   tradePnl: '/api/trade-pnl?limit=500',
   pnlReconciliation: '/api/pnl-reconciliation?limit=500',
   exitQuality: '/api/exit-quality?limit=500',
+  exitEntryQuality: '/api/exit-entry-quality?limit=500',
   accountingAudit: '/api/accounting-audit',
   orderSafety: '/api/order-safety?limit=80',
   protectiveStops: '/api/protective-stops',
@@ -63,7 +64,7 @@ const endpointGroups = {
   evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
   accounts: ['accounts', 'positions'],
   sell: ['sellBrain', 'exitPolicyObservations', 'positions', 'robotPositions'],
-  trades: ['trades', 'tradePnl', 'pnlReconciliation', 'exitQuality', 'robotPositions', 'accountingAudit', 'decisions', 'orderSafety', 'protectiveStops'],
+  trades: ['trades', 'tradePnl', 'pnlReconciliation', 'exitQuality', 'exitEntryQuality', 'robotPositions', 'accountingAudit', 'decisions', 'orderSafety', 'protectiveStops'],
   logs: ['decisions', 'trades', 'robotPositions', 'orderSafety', 'protectiveStops']
 };
 
@@ -3421,6 +3422,104 @@ function ExitQuality({ report, loading }) {
   );
 }
 
+function ExitEntryQuality({ report, loading }) {
+  const summary = report?.summary || {};
+  const byPattern = report?.breakdowns?.byPattern || [];
+  const byTicker = report?.breakdowns?.byTicker || [];
+  const byHoldTime = report?.breakdowns?.byHoldTime || [];
+  const byTechnicalAdjustment = report?.breakdowns?.byTechnicalAdjustment || [];
+  const worstStopEntries = report?.worstStopEntries || [];
+  const quality = summary.quality || 'watch';
+
+  return (
+    <Card title="Входы, которые закончились стопом" icon={AlertTriangle} className="wide" help="Read-only связь между убыточными stop-loss/broker-stop-loss выходами и сохраненными факторами входа score-buy. Нужна, чтобы понять: робот покупал на хае, с отрицательным теханализом, с тонким score или просто был штатный аварийный выход.">
+      <StageStrip
+        items={[
+          { label: 'Quality', value: String(quality).toUpperCase(), tone: qualityTone(quality), detail: summary.topCause || 'entry diagnostics' },
+          { label: 'Score-buy stops', value: summary.scoreBuyStopExits || 0, tone: summary.stopDamageNetRub < 0 ? 'bad' : 'good', detail: `${summary.closedScoreBuyRoundTrips || 0} score-buy closed` },
+          { label: 'Stop damage', value: `${money(summary.stopDamageNetRub)} RUB`, tone: summary.stopDamageNetRub < 0 ? 'bad' : 'good', detail: `fees ${money(summary.stopCommissionRub)}` },
+          { label: 'Near high', value: summary.nearPeakStopExits || 0, tone: summary.nearPeakStopDamageNetRub < 0 ? 'bad' : 'neutral', detail: `${money(summary.nearPeakStopDamageNetRub)} RUB` },
+          { label: 'Negative tech', value: summary.negativeTechStopExits || 0, tone: summary.negativeTechStopExits ? 'warn' : 'good', detail: 'tech adjustment < 0' },
+          { label: 'Fast stops', value: summary.fastStopExits || 0, tone: summary.fastStopExits ? 'warn' : 'good', detail: 'hold < 60 min' },
+          { label: 'Missing factors', value: summary.missingEntryFactors || 0, tone: summary.missingEntryFactors ? 'warn' : 'good', detail: 'старые/неполные reasons' }
+        ]}
+      />
+      <div className="exit-quality-grid">
+        <Table
+          columns={[
+            { key: 'key', label: 'Паттерн входа', render: (row) => <><strong>{row.label || row.key}</strong><div className="muted">worst {row.worstTicker || EMPTY}</div></> },
+            { key: 'count', label: 'Стопов', width: '78px', className: 'right', render: (row) => money(row.count) },
+            { key: 'netPnlRub', label: 'Net', width: '100px', className: 'right', render: (row) => <span className={Number(row.netPnlRub) >= 0 ? 'good' : 'bad'}>{money(row.netPnlRub)}</span> },
+            { key: 'averageNetPnlRub', label: 'Avg', width: '88px', className: 'right', render: (row) => money(row.averageNetPnlRub) },
+            { key: 'quality', label: 'Quality', width: '90px', render: (row) => <Pill tone={qualityTone(row.quality)}>{row.quality}</Pill> }
+          ]}
+          rows={byPattern}
+          empty="Паттерны входа пока не выделились"
+          loading={loading}
+        />
+        <Table
+          columns={[
+            { key: 'key', label: 'Тикер', render: (row) => <strong>{row.key}</strong> },
+            { key: 'count', label: 'Стопов', width: '78px', className: 'right', render: (row) => money(row.count) },
+            { key: 'netPnlRub', label: 'Net', width: '100px', className: 'right', render: (row) => <span className={Number(row.netPnlRub) >= 0 ? 'good' : 'bad'}>{money(row.netPnlRub)}</span> },
+            { key: 'averageNetPnlRub', label: 'Avg', width: '88px', className: 'right', render: (row) => money(row.averageNetPnlRub) },
+            { key: 'worstNetPnlRub', label: 'Worst', width: '88px', className: 'right', render: (row) => money(row.worstNetPnlRub) }
+          ]}
+          rows={byTicker}
+          empty="Score-buy стопов по тикерам пока нет"
+          loading={loading}
+        />
+      </div>
+      <div className="exit-quality-grid">
+        <Table
+          columns={[
+            { key: 'key', label: 'Время в позиции', render: (row) => <strong>{row.key}</strong> },
+            { key: 'count', label: 'Стопов', width: '78px', className: 'right', render: (row) => money(row.count) },
+            { key: 'netPnlRub', label: 'Net', width: '100px', className: 'right', render: (row) => <span className={Number(row.netPnlRub) >= 0 ? 'good' : 'bad'}>{money(row.netPnlRub)}</span> },
+            { key: 'averageNetPnlRub', label: 'Avg', width: '88px', className: 'right', render: (row) => money(row.averageNetPnlRub) }
+          ]}
+          rows={byHoldTime}
+          empty="Нет группировки по времени"
+          loading={loading}
+        />
+        <Table
+          columns={[
+            { key: 'key', label: 'Tech adjustment', render: (row) => <strong>{row.key}</strong> },
+            { key: 'count', label: 'Стопов', width: '78px', className: 'right', render: (row) => money(row.count) },
+            { key: 'netPnlRub', label: 'Net', width: '100px', className: 'right', render: (row) => <span className={Number(row.netPnlRub) >= 0 ? 'good' : 'bad'}>{money(row.netPnlRub)}</span> },
+            { key: 'averageNetPnlRub', label: 'Avg', width: '88px', className: 'right', render: (row) => money(row.averageNetPnlRub) }
+          ]}
+          rows={byTechnicalAdjustment}
+          empty="Нет группировки по tech"
+          loading={loading}
+        />
+      </div>
+      <Table
+        columns={[
+          { key: 'exitAt', label: 'Выход', width: '145px', render: (row) => time(row.exitAt) },
+          { key: 'ticker', label: 'Тикер', width: '110px', render: (row) => <><strong>{row.ticker || EMPTY}</strong><div className="muted">{row.name}</div></> },
+          { key: 'holdMinutes', label: 'Hold', width: '70px', className: 'right', render: (row) => row.holdMinutes === undefined ? EMPTY : `${row.holdMinutes}m` },
+          { key: 'score', label: 'Score', width: '82px', render: (row) => <TextCell>{row.factors?.score === undefined ? EMPTY : `${row.factors.score}/${row.factors.minScore ?? EMPTY}`}</TextCell> },
+          { key: 'entryFactors', label: 'Факторы входа', width: '210px', render: (row) => (
+            <div className="score-parts">
+              <Pill tone="neutral">base {row.factors?.baseScore ?? EMPTY}</Pill>
+              <Pill tone={Number(row.factors?.technicalScoreAdjustment || 0) < 0 ? 'bad' : 'good'}>tech {row.factors?.technicalScoreAdjustment ?? EMPTY}</Pill>
+              <Pill tone="neutral">adj {row.factors?.totalAdjustment ?? EMPTY}</Pill>
+              {row.flags?.nearPeak ? <Pill tone="warn">near high</Pill> : null}
+            </div>
+          ) },
+          { key: 'netPnlRub', label: 'Net', width: '90px', className: 'right', render: (row) => <span className={Number(row.netPnlRub) >= 0 ? 'good' : 'bad'}>{money(row.netPnlRub)}</span> },
+          { key: 'patterns', label: 'Паттерны', width: '170px', render: (row) => <TextCell>{(row.patterns || []).join(', ') || EMPTY}</TextCell> },
+          { key: 'entryDecisionReason', label: 'Причина входа', className: 'reason', render: (row) => <CompactReason>{row.entryDecisionReason || EMPTY}</CompactReason> }
+        ]}
+        rows={worstStopEntries}
+        empty="Худших score-buy стопов пока нет"
+        loading={loading}
+      />
+    </Card>
+  );
+}
+
 function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange, onProtectiveStopResync }) {
   const [filters, setFilters] = useState({ side: 'all', status: 'all', ledger: 'all', ticker: '', pnl: 'all', sort: 'newest' });
   const rows = buildTradeRows(data);
@@ -3496,6 +3595,8 @@ function Trades({ data, loadingKeys, onCancelStaleLimits, onOrderTypeChange, onP
       <PnlReconciliation report={data.pnlReconciliation} loading={loadingKeys.pnlReconciliation} className="wide" />
 
       <ExitQuality report={data.exitQuality} loading={loadingKeys.exitQuality} />
+
+      <ExitEntryQuality report={data.exitEntryQuality} loading={loadingKeys.exitEntryQuality} />
 
       <TradeReview rows={filteredRows} loading={loadingKeys.trades || loadingKeys.robotPositions || loadingKeys.decisions} className="wide">
         <TradeFilters rows={rows} filters={filters} onChange={setFilters} />
