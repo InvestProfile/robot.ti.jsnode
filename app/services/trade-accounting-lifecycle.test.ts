@@ -210,6 +210,47 @@ describe('trade accounting lifecycle safety', () => {
         assert.strictEqual(pnl.closedRoundTrips[0].netPnlRub, 16.25);
     });
 
+    it('matches FIFO by actual trade time, not local import time', async () => {
+        setTrades([
+            {
+                id: 2,
+                accountId: 'acc-1',
+                ticker: 'TIME',
+                figi: 'figi-time',
+                direction: '2',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                orderType: 'broker-import',
+                lotsExecuted: 1,
+                executedPriceUnits: 90,
+                totalAmountUnits: 90,
+                tradeDateTime: '2026-06-01T10:00:00.000Z',
+                createdAt: '2026-06-17T10:00:00.000Z'
+            },
+            {
+                id: 1,
+                accountId: 'acc-1',
+                ticker: 'TIME',
+                figi: 'figi-time',
+                direction: '1',
+                status: 'EXECUTION_REPORT_STATUS_FILL',
+                lotsExecuted: 1,
+                executedPriceUnits: 100,
+                totalAmountUnits: 100,
+                tradeDateTime: '2026-06-09T10:00:00.000Z',
+                createdAt: '2026-06-09T10:00:05.000Z'
+            }
+        ]);
+        (TradeDecisionModel.findAll as unknown) = async () => [];
+
+        const pnl = await TradePnlService.getRoundTripPnl(config, 50, { includeCommissions: false });
+
+        assert.strictEqual(pnl.summary.closed, 0);
+        assert.strictEqual(pnl.summary.unmatchedSells, 1);
+        assert.strictEqual(pnl.summary.openLots, 1);
+        assert.strictEqual(pnl.openLots[0].ticker, 'TIME');
+        assert.strictEqual(pnl.unmatchedSells[0].ticker, 'TIME');
+    });
+
     it('splits broker report commission windows to stay under broker range limits', async () => {
         setTrades([
             {

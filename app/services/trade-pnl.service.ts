@@ -787,7 +787,7 @@ export default class TradePnlService {
         });
         const rows = trades
             .map(trade => trade.get({ plain: true }) as Record<string, unknown>)
-            .reverse();
+            .sort((a, b) => tradeTimestamp(a) - tradeTimestamp(b));
         const tickerSet = [...new Set(rows.map(row => String(row.ticker || '')).filter(Boolean))];
         const timeWindow = decisionTimeWindow(rows);
         const decisions = await TradeDecisionModel.findAll({
