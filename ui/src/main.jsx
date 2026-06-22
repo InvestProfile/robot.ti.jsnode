@@ -58,7 +58,7 @@ const endpoints = {
 const endpointGroups = {
   core: ['health', 'status', 'limits', 'performance', 'paper', 'socialCollector', 'market', 'orderSafety'],
   overview: ['health', 'market', 'orderSafety', 'protectiveStops', 'snapshots', 'positions', 'pnlReconciliation', 'exitQuality'],
-  buy: ['dailyBuyList', 'preview', 'buyRecommendations', 'buyScan'],
+  buy: ['dailyBuyList', 'preview', 'buyRecommendations', 'buyScan', 'exitEntryQuality'],
   social: ['socialConsensus', 'socialSignals', 'socialCollector'],
   socialProfiles: ['socialProfiles'],
   evidence: ['market', 'marketLab', 'buyLab', 'analystForecasts', 'techAnalysis', 'strategy', 'socialEvidence'],
@@ -379,6 +379,90 @@ const PostSellConfirmation = ({ risk }) => {
     <div className="execution-cell compact" title={check.reason}>
       <Pill tone={tone}>{label}</Pill>
       <span>{detail}</span>
+    </div>
+  );
+};
+
+const getPatternGroup = (groups, key) => (groups || []).find((row) => String(row.key || '').toLowerCase() === key);
+
+const hasNegativePatternDamage = (groups, key) => {
+  const group = getPatternGroup(groups, key);
+  return group && Number(group.netPnlRub) < 0 && Number(group.count) > 0;
+};
+
+const buildEntryPatternWatch = (row, report) => {
+  const summary = report?.summary || {};
+  const patterns = report?.breakdowns?.byPattern || [];
+  const tickerGroups = report?.breakdowns?.byTicker || [];
+  const factors = row.scoreAnalysis?.factors || {};
+  const score = Number(row.scoreAnalysis?.score);
+  const requiredScore = Number(factors.negativeTechRequiredScore || row.scoreAnalysis?.reason?.match(/score\s+\d+\/(\d+)/i)?.[1] || 70);
+  const scoreMargin = Number.isFinite(score) && Number.isFinite(requiredScore) ? score - requiredScore : undefined;
+  const belowHigh = Number(factors.belowHighPercent);
+  const momentum = Number(factors.momentumPercent);
+  const technical = Number(factors.technicalScoreAdjustment);
+  const totalAdjustment = Number(factors.totalAdjustment);
+  const tickerGroup = tickerGroups.find((item) => String(item.key || '').toUpperCase() === String(row.ticker || '').toUpperCase());
+  const warnings = [];
+
+  if (Number.isFinite(belowHigh) && belowHigh <= 1 && hasNegativePatternDamage(patterns, 'near high')) {
+    warnings.push(`рядом с high (${percent(belowHigh)})`);
+  }
+
+  if (Number.isFinite(technical) && technical < 0 && hasNegativePatternDamage(patterns, 'negative tech')) {
+    warnings.push(`tech ${signedNumber(technical)}`);
+  }
+
+  if (Number.isFinite(totalAdjustment) && totalAdjustment >= 5 && hasNegativePatternDamage(patterns, 'boosted score')) {
+    warnings.push(`score дотянут ${signedNumber(totalAdjustment)}`);
+  }
+
+  if (scoreMargin !== undefined && scoreMargin < 5 && hasNegativePatternDamage(patterns, 'thin score margin')) {
+    warnings.push(`запас score ${signedNumber(scoreMargin)}`);
+  }
+
+  if (Number.isFinite(momentum) && Number.isFinite(belowHigh) && belowHigh <= 1 && momentum > 0 && hasNegativePatternDamage(patterns, 'pullback/confirmation')) {
+    warnings.push(`нет отката: momentum ${percent(momentum)}`);
+  }
+
+  if (tickerGroup && Number(tickerGroup.netPnlRub) < 0) {
+    warnings.push(`история тикера ${money(tickerGroup.netPnlRub)} RUB`);
+  }
+
+  const stopCount = Number(summary.scoreBuyStopExits || 0);
+  const tone = warnings.length >= 2 || (tickerGroup && Number(tickerGroup.netPnlRub) < 0 && Number(tickerGroup.count) >= 2)
+    ? 'bad'
+    : warnings.length
+      ? 'warn'
+      : stopCount
+        ? 'good'
+        : 'neutral';
+  const label = tone === 'bad' ? 'WATCH' : tone === 'warn' ? 'WATCH' : stopCount ? 'OK' : 'N/A';
+  const detail = warnings.length
+    ? warnings.slice(0, 2).join(', ')
+    : stopCount
+      ? 'опасный паттерн не совпал'
+      : 'нет истории';
+  const title = warnings.length
+    ? [
+        'Observe-only: заявка не блокируется.',
+        `Исторический stop damage score-buy: ${money(summary.stopDamageNetRub)} RUB.`,
+        ...warnings
+      ].join('\n')
+    : stopCount
+      ? `Observe-only: по текущим факторам кандидат не похож на главные исторические stop-паттерны. Проверено ${stopCount} score-buy stop exits.`
+      : 'Недостаточно закрытых score-buy stop exits для сравнения.';
+
+  return { tone, label, detail, title };
+};
+
+const EntryPatternWatch = ({ row, report }) => {
+  const watch = buildEntryPatternWatch(row, report);
+
+  return (
+    <div className="execution-cell compact" title={watch.title}>
+      <Pill tone={watch.tone}>{watch.label}</Pill>
+      <span>{watch.detail}</span>
     </div>
   );
 };
@@ -1478,6 +1562,7 @@ function Buy({ data, loadingKeys }) {
   const buyRecommendations = data.buyRecommendations?.items || [];
   const buyScan = data.buyScan?.items || [];
   const tradeLimit = getTradeLimit(data);
+  const entryQualitySummary = data.exitEntryQuality?.summary || {};
   const blockerSummary = summarizeBlockers(filteredBlocked) || summarizeBlockers(blockedPreviews) || buyRecommendations[0]?.reason || EMPTY;
   const readiness = getBuyReadiness({ tradeLimit, previews, dailyItems });
 
@@ -1490,6 +1575,7 @@ function Buy({ data, loadingKeys }) {
             { label: 'Кандидаты дня', value: dailyItems.length, detail: dailyItems.map((item) => item.ticker).join(', ') || 'список пуст' },
             { label: 'Предпросмотр', value: allowedPreviews.length, tone: allowedPreviews.length ? 'good' : 'warn', detail: `${blockedPreviews.length} заблокировано до заявки` },
             { label: 'В фильтре', value: `${filteredAllowed.length} / ${filteredPreviews.length}`, tone: filteredAllowed.length ? 'good' : filteredPreviews.length ? 'warn' : 'neutral', detail: 'READY / всего показано' },
+            { label: 'История стопов', value: entryQualitySummary.scoreBuyStopExits ?? EMPTY, tone: entryQualitySummary.quality === 'bad' ? 'warn' : qualityTone(entryQualitySummary.quality), detail: entryQualitySummary.worstPattern ? `худший паттерн: ${entryQualitySummary.worstPattern}` : 'observe-only' },
             { label: 'Лимиты', value: tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : EMPTY, tone: tradeLimit && Number(tradeLimit.ordersLeft) <= 0 ? 'bad' : 'good', detail: 'заявки / бюджет сегодня' },
             { label: 'Исполнение', value: blockedPreviews.length ? 'BLOCKED' : allowedPreviews.length ? 'READY' : 'WAIT', tone: blockedPreviews.length ? 'bad' : allowedPreviews.length ? 'good' : 'warn', detail: blockerSummary }
           ]}
@@ -1525,6 +1611,7 @@ function Buy({ data, loadingKeys }) {
           columns={[
             { key: 'ticker', label: 'Кандидат', width: '190px', render: (row) => <><strong>{row.ticker || row.figi}</strong><div className="muted">{row.name}</div></> },
             { key: 'score', label: 'Качество кандидата', width: '430px', render: (row) => <ScoreBreakdown analysis={row.scoreAnalysis} /> },
+            { key: 'entryPatternWatch', label: 'История стопов', width: '180px', render: (row) => <EntryPatternWatch row={row} report={data.exitEntryQuality} /> },
             { key: 'status', label: 'Исполнение', width: '150px', render: (row) => <ExecutionDecision status={row.status} reason={row.reason} /> },
             { key: 'estimatedOrderRub', label: 'Сумма', width: '105px', className: 'right', render: (row) => money(row.estimatedOrderRub) },
             { key: 'tradeRisk', label: 'Риск сделки', width: '145px', render: (row) => <TradeRiskBudget row={row} /> },
