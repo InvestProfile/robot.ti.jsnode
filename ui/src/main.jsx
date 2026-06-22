@@ -759,6 +759,9 @@ const ControlGroup = ({ label, value, children }) => (
 
 const formatRubLimit = (value) => Number(value) > 0 ? `${money(value)} RUB` : 'без лимита';
 const formatCountLimit = (value) => Number(value) > 0 ? `${value} заявок` : 'без лимита';
+const formatPercentLimit = (value) => Number(value) > 0 ? `${money(value)}%` : 'без лимита';
+const formatPercent = (value) => `${money(value)}%`;
+const formatPositionsLimit = (value) => Number(value) > 0 ? `${value} бумаг` : 'выкл';
 const limitTitle = (value, hardCap, unit) => Number(value) > 0
   ? `Сейчас: ${unit === 'rub' ? formatRubLimit(value) : formatCountLimit(value)}. Hard cap: ${unit === 'rub' ? formatRubLimit(hardCap) : formatCountLimit(hardCap)}.`
   : 'Лимит выключен: сделки не блокируются этим правилом, но остаются cash, доля позиции, market gate и остальные риск-фильтры.';
@@ -768,17 +771,35 @@ const limitOptions = (values, current, cap) => {
     .filter((value) => Number.isFinite(value) && value >= 0 && (hardCap <= 0 || value <= hardCap))
     .sort((a, b) => a - b);
 };
+const stepOptions = (values, current, { min = -Infinity, max = Infinity } = {}) => Array.from(new Set([...values, Number(current)]))
+  .filter((value) => Number.isFinite(value) && value >= min && value <= max)
+  .sort((a, b) => a - b);
 
-const LimitSlider = ({ label, value, options, formatValue, onCommit, title }) => {
-  const currentIndex = Math.max(0, options.findIndex((option) => Number(option) === Number(value)));
-  const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+const getScaleIndexes = (length) => {
+  if (length <= 1) return [0];
+  return [...new Set([0, Math.round((length - 1) * 0.25), Math.round((length - 1) * 0.5), Math.round((length - 1) * 0.75), length - 1])];
+};
+
+const LimitSlider = ({ label, value, options, formatValue, onCommit, title, scaleLabels }) => {
+  const safeOptions = options.length ? options : [Number(value || 0)];
+  const exactIndex = safeOptions.findIndex((option) => Number(option) === Number(value));
+  const nearestIndex = safeOptions.reduce((bestIndex, option, index) => (
+    Math.abs(Number(option) - Number(value)) < Math.abs(Number(safeOptions[bestIndex]) - Number(value))
+      ? index
+      : bestIndex
+  ), 0);
+  const safeIndex = exactIndex >= 0 ? exactIndex : nearestIndex;
   const [draftIndex, setDraftIndex] = useState(safeIndex);
 
   useEffect(() => {
     setDraftIndex(safeIndex);
   }, [safeIndex]);
 
-  const draftValue = options[draftIndex] ?? options[0];
+  const draftValue = safeOptions[draftIndex] ?? safeOptions[0];
+  const labels = scaleLabels ?? getScaleIndexes(safeOptions.length).map((index) => ({
+    key: `${index}:${safeOptions[index]}`,
+    value: formatValue(safeOptions[index])
+  }));
   const commit = () => {
     if (Number(draftValue) !== Number(value)) onCommit(draftValue);
   };
@@ -792,7 +813,7 @@ const LimitSlider = ({ label, value, options, formatValue, onCommit, title }) =>
       <input
         type="range"
         min="0"
-        max={Math.max(0, options.length - 1)}
+        max={Math.max(0, safeOptions.length - 1)}
         step="1"
         value={draftIndex}
         onChange={(event) => setDraftIndex(Number(event.target.value))}
@@ -805,8 +826,7 @@ const LimitSlider = ({ label, value, options, formatValue, onCommit, title }) =>
         aria-label={label}
       />
       <div className="limit-slider-scale">
-        <span>без лимита</span>
-        <span>{formatValue(options[options.length - 1])}</span>
+        {labels.map((item) => <span key={item.key ?? item.value}>{item.value}</span>)}
       </div>
     </div>
   );
@@ -1085,6 +1105,8 @@ function MarketControls({ data, onMarketRegimeChange }) {
   const config = data.status?.config || {};
   const health = config.marketRegimeMinHealthPercent ?? 40;
   const trend = config.marketRegimeMinAvgTrendPercent ?? -1;
+  const healthOptions = stepOptions([0, 10, 20, 30, 40, 50, 60, 70, 80, 100], health, { min: 0, max: 100 });
+  const trendOptions = stepOptions([-10, -7, -5, -3, -2, -1, 0, 1, 2, 3, 5], trend, { min: -20, max: 20 });
 
   return (
     <Card title="Пороги рыночного фильтра" icon={ShieldCheck} help="Это настройки допуска рынка, а не текущий результат. Required score - сколько базовых бумаг должно пройти фильтр. Required trend - насколько бумага может быть ниже своей 20-дневной средней.">
@@ -1098,30 +1120,26 @@ function MarketControls({ data, onMarketRegimeChange }) {
           <strong>{trend}%</strong>
         </div>
       </div>
-      <div className="control-row">
-        {[40, 20, 0].map((value) => (
-          <button
-            key={value}
-            className={cls('mini-button', value === health && 'active')}
-            onClick={() => onMarketRegimeChange(value, trend)}
-            title={value === 40 ? 'Консервативно: минимум 2 из 5 бумаг должны пройти.' : value === 20 ? 'Мягко: достаточно 1 из 5, как сейчас.' : 'Лабораторный режим: рынок почти не блокирует покупки.'}
-          >
-            health {value}%
-          </button>
-        ))}
-      </div>
-      <div className="control-row">
-        {[-1, -2, -5].map((value) => (
-          <button
-            key={value}
-            className={cls('mini-button', value === trend && 'active')}
-            onClick={() => onMarketRegimeChange(health, value)}
-            title="Минимальный тренд к 20-дневной средней для отдельной бумаги."
-          >
-            trend {value}%
-          </button>
-        ))}
-      </div>
+      <ControlGroup label="Health" value={`${health}%`}>
+        <LimitSlider
+          label="Минимальная доля базовых бумаг, прошедших фильтр"
+          value={health}
+          options={healthOptions}
+          formatValue={formatPercent}
+          onCommit={(value) => onMarketRegimeChange(value, trend)}
+          title="Чем выше значение, тем реже робот покупает на слабом рынке."
+        />
+      </ControlGroup>
+      <ControlGroup label="Тренд" value={`${trend}%`}>
+        <LimitSlider
+          label="Минимальный средний тренд рынка"
+          value={trend}
+          options={trendOptions}
+          formatValue={formatPercent}
+          onCommit={(value) => onMarketRegimeChange(health, value)}
+          title="Можно разрешить отрицательный рынок или требовать положительный средний тренд."
+        />
+      </ControlGroup>
     </Card>
   );
 }
@@ -2457,11 +2475,11 @@ function RiskControls({ data, onRiskSettingsChange }) {
     sectorPerformanceRiskEnforced,
     ...patch
   });
-  const orderOptions = limitOptions([0, 500, 1000, 1500, 2500, 5000, 10000, 25000, 50000, 100000], maxOrderRub, config.maxRuntimeOrderRub);
-  const orderCountOptions = limitOptions([0, 1, 3, 5, 10, 20, 50, 100], maxDailyOrders, config.maxRuntimeDailyOrders);
-  const dailyRubOptions = limitOptions([0, 500, 1500, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000], maxDailyRub, config.maxRuntimeDailyRub);
-  const positionShareButtons = [5, 10, 15, 20, 25, 33, 50];
-  const diversificationButtons = [0, 3, 5, 8, 12, 20];
+  const orderOptions = limitOptions([0, 500, 1000, 1500, 2500, 5000, 7500, 10000, 15000, 25000, 50000, 75000, 100000, 150000, 250000, 500000], maxOrderRub, config.maxRuntimeOrderRub);
+  const orderCountOptions = limitOptions([0, 1, 3, 5, 10, 20, 30, 50, 75, 100, 150, 250, 500], maxDailyOrders, config.maxRuntimeDailyOrders);
+  const dailyRubOptions = limitOptions([0, 500, 1500, 2500, 5000, 10000, 25000, 50000, 75000, 100000, 150000, 250000, 500000, 750000, 1000000, 2000000, 5000000], maxDailyRub, config.maxRuntimeDailyRub);
+  const positionShareOptions = stepOptions([0, 5, 10, 15, 20, 25, 33, 40, 50, 67, 80, 100], maxPositionSharePercent, { min: 0, max: 100 });
+  const diversificationOptions = stepOptions([0, 1, 2, 3, 5, 8, 10, 12, 15, 20, 30, 50], minDiversificationPositions, { min: 0, max: 100 });
   const leftText = formatTradeLimitLeft(tradeLimit, { withRubSuffix: true }) || '-';
 
   return (
@@ -2470,8 +2488,8 @@ function RiskControls({ data, onRiskSettingsChange }) {
         <Stat label="Лимит заявки" value={formatRubLimit(maxOrderRub)} title={limitTitle(maxOrderRub, config.maxRuntimeOrderRub, 'rub')} />
         <Stat label="Заявок в день" value={formatCountLimit(maxDailyOrders)} title={limitTitle(maxDailyOrders, config.maxRuntimeDailyOrders, 'count')} />
         <Stat label="Бюджет дня" value={formatRubLimit(maxDailyRub)} title={limitTitle(maxDailyRub, config.maxRuntimeDailyRub, 'rub')} />
-        <Stat label="Лимит позиции" value={`${money(maxPositionSharePercent)}%`} title="Максимальная доля одной бумаги после новой покупки." />
-        <Stat label="Мин. бумаг" value={minDiversificationPositions} title="Пока бумаг меньше этого числа, робот старается не докупать уже имеющиеся тикеры." />
+        <Stat label="Лимит позиции" value={formatPercentLimit(maxPositionSharePercent)} title="Максимальная доля одной бумаги после новой покупки. 0 выключает именно это правило." />
+        <Stat label="Мин. бумаг" value={formatPositionsLimit(minDiversificationPositions)} title="Пока бумаг меньше этого числа, робот старается не докупать уже имеющиеся тикеры. 0 выключает это правило." />
         <Stat label="Секторный P/L" value={sectorPerformanceRiskEnforced ? 'enforced' : 'observe'} tone={sectorPerformanceRiskEnforced ? 'bad' : 'neutral'} title="Когда enforced, сектор с плохой статистикой round-trip сделок реально блокирует buy. В observe робот только показывает предупреждение." />
         <Stat label="Осталось сегодня" value={leftText} />
       </div>
@@ -2505,29 +2523,25 @@ function RiskControls({ data, onRiskSettingsChange }) {
           title="Ограничивает суммарный дневной оборот покупок. 0 означает: не ограничивать оборотом."
         />
       </ControlGroup>
-      <ControlGroup label="Концентрация" value={`${money(maxPositionSharePercent)}%`}>
-        {positionShareButtons.map((value) => (
-          <button
-            key={value}
-            className={cls('mini-button', value === maxPositionSharePercent && 'active')}
-            onClick={() => onRiskSettingsChange(riskPayload({ maxPositionSharePercent: value }))}
-            title="Поменять максимальную долю одной бумаги в портфеле после покупки."
-          >
-            бумага {value}%
-          </button>
-        ))}
+      <ControlGroup label="Концентрация" value={formatPercentLimit(maxPositionSharePercent)}>
+        <LimitSlider
+          label="Максимальная доля одной бумаги"
+          value={maxPositionSharePercent}
+          options={positionShareOptions}
+          formatValue={formatPercentLimit}
+          onCommit={(value) => onRiskSettingsChange(riskPayload({ maxPositionSharePercent: value }))}
+          title="Ограничивает перекос в один тикер после покупки. 0 означает: не блокировать по доле одной бумаги."
+        />
       </ControlGroup>
-      <ControlGroup label="Диверсификация" value={`${minDiversificationPositions} бумаг`}>
-        {diversificationButtons.map((value) => (
-          <button
-            key={value}
-            className={cls('mini-button', value === minDiversificationPositions && 'active')}
-            onClick={() => onRiskSettingsChange(riskPayload({ minDiversificationPositions: value }))}
-            title="Поменять целевое минимальное число разных бумаг перед докупкой существующей позиции."
-          >
-            диверс. {value}
-          </button>
-        ))}
+      <ControlGroup label="Диверсификация" value={formatPositionsLimit(minDiversificationPositions)}>
+        <LimitSlider
+          label="Минимум разных бумаг перед докупкой"
+          value={minDiversificationPositions}
+          options={diversificationOptions}
+          formatValue={formatPositionsLimit}
+          onCommit={(value) => onRiskSettingsChange(riskPayload({ minDiversificationPositions: value }))}
+          title="Пока портфель уже робота меньше этого числа, он осторожнее докупает существующие тикеры. 0 выключает это правило."
+        />
         <button
           className={cls('mini-button', diversificationFirst && 'active')}
           onClick={() => onRiskSettingsChange(riskPayload({ diversificationFirst: !diversificationFirst }))}
@@ -2601,10 +2615,11 @@ function SellControls({ data, onSellSettingsChange }) {
     sellHoldWinnerMaxDrawdownPercent,
     ...patch
   });
-  const stopLossButtons = [1, 2, 3, 5, 8, 10, 15, 20];
-  const trailingButtons = [0.5, 1, 2, 3, 5, 8, 10];
-  const profitButtons = [0.5, 1, 2, 3, 5, 8, 10, 15, 25];
-  const drawdownButtons = [0.5, 1, 2, 3, 5, 8, 10];
+  const stopLossOptions = stepOptions([0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 12, 15, 20], stopLossPercent, { min: 0.1, max: 20 });
+  const trailingOptions = stepOptions([0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10, 12, 15, 20], trailingStopPercent, { min: 0.1, max: 20 });
+  const trailingStartOptions = stepOptions([0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20], trailingStopMinProfitPercent, { min: 0.1, max: 20 });
+  const holdWinnerOptions = stepOptions([0.5, 1, 1.5, 2, 3, 4, 5, 8, 10, 15, 20, 25, 35, 50], sellHoldWinnerMinProfitPercent, { min: 0.1, max: 50 });
+  const drawdownOptions = stepOptions([0.5, 1, 1.5, 2, 3, 4, 5, 6, 8, 10, 12, 15, 20], sellHoldWinnerMaxDrawdownPercent, { min: 0.1, max: 20 });
 
   return (
     <Card title="Пороги продаж" icon={AlertTriangle} help="Это не лимиты денег, а правила выхода: когда резать убыток, когда защищать прибыль trailing-stop и когда держать сильную позицию.">
@@ -2615,32 +2630,54 @@ function SellControls({ data, onSellSettingsChange }) {
         <Stat label="Hold winner" value={`${money(sellHoldWinnerMinProfitPercent)}% / ${money(sellHoldWinnerMaxDrawdownPercent)}%`} />
       </div>
       <ControlGroup label="Stop-loss" value={`${money(stopLossPercent)}%`}>
-        {stopLossButtons.map((value) => (
-          <button key={value} className={cls('mini-button', value === stopLossPercent && 'active')} onClick={() => onSellSettingsChange(payload({ stopLossPercent: value }))}>
-            stop {value}%
-          </button>
-        ))}
+        <LimitSlider
+          label="Базовый stop-loss"
+          value={stopLossPercent}
+          options={stopLossOptions}
+          formatValue={formatPercent}
+          onCommit={(value) => onSellSettingsChange(payload({ stopLossPercent: value }))}
+          title="Базовый стоп. Фактический стоп может быть шире из-за адаптации к волатильности, но не выше stop max из конфига."
+        />
       </ControlGroup>
       <ControlGroup label="Trailing" value={`${money(trailingStopPercent)}%`}>
-        {trailingButtons.map((value) => (
-          <button key={value} className={cls('mini-button', value === trailingStopPercent && 'active')} onClick={() => onSellSettingsChange(payload({ trailingStopPercent: value }))}>
-            trail {value}%
-          </button>
-        ))}
+        <LimitSlider
+          label="Отступ trailing-stop от максимума"
+          value={trailingStopPercent}
+          options={trailingOptions}
+          formatValue={formatPercent}
+          onCommit={(value) => onSellSettingsChange(payload({ trailingStopPercent: value }))}
+          title="Чем выше значение, тем больше прибыль может откатить перед продажей."
+        />
       </ControlGroup>
       <ControlGroup label="Старт trailing" value={`${money(trailingStopMinProfitPercent)}%`}>
-        {profitButtons.map((value) => (
-          <button key={value} className={cls('mini-button', value === trailingStopMinProfitPercent && 'active')} onClick={() => onSellSettingsChange(payload({ trailingStopMinProfitPercent: value, sellHoldWinnerMinProfitPercent: Math.max(sellHoldWinnerMinProfitPercent, value) }))}>
-            min profit {value}%
-          </button>
-        ))}
+        <LimitSlider
+          label="Минимальная прибыль для включения trailing"
+          value={trailingStopMinProfitPercent}
+          options={trailingStartOptions}
+          formatValue={formatPercent}
+          onCommit={(value) => onSellSettingsChange(payload({ trailingStopMinProfitPercent: value, sellHoldWinnerMinProfitPercent: Math.max(sellHoldWinnerMinProfitPercent, value) }))}
+          title="До этой прибыли trailing-stop не фиксирует позицию."
+        />
+      </ControlGroup>
+      <ControlGroup label="Hold winner" value={`${money(sellHoldWinnerMinProfitPercent)}%`}>
+        <LimitSlider
+          label="Минимальная прибыль для режима удержания победителя"
+          value={sellHoldWinnerMinProfitPercent}
+          options={holdWinnerOptions}
+          formatValue={formatPercent}
+          onCommit={(value) => onSellSettingsChange(payload({ sellHoldWinnerMinProfitPercent: value }))}
+          title="С какого профита робот может пытаться держать сильную позицию, а не закрывать ее слишком рано."
+        />
       </ControlGroup>
       <ControlGroup label="Winner drawdown" value={`${money(sellHoldWinnerMaxDrawdownPercent)}%`}>
-        {drawdownButtons.map((value) => (
-          <button key={value} className={cls('mini-button', value === sellHoldWinnerMaxDrawdownPercent && 'active')} onClick={() => onSellSettingsChange(payload({ sellHoldWinnerMaxDrawdownPercent: value }))}>
-            winner dd {value}%
-          </button>
-        ))}
+        <LimitSlider
+          label="Допустимая просадка победителя от high"
+          value={sellHoldWinnerMaxDrawdownPercent}
+          options={drawdownOptions}
+          formatValue={formatPercent}
+          onCommit={(value) => onSellSettingsChange(payload({ sellHoldWinnerMaxDrawdownPercent: value }))}
+          title="Чем ниже значение, тем быстрее робот забирает прибыль после отката от максимума."
+        />
       </ControlGroup>
     </Card>
   );

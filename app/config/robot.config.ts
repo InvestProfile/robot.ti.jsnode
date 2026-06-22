@@ -305,6 +305,9 @@ export const getRobotConfig = (): RobotConfig => {
     const maxOrderRub = Math.max(0, parseNumber(env.ROBOT_MAX_ORDER_RUB, 1_000));
     const maxDailyOrders = Math.max(0, Math.trunc(parseNumber(env.ROBOT_MAX_DAILY_ORDERS, 3)));
     const maxDailyRub = Math.max(0, parseNumber(env.ROBOT_MAX_DAILY_RUB, 2_000));
+    const maxRuntimeOrderRub = Math.max(maxOrderRub, 500_000);
+    const maxRuntimeDailyOrders = Math.max(maxDailyOrders, 500);
+    const maxRuntimeDailyRub = Math.max(maxDailyRub, 5_000_000);
 
     return {
         accountIds,
@@ -381,9 +384,9 @@ export const getRobotConfig = (): RobotConfig => {
         maxOrderRub,
         maxDailyOrders,
         maxDailyRub,
-        maxRuntimeOrderRub: Math.max(0, parseNumber(env.ROBOT_MAX_RUNTIME_ORDER_RUB, maxOrderRub)),
-        maxRuntimeDailyOrders: Math.max(0, Math.trunc(parseNumber(env.ROBOT_MAX_RUNTIME_DAILY_ORDERS, maxDailyOrders))),
-        maxRuntimeDailyRub: Math.max(0, parseNumber(env.ROBOT_MAX_RUNTIME_DAILY_RUB, maxDailyRub)),
+        maxRuntimeOrderRub: Math.max(0, parseNumber(env.ROBOT_MAX_RUNTIME_ORDER_RUB, maxRuntimeOrderRub)),
+        maxRuntimeDailyOrders: Math.max(0, Math.trunc(parseNumber(env.ROBOT_MAX_RUNTIME_DAILY_ORDERS, maxRuntimeDailyOrders))),
+        maxRuntimeDailyRub: Math.max(0, parseNumber(env.ROBOT_MAX_RUNTIME_DAILY_RUB, maxRuntimeDailyRub)),
         maxPositionSharePercent: Math.max(0, Math.min(100, parseNumber(env.ROBOT_MAX_POSITION_SHARE_PERCENT, 15))),
         minDiversificationPositions: Math.max(0, Math.trunc(parseNumber(env.ROBOT_MIN_DIVERSIFICATION_POSITIONS, 5))),
         diversificationFirst: parseBoolean(env.ROBOT_DIVERSIFICATION_FIRST, true),
