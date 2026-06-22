@@ -8,7 +8,7 @@ export default class WatchlistBuyStrategy {
         if (!Number.isFinite(input.lastPrice) || input.lastPrice <= 0) return undefined;
 
         const estimatedLotRub = input.lastPrice * Math.max(1, input.lot);
-        if (estimatedLotRub > config.maxOrderRub) return undefined;
+        if (config.maxOrderRub > 0 && estimatedLotRub > config.maxOrderRub) return undefined;
         if (estimatedLotRub > input.availableCashRub) return undefined;
 
         return {

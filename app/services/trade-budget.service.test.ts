@@ -27,6 +27,29 @@ describe('TradeBudgetService', () => {
         assert.equal(result.reason, 'daily RUB limit reached');
     });
 
+    it('treats zero order and daily limits as unlimited', () => {
+        const result = TradeBudgetService.evaluateBuy({
+            availableCashRub: 100_000,
+            dailyOrdersCount: 999,
+            dailyOrdersRub: 999_000,
+            estimatedOrderRub: 20_000,
+            requestedLots: 2,
+            lotRub: 10_000,
+            portfolioValueRub: 200_000,
+            positionValueRub: 0
+        }, {
+            ...baseConfig,
+            maxOrderRub: 0,
+            maxDailyOrders: 0,
+            maxDailyRub: 0,
+            maxLotsPerOrder: 10
+        });
+
+        assert.equal(result.allowed, true);
+        assert.equal(result.quantityLots, 2);
+        assert.equal(result.estimatedOrderRub, 20_000);
+    });
+
     it('blocks buy when projected ticker position exceeds portfolio share limit', () => {
         const result = TradeBudgetService.evaluateBuy({
             availableCashRub: 100_000,

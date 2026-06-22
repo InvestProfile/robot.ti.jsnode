@@ -47,6 +47,10 @@ const percentOf = (value: number | undefined, total: number | undefined) =>
 
 export default class TradeBudgetService {
     static getDailyExposureRub(config: RobotConfig) {
+        if (config.maxDailyRub <= 0 || config.maxDailyOrders <= 0 || config.maxOrderRub <= 0) {
+            return 0;
+        }
+
         return Math.min(config.maxDailyRub, config.maxDailyOrders * config.maxOrderRub);
     }
 
@@ -88,12 +92,12 @@ export default class TradeBudgetService {
             return { allowed: false, reason: 'estimated order amount is empty', estimatedOrderRub: rawEstimatedOrderRub };
         }
 
-        if (input.dailyOrdersCount >= config.maxDailyOrders) {
-            return { allowed: false, reason: 'daily order limit reached', estimatedOrderRub: rawEstimatedOrderRub };
-        }
+        const hasDailyOrderLimit = config.maxDailyOrders > 0;
+        const hasDailyRubLimit = config.maxDailyRub > 0;
+        const hasOrderRubLimit = config.maxOrderRub > 0;
 
-        if (config.maxDailyRub <= 0) {
-            return { allowed: false, reason: 'daily RUB limit is zero', estimatedOrderRub: rawEstimatedOrderRub };
+        if (hasDailyOrderLimit && input.dailyOrdersCount >= config.maxDailyOrders) {
+            return { allowed: false, reason: 'daily order limit reached', estimatedOrderRub: rawEstimatedOrderRub };
         }
 
         const portfolioValueRub = input.portfolioValueRub ?? 0;
@@ -101,19 +105,23 @@ export default class TradeBudgetService {
         const maxPositionRub = portfolioValueRub > 0
             ? portfolioValueRub * Math.max(0, config.maxPositionSharePercent) / 100
             : undefined;
-        const remainingDailyRub = Math.max(0, config.maxDailyRub - input.dailyOrdersRub);
+        const remainingDailyRub = hasDailyRubLimit
+            ? Math.max(0, config.maxDailyRub - input.dailyOrdersRub)
+            : Number.POSITIVE_INFINITY;
         const remainingPositionRub = maxPositionRub === undefined
             ? Number.POSITIVE_INFINITY
             : Math.max(0, maxPositionRub - positionValueRub);
         const baseStopPercent = Math.max(0, Number(config.stopLossPercent) || 0);
         const riskStopPercent = Math.max(baseStopPercent, Number(input.riskStopPercent) || 0);
-        const maxRiskAdjustedOrderRub = baseStopPercent > 0 && riskStopPercent > baseStopPercent
+        const maxRiskAdjustedOrderRub = hasOrderRubLimit && baseStopPercent > 0 && riskStopPercent > baseStopPercent
             ? config.maxOrderRub * baseStopPercent / riskStopPercent
-            : config.maxOrderRub;
-        const maxLotsByOrder = config.maxOrderRub > 0 ? Math.floor(config.maxOrderRub / lotRub) : 0;
-        const maxLotsByRisk = maxRiskAdjustedOrderRub > 0 ? Math.floor(maxRiskAdjustedOrderRub / lotRub) : 0;
+            : undefined;
+        const maxLotsByOrder = hasOrderRubLimit ? Math.floor(config.maxOrderRub / lotRub) : Number.MAX_SAFE_INTEGER;
+        const maxLotsByRisk = maxRiskAdjustedOrderRub !== undefined && maxRiskAdjustedOrderRub > 0
+            ? Math.floor(maxRiskAdjustedOrderRub / lotRub)
+            : Number.MAX_SAFE_INTEGER;
         const maxLotsByCash = Math.floor(Math.max(0, input.availableCashRub) / lotRub);
-        const maxLotsByDailyRub = Math.floor(remainingDailyRub / lotRub);
+        const maxLotsByDailyRub = hasDailyRubLimit ? Math.floor(remainingDailyRub / lotRub) : Number.MAX_SAFE_INTEGER;
         const maxLotsByPosition = Number.isFinite(remainingPositionRub)
             ? Math.floor(remainingPositionRub / lotRub)
             : Number.MAX_SAFE_INTEGER;
@@ -133,11 +141,11 @@ export default class TradeBudgetService {
             ? projectedPositionRub / portfolioValueRub * 100
             : undefined;
 
-        if (maxLotsByOrder <= 0) {
+        if (hasOrderRubLimit && maxLotsByOrder <= 0) {
             return { allowed: false, reason: 'estimated lot is above max order RUB', estimatedOrderRub: rawEstimatedOrderRub };
         }
 
-        if (maxLotsByRisk <= 0) {
+        if (maxRiskAdjustedOrderRub !== undefined && maxLotsByRisk <= 0) {
             return {
                 allowed: false,
                 reason: `risk budget limit reached: lot ${lotRub.toFixed(2)} RUB > risk-adjusted order ${maxRiskAdjustedOrderRub.toFixed(2)} RUB at stop ${riskStopPercent.toFixed(2)}%`,
@@ -147,7 +155,7 @@ export default class TradeBudgetService {
             };
         }
 
-        if (maxLotsByDailyRub <= 0) {
+        if (hasDailyRubLimit && maxLotsByDailyRub <= 0) {
             return { allowed: false, reason: 'daily RUB limit reached', estimatedOrderRub: rawEstimatedOrderRub };
         }
 

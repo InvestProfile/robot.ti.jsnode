@@ -99,13 +99,11 @@ const main = async () => {
     }
 
     if (config.maxDailyOrders <= 0) {
-        warnings.push('Daily order limit is zero');
-        warn('Daily order limit', 'ROBOT_MAX_DAILY_ORDERS=0');
+        warn('Daily order limit', 'unlimited');
     }
 
     if (config.maxDailyRub <= 0) {
-        warnings.push('Daily RUB limit is zero');
-        warn('Daily RUB limit', 'ROBOT_MAX_DAILY_RUB=0');
+        warn('Daily RUB limit', 'unlimited');
     }
 
     console.log('');
@@ -291,7 +289,7 @@ const main = async () => {
         const maxTradingCash = Math.max(...Array.from(tradingAccountCash.values()), 0);
         const blockedReason = lastPrice === undefined
             ? 'last price is empty'
-            : estimatedOrderRub !== undefined && estimatedOrderRub > config.maxOrderRub
+            : config.maxOrderRub > 0 && estimatedOrderRub !== undefined && estimatedOrderRub > config.maxOrderRub
                 ? 'above max order RUB'
                 : estimatedOrderRub !== undefined && estimatedOrderRub > maxTradingCash
                     ? 'not enough trading account cash'
@@ -318,8 +316,8 @@ const main = async () => {
         const previews = await BuySignalEvaluatorService.evaluateAccount(accountId, config, instruments as any);
 
         console.log(`${alias} (${accountId})`);
-        console.log(`  Daily orders: ${ordersUsed}/${config.maxDailyOrders}`);
-        console.log(`  Daily RUB: ${money(rubUsed)}/${money(config.maxDailyRub)}`);
+        console.log(`  Daily orders: ${ordersUsed}/${config.maxDailyOrders > 0 ? config.maxDailyOrders : 'unlimited'}`);
+        console.log(`  Daily RUB: ${money(rubUsed)}/${config.maxDailyRub > 0 ? money(config.maxDailyRub) : 'unlimited'}`);
 
         for (const preview of previews) {
             console.log(`  ${preview.ticker ?? preview.figi}: ${preview.status} ${preview.currentPrice ? money(preview.currentPrice) : '-'} ${preview.reason}`);

@@ -354,7 +354,7 @@ export const dashboardPage = `<!doctype html>
       if (!marketRegime.passed) blockers.push({ kind: 'bad', text: 'слабый рынок' });
       if ((paperPositions.summary.closed || 0) < 3) blockers.push({ kind: 'warn', text: 'мало закрытых paper-сделок' });
       if (!preview.previews.some(p => p.status === 'allowed')) blockers.push({ kind: 'warn', text: 'нет allowed buy-preview' });
-      if (limits.limits.some(l => l.ordersLeft <= 0)) blockers.push({ kind: 'warn', text: 'дневной лимит заявок исчерпан' });
+      if (limits.limits.some(l => !l.ordersUnlimited && l.ordersLeft <= 0)) blockers.push({ kind: 'warn', text: 'дневной лимит заявок исчерпан' });
       if ((status.runtime.consecutiveTickErrors || 0) > 0) blockers.push({ kind: 'warn', text: 'есть ошибки тика' });
       const hard = blockers.some(item => item.kind === 'bad');
       if (blockers.length === 0) return { kind: 'good', text: 'READY', details: 'По текущим проверкам live-buy выглядит допустимо.', blockers };
@@ -513,7 +513,7 @@ export const dashboardPage = `<!doctype html>
         '<tr><td>' + esc(a.alias || a.accountId) + '<div class="small">' + esc(a.accountId) + '</div></td><td>' + esc(a.mode) + '</td><td class="right">' + money(a.cashRub) + '</td><td class="right">' + money(a.totalRub) + '</td><td class="right">' + esc(a.positionsCount) + '</td></tr>'
       );
       document.getElementById('limits').innerHTML = rows(['Account', 'Orders', 'Left', 'RUB used', 'RUB left'], limits.limits, l =>
-        '<tr><td>' + esc(l.accountAlias || l.accountId) + '</td><td class="right">' + esc(l.ordersUsed) + ' / ' + esc(l.ordersLimit) + '</td><td class="right">' + esc(l.ordersLeft) + '</td><td class="right">' + money(l.rubUsed) + ' / ' + money(l.rubLimit) + '</td><td class="right">' + money(l.rubLeft) + '</td></tr>'
+        '<tr><td>' + esc(l.accountAlias || l.accountId) + '</td><td class="right">' + esc(l.ordersUsed) + ' / ' + esc(l.ordersUnlimited ? 'no limit' : l.ordersLimit) + '</td><td class="right">' + esc(l.ordersUnlimited ? 'no limit' : l.ordersLeft) + '</td><td class="right">' + money(l.rubUsed) + ' / ' + esc(l.rubUnlimited ? 'no limit' : money(l.rubLimit)) + '</td><td class="right">' + esc(l.rubUnlimited ? 'no limit' : money(l.rubLeft)) + '</td></tr>'
       );
       document.getElementById('performance').innerHTML = rows(['Account', 'Total', 'Change', 'Last', 'Drawdown'], performance.accounts, p =>
         '<tr><td>' + esc(p.accountAlias || p.accountId) + '<div class="small">' + esc(p.snapshotsCount) + ' snapshots</div></td><td class="right">' + money(p.latestTotalRub) + '</td><td class="right">' + money(p.totalChangeRub) + '<div class="small">' + percent(p.totalChangePercent) + '</div></td><td class="right">' + money(p.periodChangeRub) + '<div class="small">' + percent(p.periodChangePercent) + '</div></td><td class="right">' + money(p.maxDrawdownRub) + '<div class="small">-' + esc((p.maxDrawdownPercent || 0).toFixed(2)) + '%</div></td></tr>'

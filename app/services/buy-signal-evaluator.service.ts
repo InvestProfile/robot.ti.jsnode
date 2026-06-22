@@ -141,6 +141,8 @@ const maxRiskAdjustedOrderRub = (config: RobotConfig, riskStopPercent: number) =
     const baseStop = Math.max(0, Number(config.stopLossPercent) || 0);
     const maxOrderRub = Math.max(0, Number(config.maxOrderRub) || 0);
 
+    if (maxOrderRub <= 0) return undefined;
+
     return baseStop > 0 && riskStopPercent > baseStop
         ? maxOrderRub * baseStop / riskStopPercent
         : maxOrderRub;

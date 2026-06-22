@@ -757,6 +757,61 @@ const ControlGroup = ({ label, value, children }) => (
   </div>
 );
 
+const formatRubLimit = (value) => Number(value) > 0 ? `${money(value)} RUB` : 'без лимита';
+const formatCountLimit = (value) => Number(value) > 0 ? `${value} заявок` : 'без лимита';
+const limitTitle = (value, hardCap, unit) => Number(value) > 0
+  ? `Сейчас: ${unit === 'rub' ? formatRubLimit(value) : formatCountLimit(value)}. Hard cap: ${unit === 'rub' ? formatRubLimit(hardCap) : formatCountLimit(hardCap)}.`
+  : 'Лимит выключен: сделки не блокируются этим правилом, но остаются cash, доля позиции, market gate и остальные риск-фильтры.';
+const limitOptions = (values, current, cap) => {
+  const hardCap = Number(cap || 0);
+  return Array.from(new Set([...values, Number(current || 0), hardCap]))
+    .filter((value) => Number.isFinite(value) && value >= 0 && (hardCap <= 0 || value <= hardCap))
+    .sort((a, b) => a - b);
+};
+
+const LimitSlider = ({ label, value, options, formatValue, onCommit, title }) => {
+  const currentIndex = Math.max(0, options.findIndex((option) => Number(option) === Number(value)));
+  const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+  const [draftIndex, setDraftIndex] = useState(safeIndex);
+
+  useEffect(() => {
+    setDraftIndex(safeIndex);
+  }, [safeIndex]);
+
+  const draftValue = options[draftIndex] ?? options[0];
+  const commit = () => {
+    if (Number(draftValue) !== Number(value)) onCommit(draftValue);
+  };
+
+  return (
+    <div className="limit-slider" title={title}>
+      <div className="limit-slider-head">
+        <span>{label}</span>
+        <strong>{formatValue(draftValue)}</strong>
+      </div>
+      <input
+        type="range"
+        min="0"
+        max={Math.max(0, options.length - 1)}
+        step="1"
+        value={draftIndex}
+        onChange={(event) => setDraftIndex(Number(event.target.value))}
+        onMouseUp={commit}
+        onTouchEnd={commit}
+        onBlur={commit}
+        onKeyUp={(event) => {
+          if (['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter', ' '].includes(event.key)) commit();
+        }}
+        aria-label={label}
+      />
+      <div className="limit-slider-scale">
+        <span>без лимита</span>
+        <span>{formatValue(options[options.length - 1])}</span>
+      </div>
+    </div>
+  );
+};
+
 const OperatorTile = ({ label, value, detail, tone = 'neutral' }) => (
   <div className={cls('operator-tile', tone)}>
     <span>{label}</span>
@@ -830,7 +885,7 @@ const getReadiness = (data) => {
   if (status?.config?.tradingPaused) blockers.push('trading paused');
   if (status?.runtime?.circuitBreakerOpen) blockers.push('circuit breaker');
   if (market && !market.passed) blockers.push('market blocked');
-  if (limits?.limits?.some((limit) => limit.ordersLeft <= 0)) blockers.push('daily order limit');
+  if (limits?.limits?.some((limit) => isTradeLimitBlocked(limit))) blockers.push('daily order limit');
   if (socialCollector?.health?.pendingAuth > 0) blockers.push('social collector auth');
 
   return blockers;
@@ -839,6 +894,21 @@ const getReadiness = (data) => {
 const getTradeLimit = (data) => {
   const limits = data.limits?.limits || [];
   return limits.find((limit) => limit.mode === 'trade') || limits[0];
+};
+
+const isTradeLimitBlocked = (tradeLimit) => Boolean(
+  tradeLimit
+  && (
+    (tradeLimit.ordersUnlimited !== true && Number(tradeLimit.ordersLeft) <= 0)
+    || (tradeLimit.rubUnlimited !== true && Number(tradeLimit.rubLeft) <= 0)
+  )
+);
+
+const formatTradeLimitLeft = (tradeLimit, { withRubSuffix = false } = {}) => {
+  if (!tradeLimit) return EMPTY;
+  const orders = tradeLimit.ordersUnlimited ? 'без лимита' : `${tradeLimit.ordersLeft}`;
+  const rub = tradeLimit.rubUnlimited ? 'без лимита' : `${money(tradeLimit.rubLeft)}${withRubSuffix ? ' RUB' : ''}`;
+  return `${orders} / ${rub}`;
 };
 
 const getBuyReadiness = ({ tradeLimit, previews, dailyItems }) => {
@@ -861,7 +931,7 @@ const getBuyReadiness = ({ tradeLimit, previews, dailyItems }) => {
   const missingRub = cheapest ? Math.max(0, cheapest.amount - cashRub) : undefined;
   const cashBlocked = Boolean(cheapest && missingRub > 0);
   const brokerBlocked = previews.some((row) => String(row.reason || '').includes('normal trading status'));
-  const limitBlocked = tradeLimit && (Number(tradeLimit.ordersLeft) <= 0 || Number(tradeLimit.rubLeft) <= 0);
+  const limitBlocked = isTradeLimitBlocked(tradeLimit);
 
   let headline = 'Ждем подходящий сигнал';
   let detail = 'Кандидаты есть, но пока ни один не прошел весь путь до заявки.';
@@ -873,7 +943,7 @@ const getBuyReadiness = ({ tradeLimit, previews, dailyItems }) => {
     tone = 'good';
   } else if (limitBlocked) {
     headline = 'Уперлись в дневные лимиты';
-    detail = `${tradeLimit.ordersLeft} заявок и ${money(tradeLimit.rubLeft)} RUB осталось по дневному бюджету.`;
+    detail = `${formatTradeLimitLeft(tradeLimit, { withRubSuffix: true })} осталось по дневному бюджету.`;
     tone = 'bad';
   } else if (cashBlocked) {
     headline = 'Не хватает свободных рублей';
@@ -907,7 +977,7 @@ function OperatorBar({ data, loading, error }) {
   const unknownOrders = Number(orderSafety.unknown || 0);
   const staleLimit = Number(orderSafety.staleLimit || 0);
   const openOrders = Number(orderSafety.open || 0);
-  const limitBlocked = tradeLimit && (Number(tradeLimit.ordersLeft) <= 0 || Number(tradeLimit.rubLeft) <= 0);
+  const limitBlocked = isTradeLimitBlocked(tradeLimit);
   const socialNeedsAuth = Number(social?.health?.pendingAuth || 0) > 0;
   const marketBlocked = market && !market.passed;
   const apiErrors = splitErrors(error).length;
@@ -941,7 +1011,7 @@ function OperatorBar({ data, loading, error }) {
       />
       <OperatorTile
         label="Дневной лимит"
-        value={tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)}` : EMPTY}
+        value={formatTradeLimitLeft(tradeLimit)}
         detail={tradeLimit ? `${money(tradeLimit.cashRub)} RUB cash` : 'лимиты загружаются'}
         tone={limitBlocked ? 'bad' : tradeLimit ? 'good' : 'neutral'}
       />
@@ -1348,7 +1418,7 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
   const dryRun = statusKnown ? Boolean(status?.config?.dryRun) : false;
   const marketBlocked = Boolean(marketKnown && !market.passed);
   const dailyKnown = Boolean(tradeLimit);
-  const dailyBlocked = Boolean(dailyKnown && (Number(tradeLimit.ordersLeft) <= 0 || Number(tradeLimit.rubLeft) <= 0));
+  const dailyBlocked = isTradeLimitBlocked(tradeLimit);
   const unknownOrders = Number(orderSafety.unknown || 0);
   const openOrders = Number(orderSafety.open || 0);
   const uncoveredStops = Number(protectiveSummary.uncoveredPositions || 0);
@@ -1383,7 +1453,7 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
       label: 'Риск и лимиты',
       status: dailyKnown ? dailyBlocked ? 'BLOCK' : 'PASS' : 'WAIT',
       tone: dailyKnown ? stageTone(dailyBlocked) : 'warn',
-      detail: tradeLimit ? `${tradeLimit.ordersLeft} orders left, ${money(tradeLimit.rubLeft)} RUB left` : 'limits loading'
+      detail: tradeLimit ? `${formatTradeLimitLeft(tradeLimit, { withRubSuffix: true })} left` : 'limits loading'
     },
     {
       label: 'Исполнение',
@@ -1467,7 +1537,7 @@ function Overview({ data, loadingKeys, onMarketRegimeChange }) {
       label: 'Дневные лимиты',
       status: dailyKnown ? dailyBlocked ? 'BLOCKED' : 'OK' : 'WAIT',
       tone: dailyKnown ? stageTone(dailyBlocked) : 'warn',
-      detail: tradeLimit ? `${tradeLimit.ordersLeft} заявок, ${money(tradeLimit.rubLeft)} RUB осталось.` : 'Лимиты загружаются.'
+      detail: tradeLimit ? `${formatTradeLimitLeft(tradeLimit, { withRubSuffix: true })} осталось.` : 'Лимиты загружаются.'
     },
     {
       label: 'Unknown orders',
@@ -1576,7 +1646,7 @@ function Buy({ data, loadingKeys }) {
             { label: 'Предпросмотр', value: allowedPreviews.length, tone: allowedPreviews.length ? 'good' : 'warn', detail: `${blockedPreviews.length} заблокировано до заявки` },
             { label: 'В фильтре', value: `${filteredAllowed.length} / ${filteredPreviews.length}`, tone: filteredAllowed.length ? 'good' : filteredPreviews.length ? 'warn' : 'neutral', detail: 'READY / всего показано' },
             { label: 'История стопов', value: entryQualitySummary.scoreBuyStopExits ?? EMPTY, tone: entryQualitySummary.quality === 'bad' ? 'warn' : qualityTone(entryQualitySummary.quality), detail: entryQualitySummary.worstPattern ? `худший паттерн: ${entryQualitySummary.worstPattern}` : 'observe-only' },
-            { label: 'Лимиты', value: tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : EMPTY, tone: tradeLimit && Number(tradeLimit.ordersLeft) <= 0 ? 'bad' : 'good', detail: 'заявки / бюджет сегодня' },
+            { label: 'Лимиты', value: formatTradeLimitLeft(tradeLimit, { withRubSuffix: true }), tone: isTradeLimitBlocked(tradeLimit) ? 'bad' : 'good', detail: 'заявки / бюджет сегодня' },
             { label: 'Исполнение', value: blockedPreviews.length ? 'BLOCKED' : allowedPreviews.length ? 'READY' : 'WAIT', tone: blockedPreviews.length ? 'bad' : allowedPreviews.length ? 'good' : 'warn', detail: blockerSummary }
           ]}
         />
@@ -2387,61 +2457,53 @@ function RiskControls({ data, onRiskSettingsChange }) {
     sectorPerformanceRiskEnforced,
     ...patch
   });
-  const orderButtons = [500, 1000, 1500, 2500, 5000, 10000, 25000, 50000, 100000]
-    .filter((value) => value <= Number(config.maxRuntimeOrderRub || value));
-  const orderCountButtons = [1, 3, 5, 10, 20, 50, 100]
-    .filter((value) => value <= Number(config.maxRuntimeDailyOrders || value));
-  const dailyRubButtons = [500, 1500, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000]
-    .filter((value) => value <= Number(config.maxRuntimeDailyRub || value));
+  const orderOptions = limitOptions([0, 500, 1000, 1500, 2500, 5000, 10000, 25000, 50000, 100000], maxOrderRub, config.maxRuntimeOrderRub);
+  const orderCountOptions = limitOptions([0, 1, 3, 5, 10, 20, 50, 100], maxDailyOrders, config.maxRuntimeDailyOrders);
+  const dailyRubOptions = limitOptions([0, 500, 1500, 2500, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000], maxDailyRub, config.maxRuntimeDailyRub);
   const positionShareButtons = [5, 10, 15, 20, 25, 33, 50];
   const diversificationButtons = [0, 3, 5, 8, 12, 20];
+  const leftText = formatTradeLimitLeft(tradeLimit, { withRubSuffix: true }) || '-';
 
   return (
-    <Card title="Лимиты покупок и оборота" icon={ShieldCheck} help="Это лимиты входа в новые позиции: размер одной buy-заявки, дневной оборот покупок, число заявок и концентрация в одной бумаге. Продажи управляются отдельными порогами выхода ниже.">
+    <Card title="Лимиты сделок и оборота" icon={ShieldCheck} help="Ноль на ползунке означает выключить именно этот лимит, а не остановить покупки или продажи. Остальные защиты остаются: деньги на счете, доля одной бумаги, ликвидность, сектор, market gate и защитные стопы.">
       <div className="stats compact">
-        <Stat label="Лимит заявки" value={`${money(maxOrderRub)} RUB`} title={`Hard cap: ${money(config.maxRuntimeOrderRub)} RUB`} />
-        <Stat label="Заявок в день" value={maxDailyOrders} title={`Hard cap: ${config.maxRuntimeDailyOrders}`} />
-        <Stat label="Бюджет дня" value={`${money(maxDailyRub)} RUB`} title={`Hard cap: ${money(config.maxRuntimeDailyRub)} RUB`} />
+        <Stat label="Лимит заявки" value={formatRubLimit(maxOrderRub)} title={limitTitle(maxOrderRub, config.maxRuntimeOrderRub, 'rub')} />
+        <Stat label="Заявок в день" value={formatCountLimit(maxDailyOrders)} title={limitTitle(maxDailyOrders, config.maxRuntimeDailyOrders, 'count')} />
+        <Stat label="Бюджет дня" value={formatRubLimit(maxDailyRub)} title={limitTitle(maxDailyRub, config.maxRuntimeDailyRub, 'rub')} />
         <Stat label="Лимит позиции" value={`${money(maxPositionSharePercent)}%`} title="Максимальная доля одной бумаги после новой покупки." />
         <Stat label="Мин. бумаг" value={minDiversificationPositions} title="Пока бумаг меньше этого числа, робот старается не докупать уже имеющиеся тикеры." />
         <Stat label="Секторный P/L" value={sectorPerformanceRiskEnforced ? 'enforced' : 'observe'} tone={sectorPerformanceRiskEnforced ? 'bad' : 'neutral'} title="Когда enforced, сектор с плохой статистикой round-trip сделок реально блокирует buy. В observe робот только показывает предупреждение." />
-        <Stat label="Осталось сегодня" value={tradeLimit ? `${tradeLimit.ordersLeft} / ${money(tradeLimit.rubLeft)} RUB` : '-'} />
+        <Stat label="Осталось сегодня" value={leftText} />
       </div>
-      <ControlGroup label="Заявка" value={`${money(maxOrderRub)} RUB`}>
-        {orderButtons.map((value) => (
-          <button
-            key={value}
-            className={cls('mini-button', value === maxOrderRub && 'active')}
-            onClick={() => onRiskSettingsChange(riskPayload({ maxOrderRub: value }))}
-            title="Поменять максимальный размер одной заявки."
-          >
-            buy до {value}
-          </button>
-        ))}
+      <ControlGroup label="Заявка" value={formatRubLimit(maxOrderRub)}>
+        <LimitSlider
+          label="Максимум одной buy-заявки"
+          value={maxOrderRub}
+          options={orderOptions}
+          formatValue={formatRubLimit}
+          onCommit={(value) => onRiskSettingsChange(riskPayload({ maxOrderRub: value }))}
+          title="Ограничивает размер одного входа. 0 означает: не резать по этому правилу."
+        />
       </ControlGroup>
-      <ControlGroup label="Частота" value={`${maxDailyOrders} заявок`}>
-        {orderCountButtons.map((value) => (
-          <button
-            key={value}
-            className={cls('mini-button', value === maxDailyOrders && 'active')}
-            onClick={() => onRiskSettingsChange(riskPayload({ maxDailyOrders: value }))}
-            title="Поменять максимум заявок за день."
-          >
-            {value} заявок
-          </button>
-        ))}
+      <ControlGroup label="Частота" value={formatCountLimit(maxDailyOrders)}>
+        <LimitSlider
+          label="Максимум заявок за день"
+          value={maxDailyOrders}
+          options={orderCountOptions}
+          formatValue={formatCountLimit}
+          onCommit={(value) => onRiskSettingsChange(riskPayload({ maxDailyOrders: value }))}
+          title="Ограничивает количество новых buy-заявок за день. 0 означает: не ограничивать числом заявок."
+        />
       </ControlGroup>
-      <ControlGroup label="Деньги" value={`${money(maxDailyRub)} RUB / день`}>
-        {dailyRubButtons.map((value) => (
-          <button
-            key={value}
-            className={cls('mini-button', value === maxDailyRub && 'active')}
-            onClick={() => onRiskSettingsChange(riskPayload({ maxDailyRub: value }))}
-            title="Поменять общий дневной бюджет."
-          >
-            день {value}
-          </button>
-        ))}
+      <ControlGroup label="Деньги" value={formatRubLimit(maxDailyRub)}>
+        <LimitSlider
+          label="Дневной оборот buy"
+          value={maxDailyRub}
+          options={dailyRubOptions}
+          formatValue={formatRubLimit}
+          onCommit={(value) => onRiskSettingsChange(riskPayload({ maxDailyRub: value }))}
+          title="Ограничивает суммарный дневной оборот покупок. 0 означает: не ограничивать оборотом."
+        />
       </ControlGroup>
       <ControlGroup label="Концентрация" value={`${money(maxPositionSharePercent)}%`}>
         {positionShareButtons.map((value) => (
@@ -2497,16 +2559,23 @@ function RiskControls({ data, onRiskSettingsChange }) {
 function RiskBudget({ data }) {
   const tradeLimit = getTradeLimit(data);
   const budget = tradeLimit?.budget || {};
+  const config = data.status?.config || {};
+  const hasUnlimitedExposure = Number(config.maxOrderRub) <= 0
+    || Number(config.maxDailyOrders) <= 0
+    || Number(config.maxDailyRub) <= 0;
+  const dailyExposureText = hasUnlimitedExposure ? 'без лимита' : `${money(budget.dailyExposureRub)} RUB`;
+  const stopLossRiskText = hasUnlimitedExposure ? 'не ограничен лимитом' : `${money(budget.stopLossRiskRub)} RUB`;
+  const trailingGivebackText = hasUnlimitedExposure ? 'не ограничен лимитом' : `${money(budget.baseTrailingGivebackRub)} RUB`;
 
   return (
     <Card title="Бюджет риска" icon={ShieldCheck} className="wide" help="Показывает не просто лимит покупок, а примерную сумму под риском: дневная экспозиция и сколько робот теоретически потеряет, если все новые входы закроются по stop-loss.">
       <div className="stats compact">
         <Stat label="Счет" value={`${money(tradeLimit?.totalRub)} RUB`} title="Текущая стоимость торгового счета по портфелю брокера." />
-        <Stat label="Дневная экспозиция" value={`${money(budget.dailyExposureRub)} RUB`} title="Сколько робот максимум задействует сегодня: min(дневной бюджет, заявок в день * лимит заявки)." />
-        <Stat label="Экспозиция / счет" value={percent(budget.dailyExposurePortfolioPercent)} title="Доля дневной экспозиции от торгового счета." />
-        <Stat label="Stop-loss риск" value={`${money(budget.stopLossRiskRub)} RUB`} tone="bad" title="Грубый worst-case по новым входам: дневная экспозиция * stop-loss %. Комиссии и гэпы отдельно не учитываются." />
-        <Stat label="Stop-loss / счет" value={percent(budget.stopLossRiskPortfolioPercent)} tone="bad" title="Та же потенциальная потеря как доля счета." />
-        <Stat label="Trailing giveback" value={`${money(budget.baseTrailingGivebackRub)} RUB`} title="Сколько прибыли может быть отдано базовым trailing-stop. Адаптивный trailing может быть шире для волатильной бумаги." />
+        <Stat label="Дневная экспозиция" value={dailyExposureText} title="Сколько робот максимум задействует сегодня: min(дневной бюджет, заявок в день * лимит заявки). Если один из лимитов выключен, верхняя оценка становится неограниченной этим правилом." />
+        <Stat label="Экспозиция / счет" value={hasUnlimitedExposure ? 'без лимита' : percent(budget.dailyExposurePortfolioPercent)} title="Доля дневной экспозиции от торгового счета." />
+        <Stat label="Stop-loss риск" value={stopLossRiskText} tone="bad" title="Грубый worst-case по новым входам: дневная экспозиция * stop-loss %. Комиссии и гэпы отдельно не учитываются." />
+        <Stat label="Stop-loss / счет" value={hasUnlimitedExposure ? 'без лимита' : percent(budget.stopLossRiskPortfolioPercent)} tone="bad" title="Та же потенциальная потеря как доля счета." />
+        <Stat label="Trailing giveback" value={trailingGivebackText} title="Сколько прибыли может быть отдано базовым trailing-stop. Адаптивный trailing может быть шире для волатильной бумаги." />
         <Stat label="Лимит позиции" value={`${money(budget.maxPositionRub)} RUB`} title={`Максимум в одну бумагу: ${money(budget.maxPositionSharePercent)}% от торгового счета.`} />
         <Stat label="Мин. бумаг" value={budget.minDiversificationPositions ?? '-'} title="Цель диверсификации перед докупкой уже имеющейся бумаги." />
         <Stat label="Cash usage" value={percent(budget.cashUsagePercent)} title="Доля свободных денег, которую дневной бюджет может задействовать." />

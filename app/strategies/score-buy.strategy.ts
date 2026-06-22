@@ -146,7 +146,7 @@ export default class ScoreBuyStrategy {
             };
         }
 
-        if (estimatedLotRub > config.maxOrderRub) {
+        if (config.maxOrderRub > 0 && estimatedLotRub > config.maxOrderRub) {
             return {
                 score,
                 passed: false,

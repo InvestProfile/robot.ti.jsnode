@@ -476,6 +476,43 @@ main {
   min-width: 0;
 }
 
+.limit-slider {
+  width: min(680px, 100%);
+  min-width: 0;
+}
+
+.limit-slider-head,
+.limit-slider-scale {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.limit-slider-head span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.limit-slider-head strong {
+  color: var(--text);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.limit-slider input[type='range'] {
+  width: 100%;
+  margin: 10px 0 6px;
+  accent-color: #63a7ff;
+}
+
+.limit-slider-scale {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
 .settings-summary {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

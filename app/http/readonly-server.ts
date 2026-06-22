@@ -1535,17 +1535,21 @@ const getLimitsPayload = async (config: RobotConfig) => {
         ]);
         const totalRub = quotationToNumber(portfolio?.totalAmountPortfolio);
         const cashRub = quotationToNumber(portfolio?.totalAmountCurrencies);
+        const ordersUnlimited = config.maxDailyOrders <= 0;
+        const rubUnlimited = config.maxDailyRub <= 0;
 
         limits.push({
             accountId,
             accountAlias: config.accountAliases[accountId],
             mode: 'trade',
             ordersUsed,
+            ordersUnlimited,
             ordersLimit: config.maxDailyOrders,
-            ordersLeft: Math.max(0, config.maxDailyOrders - ordersUsed),
+            ordersLeft: ordersUnlimited ? null : Math.max(0, config.maxDailyOrders - ordersUsed),
             rubUsed,
+            rubUnlimited,
             rubLimit: config.maxDailyRub,
-            rubLeft: Math.max(0, config.maxDailyRub - rubUsed),
+            rubLeft: rubUnlimited ? null : Math.max(0, config.maxDailyRub - rubUsed),
             cashRub,
             totalRub,
             budget: TradeBudgetService.buildAccountBudget(config, { totalRub, cashRub })
