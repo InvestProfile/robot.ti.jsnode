@@ -8,6 +8,18 @@ Never print or commit secrets from `.env`, cookies, PSID values, SSO sessions, t
 
 Active branch: `test`.
 
+## Shared memory-core
+
+Before substantial work, check whether `http://127.0.0.1:8765` is available.
+
+If it is available, search context for project_id `project:robot-ti-jsnode` through memory-core/curl before proceeding.
+
+After substantial changes, write a short event/decision summary to memory-core.
+
+If the memory database is unavailable, explicitly tell the user and continue from local docs. Do not invent memory.
+
+Do not print secrets and do not write tokens to git.
+
 For code changes, prefer this flow:
 
 1. Inspect `docs/START_HERE.md` and the relevant linked docs.
