@@ -2,7 +2,7 @@ import { createSdk } from 'tinkoff-sdk-grpc-js';
 import { getEnv } from '../config/env.config';
 
 let sdk: ReturnType<typeof createSdk> = null as any
-const DEFAULT_INVEST_API_URL = 'invest-public-api.tbank.ru:443';
+const DEFAULT_INVEST_API_URL = 'invest-public-api.tinkoff.ru:443';
 const envVariables = getEnv();
 
 export const getSdk = (token: string) => {
