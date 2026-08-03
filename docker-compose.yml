@@ -7,6 +7,8 @@ services:
     restart: always
     working_dir: /code
     env_file: ./.env
+    environment:
+      NODE_EXTRA_CA_CERTS: /code/certs/russian_trusted_root_ca_pem.crt
     command: bash -c 'npm run start'
     ports:
       - 5757:3000
