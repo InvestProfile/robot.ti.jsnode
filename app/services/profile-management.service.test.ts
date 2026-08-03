@@ -24,6 +24,16 @@ describe('ProfileManagementService - Unit Tests (No Database)', () => {
             assert.strictEqual(result.profileUid, 'abc123');
         });
 
+        it('should extract nickname and UID from a T-Pulse share URL path', () => {
+            const result = ProfileManagementService.parseProfileUrl(
+                'https://www.tbank.ru/invest/social/profile/T_InvestAPI/ed2744bd-4efb-4cae-bab4-3e896dd7d3eb/?author=profile&channel=sharing'
+            );
+
+            assert.strictEqual(result.profileKey, 't_investapi');
+            assert.strictEqual(result.displayName, 'T_InvestAPI');
+            assert.strictEqual(result.profileUid, 'ed2744bd-4efb-4cae-bab4-3e896dd7d3eb');
+        });
+
         it('should sanitize profile key to lowercase alphanumeric and dashes', () => {
             const result = ProfileManagementService.parseProfileUrl('https://example.com/Test_User@123!');
             assert.strictEqual(result.profileKey, 'test_user123');

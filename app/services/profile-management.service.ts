@@ -52,19 +52,21 @@ export default class ProfileManagementService {
         try {
             const urlObj = new URL(trimmedUrl);
             
-            // Extract UID from query parameters if present
-            const uidParam = urlObj.searchParams.get('uid') || urlObj.searchParams.get('id');
-            
-            // Extract profile key from URL path
+            // T-Pulse share links may include both nickname and profile UUID:
+            // /invest/social/profile/<nickname>/<uuid>/
             const pathParts = urlObj.pathname.split('/').map(part => part.trim()).filter(Boolean);
-            const lastPart = pathParts[pathParts.length - 1] || urlObj.hostname;
+            const profileSegmentIndex = pathParts.findIndex(part => part.toLowerCase() === 'profile');
+            const pathProfileKey = profileSegmentIndex >= 0 ? pathParts[profileSegmentIndex + 1] : undefined;
+            const pathProfileUid = profileSegmentIndex >= 0 ? pathParts[profileSegmentIndex + 2] : undefined;
+            const uidParam = urlObj.searchParams.get('uid') || urlObj.searchParams.get('id');
+            const lastPart = pathProfileKey || pathParts[pathParts.length - 1] || urlObj.hostname;
             
             // Sanitize profile key: lowercase, alphanumeric and dashes only
             const profileKey = lastPart.replace(/[^a-zA-Z0-9_.-]/g, '').toLowerCase();
             
             return {
                 profileKey,
-                profileUid: uidParam || undefined,
+                profileUid: uidParam || pathProfileUid || undefined,
                 displayName: lastPart || undefined,
                 source: 't-pulse'
             };
