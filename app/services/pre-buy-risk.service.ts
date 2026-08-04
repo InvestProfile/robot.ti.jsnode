@@ -81,6 +81,16 @@ const formatPercent = (value: number | undefined) =>
 const formatRub = (value: number | undefined) =>
     value === undefined || !Number.isFinite(value) ? '-' : `${Math.round(value)} RUB`;
 
+const stopDamageThresholdRub = (config: RobotConfig) =>
+    Math.min(config.buyLossGuardMinPnlRub, config.buyLossGuardMinPnlRub * 2);
+
+const hasStopClusterDamage = (stats: LossGuardStats, config: RobotConfig) =>
+    stats.stopLosses >= config.buyLossGuardMinLosses
+    && stats.stopLossPnlRub <= config.buyLossGuardMinPnlRub;
+
+const hasLargeStopDamage = (stats: LossGuardStats, config: RobotConfig) =>
+    stats.stopLosses > 0 && stats.stopLossPnlRub <= stopDamageThresholdRub(config);
+
 const isWeakLossGuardStats = (stats: LossGuardStats | undefined, config: RobotConfig) => {
     if (!stats) return false;
 
@@ -89,18 +99,29 @@ const isWeakLossGuardStats = (stats: LossGuardStats | undefined, config: RobotCo
     const weakByWinRate = winRate < config.buyLossGuardMinWinRatePercent;
     const enoughClosed = stats.closed >= config.buyLossGuardMinClosed;
     const enoughLosses = stats.losses >= config.buyLossGuardMinLosses;
-    const stopDamageThreshold = Math.min(config.buyLossGuardMinPnlRub, config.buyLossGuardMinPnlRub * 2);
-    const weakByStopCluster = stats.stopLosses >= config.buyLossGuardMinLosses
-        && stats.stopLossPnlRub <= config.buyLossGuardMinPnlRub;
-    const weakByLargeStopDamage = stats.stopLosses > 0 && stats.stopLossPnlRub <= stopDamageThreshold;
 
     return (enoughClosed && enoughLosses && (weakByPnl || weakByWinRate))
-        || weakByStopCluster
-        || weakByLargeStopDamage;
+        || hasStopClusterDamage(stats, config)
+        || hasLargeStopDamage(stats, config);
 };
 
-const lossGuardReason = (label: string, stats: LossGuardStats, score: number | undefined, requiredScore: number, config: RobotConfig) =>
-    `${label} loss guard: score ${score ?? '-'} < required ${requiredScore}; closed ${stats.closed}, losses ${stats.losses}, P/L ${formatRub(stats.pnlRub)}, WR ${formatPercent(stats.winRatePercent)}, stop-losses ${stats.stopLosses ?? 0}, broker stops ${stats.brokerStopLosses ?? 0}, stop P/L ${formatRub(stats.stopLossPnlRub)}, buffer ${formatPercent(config.buyLossGuardScoreBuffer)}${stats.stale ? ', stale cache' : ''}`;
+const lossGuardStopClusterExtraBuffer = (stats: LossGuardStats, config: RobotConfig) => {
+    if (!hasStopClusterDamage(stats, config) && !hasLargeStopDamage(stats, config)) return 0;
+    return Math.max(0, Number(config.buyLossGuardStopClusterExtraBuffer ?? 0));
+};
+
+const lossGuardRequiredScore = (baseRequiredScore: number, stats: LossGuardStats, config: RobotConfig) => {
+    const baseBuffer = Math.max(0, Number(config.buyLossGuardScoreBuffer ?? 0));
+    const extraBuffer = lossGuardStopClusterExtraBuffer(stats, config);
+    return Math.min(100, Math.max(1, baseRequiredScore + baseBuffer + extraBuffer));
+};
+
+const lossGuardReason = (label: string, stats: LossGuardStats, score: number | undefined, requiredScore: number, config: RobotConfig) => {
+    const extraBuffer = lossGuardStopClusterExtraBuffer(stats, config);
+    const extra = extraBuffer > 0 ? `, stop-cluster extra buffer ${extraBuffer}` : '';
+
+    return `${label} loss guard: score ${score ?? '-'} < required ${requiredScore}; closed ${stats.closed}, losses ${stats.losses}, P/L ${formatRub(stats.pnlRub)}, WR ${formatPercent(stats.winRatePercent)}, stop-losses ${stats.stopLosses ?? 0}, broker stops ${stats.brokerStopLosses ?? 0}, stop P/L ${formatRub(stats.stopLossPnlRub)}, buffer ${config.buyLossGuardScoreBuffer}${extra}${stats.stale ? ', stale cache' : ''}`;
+};
 
 const getAvgDailyTurnoverRub = (candles: DailyCandle[] | undefined, lot: number) => {
     const values = candles
@@ -366,11 +387,11 @@ export default class PreBuyRiskService {
         if (config.buyLossGuardEnabled) {
             const score = Number(input.buyScore);
             const baseRequiredScore = Number(input.buyRequiredScore ?? config.buyMinScore);
-            const requiredScore = Math.min(100, Math.max(1, baseRequiredScore + Number(config.buyLossGuardScoreBuffer ?? 0)));
             const scoreKnown = Number.isFinite(score);
 
             const addLossGuardCheck = (key: string, label: string, stats: LossGuardStats | undefined) => {
                 if (!stats) return;
+                const requiredScore = lossGuardRequiredScore(baseRequiredScore, stats, config);
                 if (!isWeakLossGuardStats(stats, config)) {
                     addCheck({
                         key,

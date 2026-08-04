@@ -222,6 +222,7 @@ export interface RobotConfig {
     buyLossGuardEnabled: boolean;
     buyLossGuardEnforced: boolean;
     buyLossGuardScoreBuffer: number;
+    buyLossGuardStopClusterExtraBuffer: number;
     buyLossGuardMinClosed: number;
     buyLossGuardMinLosses: number;
     buyLossGuardMinPnlRub: number;
@@ -375,6 +376,7 @@ export const getRobotConfig = (): RobotConfig => {
         buyLossGuardEnabled: parseBoolean(env.ROBOT_BUY_LOSS_GUARD_ENABLED, true),
         buyLossGuardEnforced: parseBoolean(env.ROBOT_BUY_LOSS_GUARD_ENFORCED, true),
         buyLossGuardScoreBuffer: Math.max(0, Math.min(30, parseNumber(env.ROBOT_BUY_LOSS_GUARD_SCORE_BUFFER, 10))),
+        buyLossGuardStopClusterExtraBuffer: Math.max(0, Math.min(30, parseNumber(env.ROBOT_BUY_LOSS_GUARD_STOP_CLUSTER_EXTRA_BUFFER, 10))),
         buyLossGuardMinClosed: Math.max(1, Math.trunc(parseNumber(env.ROBOT_BUY_LOSS_GUARD_MIN_CLOSED, 3))),
         buyLossGuardMinLosses: Math.max(1, Math.trunc(parseNumber(env.ROBOT_BUY_LOSS_GUARD_MIN_LOSSES, 2))),
         buyLossGuardMinPnlRub: parseNumber(env.ROBOT_BUY_LOSS_GUARD_MIN_PNL_RUB, -30),

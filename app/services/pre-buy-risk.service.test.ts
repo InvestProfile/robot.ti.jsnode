@@ -25,6 +25,7 @@ const config = {
     buyLossGuardEnabled: false,
     buyLossGuardEnforced: false,
     buyLossGuardScoreBuffer: 10,
+    buyLossGuardStopClusterExtraBuffer: 10,
     buyLossGuardMinClosed: 3,
     buyLossGuardMinLosses: 2,
     buyLossGuardMinPnlRub: -30,
@@ -486,7 +487,8 @@ describe('PreBuyRiskService', () => {
             ...config,
             buyLossGuardEnabled: true,
             buyLossGuardEnforced: true,
-            buyLossGuardScoreBuffer: 10
+            buyLossGuardScoreBuffer: 10,
+            buyLossGuardStopClusterExtraBuffer: 10
         } as RobotConfig);
 
         assert.strictEqual(result.passed, false);
@@ -494,13 +496,13 @@ describe('PreBuyRiskService', () => {
         assert.ok(result.checks.some(check => check.key === 'ticker-loss-guard' && check.status === 'block'));
     });
 
-    it('allows a weak ticker when score clears the loss guard buffer', async () => {
+    it('allows a weak ticker when score clears the loss guard and stop-cluster buffers', async () => {
         (TradeDecisionModel.count as unknown) = async () => 0;
         mockTrades([]);
 
         const result = await PreBuyRiskService.evaluate({
             ...baseInput,
-            buyScore: 83,
+            buyScore: 92,
             buyRequiredScore: 70,
             lossGuard: {
                 ticker: {
@@ -568,7 +570,7 @@ describe('PreBuyRiskService', () => {
 
         const result = await PreBuyRiskService.evaluate({
             ...baseInput,
-            buyScore: 84,
+            buyScore: 94,
             buyRequiredScore: 70,
             lossGuard: {
                 ticker: {
@@ -589,10 +591,47 @@ describe('PreBuyRiskService', () => {
             buyLossGuardEnabled: true,
             buyLossGuardEnforced: true,
             buyLossGuardScoreBuffer: 10,
+            buyLossGuardStopClusterExtraBuffer: 10,
             buyLossGuardMinPnlRub: -30
         } as RobotConfig);
 
         assert.strictEqual(result.passed, true);
         assert.ok(result.checks.some(check => check.key === 'ticker-loss-guard' && check.status === 'pass'));
+    });
+
+    it('requires an extra score buffer for repeated stop-loss damage', async () => {
+        (TradeDecisionModel.count as unknown) = async () => 0;
+        mockTrades([]);
+
+        const result = await PreBuyRiskService.evaluate({
+            ...baseInput,
+            buyScore: 83,
+            buyRequiredScore: 70,
+            lossGuard: {
+                ticker: {
+                    type: 'ticker',
+                    key: 'ASTR',
+                    closed: 6,
+                    wins: 1,
+                    losses: 5,
+                    pnlRub: -55,
+                    stopLosses: 4,
+                    brokerStopLosses: 3,
+                    stopLossPnlRub: -55,
+                    winRatePercent: 16.7
+                }
+            }
+        }, {
+            ...config,
+            buyLossGuardEnabled: true,
+            buyLossGuardEnforced: true,
+            buyLossGuardScoreBuffer: 10,
+            buyLossGuardStopClusterExtraBuffer: 10,
+            buyLossGuardMinPnlRub: -30
+        } as RobotConfig);
+
+        assert.strictEqual(result.passed, false);
+        assert.ok(result.blockingReasons.some(reason => reason.includes('stop-cluster extra buffer 10')));
+        assert.ok(result.checks.some(check => check.key === 'ticker-loss-guard' && check.status === 'block' && check.limit === 90));
     });
 });
