@@ -9,6 +9,7 @@ import TradesService from './trades.service';
 import { isIgnoredAccountingOrderStatus } from '../utils/order-status';
 import ProtectiveStopService from './protective-stop.service';
 import { LossGuardStats } from './loss-guard.service';
+import { DailyBuyGuardSnapshot } from './daily-buy-guard.service';
 
 type OrderBookMetrics = NonNullable<Awaited<ReturnType<typeof MarketDataService.getOrderBookMetrics>>>;
 
@@ -42,6 +43,7 @@ interface PreBuyRiskInput {
         ticker?: LossGuardStats;
         sector?: LossGuardStats;
     };
+    dailyBuyGuard?: DailyBuyGuardSnapshot;
 }
 
 export interface PreBuyRiskCheck {
@@ -69,6 +71,7 @@ export interface PreBuyRiskResult {
     robotAverageLotCostRub?: number;
     robotProfitPercent?: number;
     lossGuard?: PreBuyRiskInput['lossGuard'];
+    dailyBuyGuard?: DailyBuyGuardSnapshot;
 }
 
 const average = (values: number[]) => values.length
@@ -365,6 +368,10 @@ export default class PreBuyRiskService {
                 warnings.push(check.reason);
             }
         };
+
+        if (input.dailyBuyGuard) {
+            addCheck({ key: 'daily-buy-guard', status: input.dailyBuyGuard.blocked ? 'block' : 'pass', reason: input.dailyBuyGuard.reason, enforced: config.buyDailyGuardEnforced, value: input.dailyBuyGuard.stopExits, limit: input.dailyBuyGuard.maxStopExits });
+        }
 
         if (await this.hasStopLossToday(input.accountId, input.ticker)) {
             addCheck({

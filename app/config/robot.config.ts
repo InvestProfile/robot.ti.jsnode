@@ -228,6 +228,11 @@ export interface RobotConfig {
     buyLossGuardMinPnlRub: number;
     buyLossGuardMinWinRatePercent: number;
     buyLossGuardCacheTtlMs: number;
+    buyDailyGuardEnabled: boolean;
+    buyDailyGuardEnforced: boolean;
+    buyDailyGuardMaxStopExits: number;
+    buyDailyGuardMaxNetLossRub: number;
+    buyDailyGuardCacheTtlMs: number;
     buyScoreProfiles: Record<string, BuyScoreProfile>;
     maxOrderRub: number;
     maxDailyOrders: number;
@@ -382,6 +387,11 @@ export const getRobotConfig = (): RobotConfig => {
         buyLossGuardMinPnlRub: parseNumber(env.ROBOT_BUY_LOSS_GUARD_MIN_PNL_RUB, -30),
         buyLossGuardMinWinRatePercent: Math.max(0, Math.min(100, parseNumber(env.ROBOT_BUY_LOSS_GUARD_MIN_WIN_RATE_PERCENT, 35))),
         buyLossGuardCacheTtlMs: Math.max(0, parseNumber(env.ROBOT_BUY_LOSS_GUARD_CACHE_TTL_MS, 15 * 60_000)),
+        buyDailyGuardEnabled: parseBoolean(env.ROBOT_BUY_DAILY_GUARD_ENABLED, true),
+        buyDailyGuardEnforced: parseBoolean(env.ROBOT_BUY_DAILY_GUARD_ENFORCED, true),
+        buyDailyGuardMaxStopExits: Math.max(1, Math.trunc(parseNumber(env.ROBOT_BUY_DAILY_GUARD_MAX_STOP_EXITS, 3))),
+        buyDailyGuardMaxNetLossRub: Math.max(1, parseNumber(env.ROBOT_BUY_DAILY_GUARD_MAX_NET_LOSS_RUB, 150)),
+        buyDailyGuardCacheTtlMs: Math.max(0, parseNumber(env.ROBOT_BUY_DAILY_GUARD_CACHE_TTL_MS, 30_000)),
         buyScoreProfiles: parseBuyScoreProfiles(env.ROBOT_BUY_SCORE_PROFILES),
         maxOrderRub,
         maxDailyOrders,

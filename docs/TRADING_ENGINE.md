@@ -25,6 +25,7 @@ Current buy guards:
 - Market regime gate.
 - Trading status must be normal.
 - Daily order/budget caps.
+- Account-wide daily buy guard blocks new buys until the next Moscow trading date after 3 stop exits or the configured realized net loss; sells and protective stops remain active.
 - Available cash.
 - Per-position concentration cap.
 - Volatility-aware trade budget: when the adaptive stop for a candidate is wider than the base stop, the allowed order size is reduced so nominal risk stays closer to the configured budget.

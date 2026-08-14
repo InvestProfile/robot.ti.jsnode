@@ -15,6 +15,7 @@ import DailyBuyListService from './daily-buy-list.service';
 import PreBuyRiskService, { PreBuyRiskResult } from './pre-buy-risk.service';
 import SectorPerformanceService from './sector-performance.service';
 import LossGuardService from './loss-guard.service';
+import DailyBuyGuardService from './daily-buy-guard.service';
 
 type SharesResponse = Awaited<ReturnType<typeof InstrumentsService.getShares>>;
 type ShareInstrument = NonNullable<NonNullable<SharesResponse>['instruments']>[number];
@@ -303,6 +304,7 @@ export default class BuySignalEvaluatorService {
         const lossGuard = config.buyLossGuardEnabled
             ? await LossGuardService.getSnapshot(config)
             : { byTicker: new Map(), bySector: new Map() };
+        const dailyBuyGuard = await DailyBuyGuardService.getSnapshot(config, accountId);
         const previews: BuySignalPreview[] = [];
 
         for (const instrument of buyInstruments) {
@@ -421,7 +423,8 @@ export default class BuySignalEvaluatorService {
                 lossGuard: {
                     ticker: lossGuard.byTicker.get(instrument.ticker.toUpperCase()),
                     sector: instrument.sector ? lossGuard.bySector.get(instrument.sector) : undefined
-                }
+                },
+                dailyBuyGuard
             }, config);
             const allowed = risk.allowed && preBuyRisk.passed;
             let skipReason: string | undefined;
