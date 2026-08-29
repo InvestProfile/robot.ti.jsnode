@@ -15,6 +15,7 @@ import { VirtualAccountModel } from '../models/virtual-account.model';
 import { VirtualLedgerEventModel } from '../models/virtual-ledger-event.model';
 import { VirtualOrderModel } from '../models/virtual-order.model';
 import { VirtualFillModel } from '../models/virtual-fill.model';
+import { ShadowDecisionObservationModel } from '../models/shadow-decision-observation.model';
 
 export default class DatabaseService {
     static async init() {
@@ -33,10 +34,11 @@ export default class DatabaseService {
         await VirtualOrderModel.sync({ alter: true });
         await VirtualFillModel.sync({ alter: true });
         await VirtualLedgerEventModel.sync({ alter: true });
+        await ShadowDecisionObservationModel.sync({ alter: true });
         await RuntimeSettingModel.sync({ alter: true });
         await ExitPolicyObservationModel.sync({ alter: true });
 
         console.log('Database connection: OK');
-        console.log('Database models: trades, trade_decisions, portfolio_snapshots, position_states, signal_states, buy_signal_journal, paper_positions, social_profiles, social_signals, runtime_account_modes, runtime_settings, exit_policy_observations synced');
+        console.log('Database models: trades, trade_decisions, portfolio_snapshots, position_states, signal_states, buy_signal_journal, paper_positions, social_profiles, social_signals, runtime_account_modes, virtual accounts/orders/fills/ledger/shadow observations, runtime_settings, exit_policy_observations synced');
     }
 }
