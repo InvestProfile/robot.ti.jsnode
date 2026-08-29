@@ -10,7 +10,10 @@ Active branch: `test`.
 
 ## Shared memory-core
 
-Before substantial work, check whether `http://127.0.0.1:8765` is available.
+Before substantial work, check `http://127.0.0.1:8765/health` with a 10-second
+timeout. The health response may take about one second while materialization or
+embedding jobs are active; do not report memory-core unavailable based on the
+old two-second probe alone.
 
 If it is available, search context for project_id `project:robot-ti-jsnode` through memory-core/curl before proceeding.
 
