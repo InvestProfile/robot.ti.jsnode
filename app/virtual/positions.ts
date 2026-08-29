@@ -36,7 +36,7 @@ const requireTrimmed = (value: string, field: string) => {
     }
 };
 
-const canonicalFill = (fill: VirtualFill): VirtualFill => {
+export const canonicalVirtualFill = (fill: VirtualFill): VirtualFill => {
     requireTrimmed(fill.id, 'fill.id');
     requireTrimmed(fill.virtualAccountId, 'fill.virtualAccountId');
     requireTrimmed(fill.instrumentId, 'fill.instrumentId');
@@ -115,7 +115,7 @@ export const applyVirtualFillToPosition = (
     state: VirtualPositionState,
     source: VirtualFill
 ): VirtualPositionState => {
-    const fill = canonicalFill(source);
+    const fill = canonicalVirtualFill(source);
     if (fill.virtualAccountId !== state.virtualAccountId || fill.instrumentId !== state.instrumentId) {
         throw new Error('fill position identity mismatch');
     }

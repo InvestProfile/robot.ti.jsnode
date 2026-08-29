@@ -8,4 +8,6 @@ export * from './valuation';
 export * from './repository';
 export * from './execution';
 export * from './positions';
+export * from './position-repository';
+export * from './reconciliation';
 export * from './execution-codecs';
