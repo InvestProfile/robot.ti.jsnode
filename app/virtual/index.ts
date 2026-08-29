@@ -5,3 +5,4 @@ export * from './types';
 export * from './codecs';
 export * from './ledger';
 export * from './valuation';
+export * from './repository';

@@ -11,6 +11,8 @@ import { SocialSignalModel } from '../models/social-signal.model';
 import { RuntimeAccountModeModel } from '../models/runtime-account-mode.model';
 import { RuntimeSettingModel } from '../models/runtime-setting.model';
 import { ExitPolicyObservationModel } from '../models/exit-policy-observation.model';
+import { VirtualAccountModel } from '../models/virtual-account.model';
+import { VirtualLedgerEventModel } from '../models/virtual-ledger-event.model';
 
 export default class DatabaseService {
     static async init() {
@@ -25,6 +27,8 @@ export default class DatabaseService {
         await SocialProfileModel.sync({ alter: true });
         await SocialSignalModel.sync({ alter: true });
         await RuntimeAccountModeModel.sync({ alter: true });
+        await VirtualAccountModel.sync({ alter: true });
+        await VirtualLedgerEventModel.sync({ alter: true });
         await RuntimeSettingModel.sync({ alter: true });
         await ExitPolicyObservationModel.sync({ alter: true });
 
