@@ -17,6 +17,10 @@ export interface VirtualAccountReconciliation {
     readonly interestKopecks: bigint;
     readonly realizedPnlKopecks: bigint;
     readonly unrealizedPnlKopecks: bigint;
+    readonly feesKopecks: bigint;
+    readonly turnoverKopecks: bigint;
+    readonly fillCount: number;
+    readonly openPositionCount: number;
 }
 
 export const reconcileVirtualAccount = (
@@ -80,6 +84,11 @@ export const reconcileVirtualAccount = (
     if (equityKopecks !== expectedEquity) {
         throw new Error(`virtual account reconciliation mismatch: equity ${equityKopecks} expected ${expectedEquity}`);
     }
+    const feesKopecks = portfolio.fills.reduce((sum, fill) => sum + fill.feeKopecks, 0n);
+    const turnoverKopecks = portfolio.fills.reduce((sum, fill) => sum + fill.grossAmountKopecks, 0n);
+    const openPositionCount = portfolio.positions.filter(position =>
+        position.openLots.some(lot => lot.quantityLots > 0)
+    ).length;
     return Object.freeze({
         cashKopecks: account.cashKopecks,
         positionsValueKopecks,
@@ -87,6 +96,10 @@ export const reconcileVirtualAccount = (
         contributionsKopecks,
         interestKopecks,
         realizedPnlKopecks,
-        unrealizedPnlKopecks
+        unrealizedPnlKopecks,
+        feesKopecks,
+        turnoverKopecks,
+        fillCount: portfolio.fills.length,
+        openPositionCount
     });
 };

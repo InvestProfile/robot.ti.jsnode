@@ -48,7 +48,11 @@ describe('virtual account reconciliation', () => {
             contributionsKopecks: 10_000n,
             interestKopecks: 0n,
             realizedPnlKopecks: 0n,
-            unrealizedPnlKopecks: 190n
+            unrealizedPnlKopecks: 190n,
+            feesKopecks: 10n,
+            turnoverKopecks: 2_000n,
+            fillCount: 1,
+            openPositionCount: 1
         });
     });
 
