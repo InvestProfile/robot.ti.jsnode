@@ -1,6 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { DeterministicVirtualExecutionSimulator, VirtualOrderIntent } from './index';
+import {
+    AccountOpenedEvent, DeterministicVirtualExecutionSimulator, VirtualOrderIntent,
+    applyVirtualLedgerEvent, decodeVirtualExecutionResult, encodeVirtualExecutionResult,
+    openVirtualCashAccount, virtualOrderIntentFingerprint
+} from './index';
 
 const now = '2026-08-29T10:00:00Z';
 const canonicalNow = '2026-08-29T10:00:00.000Z';
@@ -26,6 +30,16 @@ describe('deterministic virtual execution simulator', () => {
         assert.deepStrictEqual(result.ledgerEvents.map(event => [event.kind, event.amountKopecks]), [
             ['trade-cash', 200_200n], ['fee', 601n]
         ]);
+
+        const opened: AccountOpenedEvent = {
+            id: 'opened', virtualAccountId: 'virtual-1x', occurredAt: now,
+            kind: 'account-opened', amountKopecks: 1_000_000n
+        };
+        const settled = result.ledgerEvents.reduce((state, event) => applyVirtualLedgerEvent(state, event), openVirtualCashAccount(opened));
+        assert.strictEqual(settled.cashKopecks, 799_199n);
+        const restored = decodeVirtualExecutionResult(encodeVirtualExecutionResult(result));
+        assert.deepStrictEqual(restored, result);
+        assert.ok(Object.isFrozen(restored));
     });
 
     it('fills a sell at bid minus slippage and uses owned-lot guard', () => {
@@ -60,6 +74,9 @@ describe('deterministic virtual execution simulator', () => {
 
     it('rejects crossed, future and malformed deterministic inputs', () => {
         const simulator = new DeterministicVirtualExecutionSimulator();
+
+        assert.strictEqual(virtualOrderIntentFingerprint(order()), virtualOrderIntentFingerprint({ ...order() }));
+        assert.notStrictEqual(virtualOrderIntentFingerprint(order()), virtualOrderIntentFingerprint(order({ quantityLots: 3 })));
         assert.strictEqual(simulator.execute(order({ id: 'crossed' }), { ...quote, bidKopecks: 10_001n }, context, policy).status, 'rejected');
         assert.strictEqual(simulator.execute(order({ id: 'future' }), { ...quote, observedAt: '2026-08-29T10:00:01Z' }, context, policy).status, 'rejected');
         assert.strictEqual(simulator.execute(order({ id: 'bad-lots', quantityLots: 0 }), quote, context, policy).status, 'rejected');

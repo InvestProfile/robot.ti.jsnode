@@ -6,7 +6,7 @@ import { applyVirtualLedgerEvent, openVirtualCashAccount, replayVirtualLedger } 
 import { AccountOpenedEvent, DuplicateEventPolicy, StoredVirtualLedgerEvent, VirtualLedgerEvent } from '../virtual/types';
 import { VirtualAccountRecord, VirtualLedgerRepository } from '../virtual/repository';
 
-const toStoredEvent = (row: VirtualLedgerEventModel): StoredVirtualLedgerEvent => {
+export const virtualLedgerRowToStoredEvent = (row: VirtualLedgerEventModel): StoredVirtualLedgerEvent => {
     const base = {
         id: row.eventId,
         virtualAccountId: row.virtualAccountId,
@@ -22,7 +22,7 @@ const toStoredEvent = (row: VirtualLedgerEventModel): StoredVirtualLedgerEvent =
     return base as StoredVirtualLedgerEvent;
 };
 
-const toColumns = (event: VirtualLedgerEvent) => {
+export const virtualLedgerEventToColumns = (event: VirtualLedgerEvent) => {
     return {
         virtualAccountId: event.virtualAccountId,
         eventId: event.id,
@@ -41,7 +41,7 @@ export class SequelizeVirtualLedgerRepository implements VirtualLedgerRepository
         const state = openVirtualCashAccount(openingEvent);
         return sequelize.transaction(async transaction => {
             await VirtualAccountModel.create({ ...account }, { transaction });
-            await VirtualLedgerEventModel.create(toColumns(state.entries[0]), { transaction });
+            await VirtualLedgerEventModel.create(virtualLedgerEventToColumns(state.entries[0]), { transaction });
             return state;
         });
     }
@@ -57,9 +57,9 @@ export class SequelizeVirtualLedgerRepository implements VirtualLedgerRepository
                 where: { virtualAccountId: event.virtualAccountId }, order: [['sequence', 'ASC']],
                 transaction, lock: transaction.LOCK.UPDATE
             });
-            const before = replayVirtualLedger(rows.map(row => decodeVirtualLedgerEvent(toStoredEvent(row))));
+            const before = replayVirtualLedger(rows.map(row => decodeVirtualLedgerEvent(virtualLedgerRowToStoredEvent(row))));
             const after = applyVirtualLedgerEvent(before, event, duplicatePolicy);
-            if (after !== before) await VirtualLedgerEventModel.create(toColumns(after.entries[after.entries.length - 1]), { transaction });
+            if (after !== before) await VirtualLedgerEventModel.create(virtualLedgerEventToColumns(after.entries[after.entries.length - 1]), { transaction });
             return after;
         });
     }
@@ -68,7 +68,7 @@ export class SequelizeVirtualLedgerRepository implements VirtualLedgerRepository
         const account = await VirtualAccountModel.findOne({ where: { virtualAccountId } });
         if (!account) throw new Error(`virtual account not found: ${virtualAccountId}`);
         const rows = await VirtualLedgerEventModel.findAll({ where: { virtualAccountId }, order: [['sequence', 'ASC']] });
-        return replayVirtualLedger(rows.map(row => decodeVirtualLedgerEvent(toStoredEvent(row))));
+        return replayVirtualLedger(rows.map(row => decodeVirtualLedgerEvent(virtualLedgerRowToStoredEvent(row))));
     }
 }
 

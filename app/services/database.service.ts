@@ -13,6 +13,8 @@ import { RuntimeSettingModel } from '../models/runtime-setting.model';
 import { ExitPolicyObservationModel } from '../models/exit-policy-observation.model';
 import { VirtualAccountModel } from '../models/virtual-account.model';
 import { VirtualLedgerEventModel } from '../models/virtual-ledger-event.model';
+import { VirtualOrderModel } from '../models/virtual-order.model';
+import { VirtualFillModel } from '../models/virtual-fill.model';
 
 export default class DatabaseService {
     static async init() {
@@ -28,6 +30,8 @@ export default class DatabaseService {
         await SocialSignalModel.sync({ alter: true });
         await RuntimeAccountModeModel.sync({ alter: true });
         await VirtualAccountModel.sync({ alter: true });
+        await VirtualOrderModel.sync({ alter: true });
+        await VirtualFillModel.sync({ alter: true });
         await VirtualLedgerEventModel.sync({ alter: true });
         await RuntimeSettingModel.sync({ alter: true });
         await ExitPolicyObservationModel.sync({ alter: true });
