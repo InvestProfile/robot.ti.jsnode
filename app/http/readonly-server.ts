@@ -53,6 +53,8 @@ import ExitQualityService from '../services/exit-quality.service';
 import ExitEntryQualityService from '../services/exit-entry-quality.service';
 import { isOpenOrderStatus, isRejectedOrderStatus } from '../utils/order-status';
 import StopLossStrategy from '../strategies/stop-loss.strategy';
+import PaperLabReadModelService from '../services/paper-lab-read-model.service';
+import { handlePaperReadApi } from '../paper/read-api';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -2065,6 +2067,13 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
     if (url.pathname === '/') {
         if (await serveStatic(res, url.pathname)) return;
         text(res, 200, dashboardPage, 'text/html; charset=utf-8');
+        return;
+    }
+
+    if (url.pathname === '/api/paper-lab') {
+        const response = await handlePaperReadApi({ method: req.method, url }, PaperLabReadModelService);
+        if (response.allow) res.setHeader('allow', response.allow);
+        json(res, response.statusCode, response.payload);
         return;
     }
 

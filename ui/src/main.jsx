@@ -15,6 +15,7 @@ import {
   Signal,
   Users
 } from 'lucide-react';
+import { formatPaperKopecks } from './paper-money.cjs';
 import './styles.css';
 
 const endpoints = {
@@ -76,6 +77,7 @@ const tabs = [
   { id: 'social', label: 'Пульс', icon: Users },
   { id: 'socialProfiles', label: 'Профили', icon: ShieldCheck },
   { id: 'evidence', label: 'Лаборатория', icon: BarChart3 },
+  { id: 'paperLab', label: 'Paper Lab', icon: Bot },
   { id: 'accounts', label: 'Счета', icon: Database },
   { id: 'logs', label: 'Журнал', icon: Eye }
 ];
@@ -3954,6 +3956,96 @@ function Logs({ data, loadingKeys, onCancelStaleLimits }) {
   );
 }
 
+function PaperLab() {
+  const [accounts, setAccounts] = useState([]);
+  const [selectedId, setSelectedId] = useState('');
+  const [payload, setPayload] = useState(null);
+  const [state, setState] = useState('loading');
+  const [error, setError] = useState('');
+
+  const loadAccounts = async () => {
+    setState('loading');
+    setError('');
+    try {
+      const response = await fetch('/api/paper-lab?limit=50', { cache: 'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const next = await response.json();
+      const rows = next.accounts || [];
+      setAccounts(rows);
+      const nextId = selectedId || rows[0]?.virtualAccountId || '';
+      setSelectedId(nextId);
+      if (!nextId) {
+        setPayload(null);
+        setState('empty');
+        return;
+      }
+      const detailResponse = await fetch(`/api/paper-lab?limit=50&virtualAccountId=${encodeURIComponent(nextId)}`, { cache: 'no-store' });
+      if (!detailResponse.ok) throw new Error(`HTTP ${detailResponse.status}`);
+      setPayload(await detailResponse.json());
+      setState('ready');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+      setState('error');
+    }
+  };
+
+  useEffect(() => { void loadAccounts(); }, [selectedId]);
+  if (state === 'loading') return <div className="paper-state">Загрузка Paper Lab…</div>;
+  if (state === 'error') return <div className="error-banner"><AlertTriangle size={18} />Ошибка Paper Lab: {error}</div>;
+  if (state === 'empty') return <div className="paper-state">Эксперименты не созданы</div>;
+
+  const metrics = payload?.reconciliation?.metrics || {};
+  const stale = payload?.freshness?.state === 'stale';
+  const kopecks = (value, options) => formatPaperKopecks(value, options);
+  return (
+    <div className="grid">
+      <Card title="Virtual Robot" icon={Bot} className="wide" help="Только виртуальные таблицы; endpoint не вызывает broker, sandbox или live API.">
+        <div className="paper-toolbar">
+          <label>Эксперимент
+            <select value={selectedId} onChange={(event) => setSelectedId(event.target.value)}>
+              {accounts.map((account) => <option key={account.virtualAccountId} value={account.virtualAccountId}>{account.name} · {account.virtualAccountId}</option>)}
+            </select>
+          </label>
+          <Pill tone={payload?.reconciliation?.status === 'error' ? 'bad' : payload?.reconciliation?.status === 'degraded' ? 'warn' : 'good'}>
+            reconciliation: {payload?.reconciliation?.status || 'unknown'}
+          </Pill>
+          {stale ? <Pill tone="warn">Данные устарели</Pill> : <Pill tone="good">fresh</Pill>}
+        </div>
+        {payload?.reconciliation?.reason ? <p className="muted">{payload.reconciliation.reason}</p> : null}
+        <div className="stats compact">
+          <Stat label="Equity" value={kopecks(metrics.equityKopecks)} />
+          <Stat label="Cash" value={kopecks(metrics.cashKopecks)} />
+          <Stat label="Realized P/L" value={kopecks(metrics.realizedPnlKopecks, { signed: true })} />
+          <Stat label="Unrealized P/L" value={kopecks(metrics.unrealizedPnlKopecks, { signed: true })} />
+          <Stat label="Fees" value={kopecks(metrics.feesKopecks)} />
+          <Stat label="Turnover" value={kopecks(metrics.turnoverKopecks)} />
+        </div>
+        <p className="muted">Equity curve и benchmark пока недоступны: нужен воспроизводимый time-series evidence layer.</p>
+      </Card>
+      <Card title="Позиции" className="wide"><Table rows={payload?.positions || []} empty="Открытых virtual-позиций нет" columns={[
+        { key: 'instrumentId', label: 'Инструмент' }, { key: 'quantityLots', label: 'Лоты', className: 'right' },
+        { key: 'costBasisKopecks', label: 'Себестоимость', className: 'right', render: (row) => kopecks(row.costBasisKopecks) },
+        { key: 'unrealizedPnlKopecks', label: 'Unrealized P/L', className: 'right', render: (row) => kopecks(row.unrealizedPnlKopecks) }
+      ]} /></Card>
+      <Card title="Заявки" className="wide"><Table rows={payload?.orders || []} empty="Virtual-заявок нет" columns={[
+        { key: 'completedAt', label: 'Время', render: (row) => time(row.completedAt) }, { key: 'instrumentId', label: 'Инструмент' },
+        { key: 'side', label: 'Сторона' }, { key: 'quantityLots', label: 'Лоты', className: 'right' }, { key: 'status', label: 'Статус' },
+        { key: 'rejectionReason', label: 'Причина' }
+      ]} /></Card>
+      <Card title="Исполнения" className="wide"><Table rows={payload?.fills || []} empty="Virtual-исполнений нет" columns={[
+        { key: 'filledAt', label: 'Время', render: (row) => time(row.filledAt) }, { key: 'instrumentId', label: 'Инструмент' },
+        { key: 'side', label: 'Сторона' }, { key: 'quantityLots', label: 'Лоты', className: 'right' },
+        { key: 'grossAmountKopecks', label: 'Сумма', className: 'right', render: (row) => kopecks(row.grossAmountKopecks) },
+        { key: 'feeKopecks', label: 'Комиссия', className: 'right', render: (row) => kopecks(row.feeKopecks) }
+      ]} /></Card>
+      <Card title="Shadow-решения" className="wide"><Table rows={payload?.decisions || []} empty="Shadow-решений нет" columns={[
+        { key: 'evaluatedAt', label: 'Время', render: (row) => time(row.evaluatedAt) }, { key: 'instrumentId', label: 'Инструмент' },
+        { key: 'action', label: 'Действие' }, { key: 'status', label: 'Статус' }, { key: 'reason', label: 'Причина' }
+      ]} /></Card>
+    </div>
+  );
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState(getInitialTab);
   const { data, loading, loadingKeys, error, updatedAt, reload } = useDashboardData(activeTab);
@@ -4198,6 +4290,7 @@ function App() {
     social: <Social data={data} loadingKeys={loadingKeys} />,
     socialProfiles: <SocialProfiles data={data} loadingKeys={loadingKeys} reload={reload} />,
     evidence: <Evidence data={data} loadingKeys={loadingKeys} />,
+    paperLab: <PaperLab />,
     accounts: <Accounts data={data} loadingKeys={loadingKeys} onModeChange={updateAccountMode} onLiveSellToggle={updateLiveSell} onRiskSettingsChange={updateRiskSettings} onSellSettingsChange={updateSellSettings} />,
     sell: <Sell data={data} loadingKeys={loadingKeys} />,
     trades: <Trades data={data} loadingKeys={loadingKeys} onCancelStaleLimits={cancelStaleLimitOrders} onOrderTypeChange={updateOrderType} onProtectiveStopResync={resyncProtectiveStops} />,
