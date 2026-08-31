@@ -122,13 +122,20 @@ describe('virtual observation persistence', () => {
             sessionPolicyVersion: 't-invest-session-v1-open-only' as const,
             benchmarkInstrumentUid: 'f509af83-6e71-462f-901f-bcb073f6773b',
             benchmarkMethodology: 'normalized-price-return' as const,
-            benchmarkReturnScope: 'price-only-excludes-dividends-fees-and-total-return' as const
+            benchmarkReturnScope: 'price-only-excludes-dividends-fees-and-total-return' as const,
+            maxMarkAgeMs: 5000,
+            maxInterInstrumentSkewMs: 1000
         };
         const qualified = await repository.open('qualified', { evidenceConfig });
         assert.equal('configVersion' in qualified && qualified.configVersion, 2);
         assert.deepEqual(await repository.open('qualified', { evidenceConfig }), qualified);
         await assert.rejects(repository.open('qualified'));
         await assert.rejects(repository.open('bad', { evidenceConfig: { ...evidenceConfig, benchmarkInstrumentUid: ' ' } }));
+        await assert.rejects(repository.open('fractional-age', { evidenceConfig: { ...evidenceConfig, maxMarkAgeMs: 1.5 } }));
+        await assert.rejects(repository.open('unsafe-age', { evidenceConfig: { ...evidenceConfig, maxMarkAgeMs: Number.MAX_SAFE_INTEGER + 1 } }));
+        await assert.rejects(repository.open('negative-skew', { evidenceConfig: { ...evidenceConfig, maxInterInstrumentSkewMs: -1 } }));
+        const zeroSkew = await repository.open('zero-skew', { evidenceConfig: { ...evidenceConfig, maxInterInstrumentSkewMs: 0 } });
+        assert.equal('configVersion' in zeroSkew && zeroSkew.evidenceConfig.maxInterInstrumentSkewMs, 0);
     });
 
     it('allows one lease owner, expiry takeover, renewal and owner-safe release', async () => {

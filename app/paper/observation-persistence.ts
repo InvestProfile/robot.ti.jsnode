@@ -33,6 +33,8 @@ export interface QualifiedEvidenceConfig {
     readonly benchmarkInstrumentUid: string;
     readonly benchmarkMethodology: 'normalized-price-return';
     readonly benchmarkReturnScope: 'price-only-excludes-dividends-fees-and-total-return';
+    readonly maxMarkAgeMs: number;
+    readonly maxInterInstrumentSkewMs: number;
 }
 
 export interface ObservationExperimentConfigV2 extends ObservationExperimentConfig {
@@ -61,6 +63,8 @@ const canonicalConfig = (experimentId: string, settings: ObservationExperimentSe
     if (!settings.evidenceConfig) return legacy;
     const evidence = settings.evidenceConfig;
     const benchmarkInstrumentUid = evidence.benchmarkInstrumentUid.trim();
+    if (!Number.isSafeInteger(evidence.maxMarkAgeMs) || evidence.maxMarkAgeMs <= 0) throw new Error('maxMarkAgeMs must be a positive safe integer');
+    if (!Number.isSafeInteger(evidence.maxInterInstrumentSkewMs) || evidence.maxInterInstrumentSkewMs < 0) throw new Error('maxInterInstrumentSkewMs must be a non-negative safe integer');
     if (!benchmarkInstrumentUid) throw new Error('benchmarkInstrumentUid is required for qualified evidence config');
     if (evidence.configVersion !== 2 || evidence.marketDataSource !== 't-invest-market-data-readonly'
         || evidence.sessionPolicyVersion !== 't-invest-session-v1-open-only'
@@ -248,7 +252,7 @@ export const verifyObservationMigrations = async (database: Sequelize): Promise<
 export class ObservationExperimentRepository {
     constructor(private readonly database: Sequelize) {}
 
-    async open(experimentId: string, settings: ObservationExperimentSettings = {}): Promise<ObservationExperimentConfig> {
+    async open(experimentId: string, settings: ObservationExperimentSettings = {}): Promise<ObservationExperimentConfig | ObservationExperimentConfigV2> {
         const normalizedId = experimentId.trim();
         if (!normalizedId) throw new Error('experimentId is required');
         const config = canonicalConfig(normalizedId, settings);
@@ -257,10 +261,10 @@ export class ObservationExperimentRepository {
         const evidence = 'configVersion' in config ? config.evidenceConfig : undefined;
         await this.database.query(
             `INSERT INTO virtual_observation_experiments
-                (experiment_id, config_fingerprint, config_json, config_version, market_data_source, session_policy_version, benchmark_instrument_uid, benchmark_methodology, benchmark_return_scope)
-             VALUES (:experimentId, :configFingerprint, :configJson, :configVersion, :marketDataSource, :sessionPolicyVersion, :benchmarkInstrumentUid, :benchmarkMethodology, :benchmarkReturnScope)
+                (experiment_id, config_fingerprint, config_json, config_version, market_data_source, session_policy_version, benchmark_instrument_uid, benchmark_methodology, benchmark_return_scope, max_mark_age_ms, max_inter_instrument_skew_ms)
+             VALUES (:experimentId, :configFingerprint, :configJson, :configVersion, :marketDataSource, :sessionPolicyVersion, :benchmarkInstrumentUid, :benchmarkMethodology, :benchmarkReturnScope, :maxMarkAgeMs, :maxInterInstrumentSkewMs)
              ON CONFLICT (experiment_id) DO NOTHING`,
-            { replacements: { experimentId: normalizedId, configFingerprint, configJson, configVersion: evidence?.configVersion ?? null, marketDataSource: evidence?.marketDataSource ?? null, sessionPolicyVersion: evidence?.sessionPolicyVersion ?? null, benchmarkInstrumentUid: evidence?.benchmarkInstrumentUid ?? null, benchmarkMethodology: evidence?.benchmarkMethodology ?? null, benchmarkReturnScope: evidence?.benchmarkReturnScope ?? null } }
+            { replacements: { experimentId: normalizedId, configFingerprint, configJson, configVersion: evidence?.configVersion ?? null, marketDataSource: evidence?.marketDataSource ?? null, sessionPolicyVersion: evidence?.sessionPolicyVersion ?? null, benchmarkInstrumentUid: evidence?.benchmarkInstrumentUid ?? null, benchmarkMethodology: evidence?.benchmarkMethodology ?? null, benchmarkReturnScope: evidence?.benchmarkReturnScope ?? null, maxMarkAgeMs: evidence?.maxMarkAgeMs ?? null, maxInterInstrumentSkewMs: evidence?.maxInterInstrumentSkewMs ?? null } }
         );
         const rows = await this.database.query<{ config_fingerprint: string; config_json: string }>(
             `SELECT config_fingerprint, config_json FROM virtual_observation_experiments
