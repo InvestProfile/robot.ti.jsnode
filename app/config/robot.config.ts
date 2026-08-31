@@ -273,6 +273,7 @@ export interface RobotConfig {
     paperMaxPositionRub: number;
     paperCommissionPercent: number;
     paperReentryCooldownMs: number;
+    shadowSourceOutboxEnabled: boolean;
     socialConsensusEnabled: boolean;
     socialConsensusDays: number;
     socialConsensusMaxScoreAdjustment: number;
@@ -435,6 +436,7 @@ export const getRobotConfig = (): RobotConfig => {
         paperMaxPositionRub: Math.max(0, parseNumber(env.ROBOT_PAPER_MAX_POSITION_RUB, 1_000)),
         paperCommissionPercent: Math.max(0, parseNumber(env.ROBOT_PAPER_COMMISSION_PERCENT, 0.05)),
         paperReentryCooldownMs: Math.max(0, parseNumber(env.ROBOT_PAPER_REENTRY_COOLDOWN_MS, 3 * 60 * 60 * 1000)),
+        shadowSourceOutboxEnabled: parseBoolean(env.ROBOT_SHADOW_SOURCE_OUTBOX_ENABLED, false),
         socialConsensusEnabled: parseBoolean(env.ROBOT_SOCIAL_CONSENSUS_ENABLED, true),
         socialConsensusDays: Math.max(1, Math.trunc(parseNumber(env.ROBOT_SOCIAL_CONSENSUS_DAYS, 3))),
         socialConsensusMaxScoreAdjustment: Math.max(0, Math.min(25, parseNumber(env.ROBOT_SOCIAL_CONSENSUS_MAX_SCORE_ADJUSTMENT, 10))),

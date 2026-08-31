@@ -104,6 +104,15 @@ export const OBSERVATION_MIGRATIONS: readonly Migration[] = Object.freeze([
             `CREATE INDEX IF NOT EXISTS shadow_source_events_replay
                 ON shadow_source_events (source_tick_id, sequence)`
         ])
+    },
+    {
+        version: '003_shadow_source_account_identity',
+        statements: Object.freeze([
+            `ALTER TABLE shadow_source_events
+                ADD COLUMN IF NOT EXISTS source_account_id VARCHAR(255)`,
+            `CREATE INDEX IF NOT EXISTS shadow_source_events_account_replay
+                ON shadow_source_events (source_account_id, source_tick_id, sequence)`
+        ])
     }
 ]);
 

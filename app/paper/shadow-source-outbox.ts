@@ -10,10 +10,12 @@ export interface ShadowSourceQuote {
     readonly askKopecks: bigint;
     readonly markKopecks: bigint;
     readonly quoteObservedAt: string;
+    readonly quoteTimestampQuality: 'exact-source-timestamp' | 'captured-after-read';
 }
 
 interface ShadowSourceEventBase {
     readonly eventId: string;
+    readonly sourceAccountId: string;
     readonly instrumentId: string;
     readonly quote: ShadowSourceQuote;
 }
@@ -87,13 +89,18 @@ const canonicalQuote = (quote: ShadowSourceQuote, completedAt: string, maxQuoteA
     const quoteObservedAt = normalizeRfc3339Timestamp(quote.quoteObservedAt);
     const age = Date.parse(completedAt) - Date.parse(quoteObservedAt);
     if (age < 0 || age > maxQuoteAgeMs) throw new Error('stale quote');
-    return { bidKopecks: bid.toString(), askKopecks: ask.toString(), markKopecks: mark.toString(), quoteObservedAt };
+    if (!['exact-source-timestamp', 'captured-after-read'].includes(quote.quoteTimestampQuality)) {
+        throw new TypeError('invalid quoteTimestampQuality');
+    }
+    return { bidKopecks: bid.toString(), askKopecks: ask.toString(), markKopecks: mark.toString(), quoteObservedAt,
+        quoteTimestampQuality: quote.quoteTimestampQuality };
 };
 
 const canonicalEvent = (event: ShadowSourceEvent, completedAt: string, maxQuoteAgeMs: number): Record<string, unknown> => {
     requireString(event.eventId, 'event.eventId');
+    requireString(event.sourceAccountId, 'event.sourceAccountId');
     requireString(event.instrumentId, 'event.instrumentId');
-    const base = { kind: event.kind, eventId: event.eventId, instrumentId: event.instrumentId,
+    const base = { kind: event.kind, eventId: event.eventId, sourceAccountId: event.sourceAccountId, instrumentId: event.instrumentId,
         quote: canonicalQuote(event.quote, completedAt, maxQuoteAgeMs) };
     if (event.kind === 'mark') return { ...base, markedAt: normalizeRfc3339Timestamp(event.markedAt) };
     requireString(event.decisionId, 'event.decisionId');
@@ -133,7 +140,12 @@ export const decodeShadowSourceEvent = (json: string): ShadowSourceEvent => {
         bidKopecks: decimal(quoteRaw.bidKopecks, 'quote.bidKopecks'),
         askKopecks: decimal(quoteRaw.askKopecks, 'quote.askKopecks'),
         markKopecks: decimal(quoteRaw.markKopecks, 'quote.markKopecks'),
-        quoteObservedAt: normalizeRfc3339Timestamp(quoteRaw.quoteObservedAt)
+        quoteObservedAt: normalizeRfc3339Timestamp(quoteRaw.quoteObservedAt),
+        quoteTimestampQuality: quoteRaw.quoteTimestampQuality === 'exact-source-timestamp'
+            ? 'exact-source-timestamp'
+            : quoteRaw.quoteTimestampQuality === 'captured-after-read'
+                ? 'captured-after-read'
+                : (() => { throw new TypeError('invalid quoteTimestampQuality'); })()
     });
     const stringField = (item: unknown, field: string) => {
         if (typeof item !== 'string') throw new TypeError(`${field} must be a string`);
@@ -141,6 +153,7 @@ export const decodeShadowSourceEvent = (json: string): ShadowSourceEvent => {
     };
     const timestampField = (item: unknown, field: string) => normalizeRfc3339Timestamp(stringField(item, field));
     const common = { eventId: stringField(value.eventId, 'event.eventId'),
+        sourceAccountId: stringField(value.sourceAccountId, 'event.sourceAccountId'),
         instrumentId: stringField(value.instrumentId, 'event.instrumentId'), quote };
     if (value.kind === 'mark') return Object.freeze({ ...common, kind: 'mark', markedAt: timestampField(value.markedAt, 'event.markedAt') });
     if (value.kind !== 'decision') throw new TypeError('unknown shadow source event kind');
@@ -200,10 +213,10 @@ export class SequelizeShadowSourceOutbox {
             { replacements: normalized, transaction });
             for (const [sequence, item] of normalized.encoded.entries()) await this.database.query(
                 `INSERT INTO shadow_source_events
-                    (source_tick_id, sequence, event_id, event_kind, instrument_id, payload_fingerprint, payload_json)
-                 VALUES (:sourceTickId, :sequence, :eventId, :eventKind, :instrumentId, :eventFingerprint, :eventJson)`,
+                    (source_tick_id, sequence, event_id, event_kind, source_account_id, instrument_id, payload_fingerprint, payload_json)
+                 VALUES (:sourceTickId, :sequence, :eventId, :eventKind, :sourceAccountId, :instrumentId, :eventFingerprint, :eventJson)`,
                 { replacements: { sourceTickId: normalized.sourceTickId, sequence, eventId: item.event.eventId,
-                    eventKind: item.event.kind, instrumentId: item.event.instrumentId,
+                    eventKind: item.event.kind, sourceAccountId: item.event.sourceAccountId, instrumentId: item.event.instrumentId,
                     eventFingerprint: item.fingerprint, eventJson: item.json }, transaction });
             await this.database.query(`UPDATE shadow_source_ticks SET status = 'complete', completed_at = :completedAt,
                     actual_event_count = :expectedEventCount, payload_fingerprint = :payloadFingerprint, updated_at = CURRENT_TIMESTAMP

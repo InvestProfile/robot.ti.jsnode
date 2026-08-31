@@ -26,6 +26,14 @@ import StopLossStrategy from '../strategies/stop-loss.strategy';
 import { numberToQuotation, quotationToNumber } from '../utils/money';
 import { normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
 import { isRejectedOrderStatus } from '../utils/order-status';
+import {
+    createConfiguredPostRiskOutboxProducer,
+    getPostRiskOutboxRuntimeState,
+    PostRiskOutboxProducer,
+    PostRiskSourceDecision,
+    runLiveOperationAfterShadowEnqueue,
+    sourceTradingTickIdForProducer
+} from '../services/post-risk-outbox-producer.service';
 
 const delay = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
 
@@ -69,6 +77,7 @@ export const getTradingRuntimeState = () => ({
     consecutiveTickErrors,
     circuitBreakerOpen,
     circuitBreakerReason,
+    shadowSourceOutbox: getPostRiskOutboxRuntimeState(),
     protectiveStops: {
         lastSyncStartedAt: protectiveStopLastSyncStartedAt,
         lastSyncFinishedAt: protectiveStopLastSyncFinishedAt,
@@ -587,11 +596,31 @@ const getLiveTradingPauseReason = (config: RobotConfig) => {
 const executeBuySignals = async (
     accountId: string,
     config: RobotConfig,
-    instruments: ShareInstrument[]
+    instruments: ShareInstrument[],
+    shadowSource?: PostRiskOutboxProducer,
+    sourceTradingTickId?: string
 ) => {
     const previews = await BuySignalEvaluatorService.evaluateAccount(accountId, config, instruments);
 
     for (const preview of previews) {
+        const evaluatedAt = new Date().toISOString();
+        const quoteObservedAt = evaluatedAt;
+        if (shadowSource && sourceTradingTickId && preview.status !== 'allowed' && preview.instrumentUid && preview.currentPrice && preview.lot) {
+            shadowSource.enqueue({
+                sourceTradingTickId,
+                accountId,
+                instrumentId: preview.instrumentUid,
+                action: preview.signal?.action === 'hold' ? 'hold' : 'buy',
+                status: preview.status,
+                approvedLots: 0,
+                lotSize: preview.lot,
+                reason: preview.reason,
+                evaluatedAt,
+                priceRub: preview.currentPrice,
+                quoteObservedAt,
+                quoteTimestampQuality: 'captured-after-read'
+            });
+        }
         if (preview.status !== 'allowed') {
             await TradeJournalService.logDecision({
                 accountId,
@@ -648,6 +677,24 @@ const executeBuySignals = async (
             continue;
         }
 
+        const allowedBuyShadowDecision: PostRiskSourceDecision | undefined = shadowSource && sourceTradingTickId
+            && Number.isSafeInteger(preview.quantityLots) && preview.quantityLots > 0
+            && Number.isSafeInteger(preview.lot) && (preview.lot ?? 0) > 0
+            ? {
+                sourceTradingTickId,
+                accountId,
+                instrumentId: preview.instrumentUid,
+                action: 'buy',
+                status: 'allowed',
+                approvedLots: preview.quantityLots,
+                lotSize: preview.lot as number,
+                reason: preview.reason,
+                evaluatedAt,
+                priceRub: preview.currentPrice,
+                quoteObservedAt,
+                quoteTimestampQuality: 'captured-after-read'
+            } : undefined;
+
         const pauseReason = getLiveTradingPauseReason(config);
         if (pauseReason) {
             await TradeJournalService.logDecision({
@@ -687,7 +734,7 @@ const executeBuySignals = async (
             continue;
         }
 
-        const orderSubmission = await submitTrackedOrder({
+        const orderInput = {
             accountId,
             config,
             side: ORDER_SIDE.BUY,
@@ -706,7 +753,12 @@ const executeBuySignals = async (
                     askLiquidityRub: preview.preBuyRisk.askLiquidityRub
                 }
                 : undefined
-        });
+        };
+        const orderSubmission = await runLiveOperationAfterShadowEnqueue(
+            shadowSource,
+            allowedBuyShadowDecision as PostRiskSourceDecision,
+            () => submitTrackedOrder(orderInput)
+        );
 
         if (orderSubmission.failedBeforeSubmit) {
             await TradeJournalService.logDecision({
@@ -768,7 +820,9 @@ export const executeTrades = async (
     accountId: string,
     config: RobotConfig = getRobotConfig(),
     instruments?: ShareInstrument[],
-    accountMode: AccountMode = 'trade'
+    accountMode: AccountMode = 'trade',
+    shadowSource?: PostRiskOutboxProducer,
+    sourceTradingTickId?: string
 ) => {
     const accountAlias = config.accountAliases[accountId];
     console.log(`accountId: ${accountId}${accountAlias ? ' (' + accountAlias + ')' : ''} mode=${accountMode}`);
@@ -800,6 +854,7 @@ export const executeTrades = async (
     for (const position of portfolio.positions) {
         const averagePrice = quotationToNumber(position?.averagePositionPrice);
         const currentPrice = quotationToNumber(position?.currentPrice);
+        const quoteObservedAt = new Date().toISOString();
         const instrument = findInstrument(instruments ?? [], position?.figi, position?.instrumentUid);
 
         if (averagePrice === undefined || currentPrice === undefined) {
@@ -881,6 +936,22 @@ export const executeTrades = async (
         });
 
         if (!risk.allowed) {
+            if (shadowSource && sourceTradingTickId && position.instrumentUid && instrument?.lot) {
+                shadowSource.enqueue({
+                    sourceTradingTickId,
+                    accountId,
+                    instrumentId: position.instrumentUid,
+                    action: signal?.action === 'sell' ? 'sell' : 'hold',
+                    status: signal?.action === 'hold' ? 'hold' : 'blocked',
+                    approvedLots: 0,
+                    lotSize: instrument.lot,
+                    reason: riskReason,
+                    evaluatedAt: new Date().toISOString(),
+                    priceRub: currentPrice,
+                    quoteObservedAt,
+                    quoteTimestampQuality: 'captured-after-read'
+                });
+            }
             await TradeJournalService.logDecision({
                 accountId,
                 accountAlias,
@@ -933,6 +1004,22 @@ export const executeTrades = async (
         });
 
         if (!sellPolicy.allowed) {
+            if (shadowSource && sourceTradingTickId && position.instrumentUid && instrument?.lot) {
+                shadowSource.enqueue({
+                    sourceTradingTickId,
+                    accountId,
+                    instrumentId: position.instrumentUid,
+                    action: 'sell',
+                    status: 'blocked',
+                    approvedLots: 0,
+                    lotSize: instrument.lot,
+                    reason: sellPolicy.reason,
+                    evaluatedAt: new Date().toISOString(),
+                    priceRub: currentPrice,
+                    quoteObservedAt,
+                    quoteTimestampQuality: 'captured-after-read'
+                });
+            }
             await TradeJournalService.logDecision({
                 accountId,
                 accountAlias,
@@ -951,6 +1038,24 @@ export const executeTrades = async (
             });
             continue;
         }
+
+        const allowedSellShadowDecision: PostRiskSourceDecision | undefined = shadowSource && sourceTradingTickId
+            && position.instrumentUid && instrument?.lot
+            && Number.isSafeInteger(sellPolicy.allowedLots) && sellPolicy.allowedLots > 0
+            ? {
+                sourceTradingTickId,
+                accountId,
+                instrumentId: position.instrumentUid,
+                action: 'sell',
+                status: 'allowed',
+                approvedLots: sellPolicy.allowedLots,
+                lotSize: instrument.lot,
+                reason: `${riskReason}; ${sellPolicy.reason}`,
+                evaluatedAt: new Date().toISOString(),
+                priceRub: currentPrice,
+                quoteObservedAt,
+                quoteTimestampQuality: 'captured-after-read'
+            } : undefined;
 
         if (!config.liveAllowedActions.includes('sell')) {
             await TradeJournalService.logDecision({
@@ -1013,7 +1118,7 @@ export const executeTrades = async (
             continue;
         }
 
-        const orderSubmission = await submitTrackedOrder({
+        const orderInput = {
             accountId,
             config,
             side: ORDER_SIDE.SELL,
@@ -1024,7 +1129,12 @@ export const executeTrades = async (
             ticker: instrument?.ticker,
             name: instrument?.name,
             lot: instrument?.lot
-        });
+        };
+        const orderSubmission = await runLiveOperationAfterShadowEnqueue(
+            shadowSource,
+            allowedSellShadowDecision as PostRiskSourceDecision,
+            () => submitTrackedOrder(orderInput)
+        );
 
         if (orderSubmission.failedBeforeSubmit) {
             await TradeJournalService.logDecision({
@@ -1098,6 +1208,13 @@ const executeRobotTick = async (config: RobotConfig) => {
     try {
         console.log('Trading tick started. dryRun=' + config.dryRun);
 
+        const shadowSource = await createConfiguredPostRiskOutboxProducer(config);
+        const sourceTradingTickId = sourceTradingTickIdForProducer(
+            shadowSource,
+            lastTickStartedAt as string,
+            config.intervalMs
+        );
+
         const shares = await InstrumentsService.getShares();
         const instruments = shares?.instruments ?? [];
 
@@ -1109,8 +1226,8 @@ const executeRobotTick = async (config: RobotConfig) => {
         }
 
         for (const accountId of config.accountIds) {
-            await executeTrades(accountId, config, instruments, 'trade');
-            await executeBuySignals(accountId, config, instruments);
+            await executeTrades(accountId, config, instruments, 'trade', shadowSource, sourceTradingTickId);
+            await executeBuySignals(accountId, config, instruments, shadowSource, sourceTradingTickId);
         }
 
         await OrderReconciliationService.reconcileOpenOrders();

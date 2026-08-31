@@ -83,15 +83,16 @@ class FakeOutboxDatabase {
 
 const asSequelize = (db: FakeOutboxDatabase) => db as unknown as Sequelize;
 const fp = 'a'.repeat(64);
-const quote = { bidKopecks: 100n, askKopecks: 102n, markKopecks: 101n, quoteObservedAt: '2026-08-31T12:00:59.000Z' };
+const quote = { bidKopecks: 100n, askKopecks: 102n, markKopecks: 101n,
+    quoteObservedAt: '2026-08-31T12:00:59.000Z', quoteTimestampQuality: 'captured-after-read' as const };
 const draft = (id = 'tick-1'): ShadowSourceTickDraft => ({
     sourceTickId: id, startedAt: '2026-08-31T12:00:58.000Z', completedAt: '2026-08-31T12:01:00.000Z',
     expectedEventCount: 2, policyVersion: 'risk-v1', configFingerprint: fp,
     events: [
-        { kind: 'decision', eventId: 'decision-event-1', decisionId: 'decision-1', instrumentId: 'figi-1',
+        { kind: 'decision', eventId: 'decision-event-1', decisionId: 'decision-1', sourceAccountId: 'account-1', instrumentId: 'figi-1',
             action: 'buy', status: 'allowed', approvedLots: 2, lotSize: 10, reason: 'post-risk approved',
             evaluatedAt: '2026-08-31T12:00:59.000Z', quote },
-        { kind: 'mark', eventId: 'mark-event-1', instrumentId: 'figi-open', markedAt: '2026-08-31T12:00:59.000Z', quote }
+        { kind: 'mark', eventId: 'mark-event-1', sourceAccountId: 'account-1', instrumentId: 'figi-open', markedAt: '2026-08-31T12:00:59.000Z', quote }
     ]
 });
 
