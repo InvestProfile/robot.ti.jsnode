@@ -197,3 +197,35 @@ are evidence only and must not be silently converted into ledger-backed results.
 - computed `require()` and dynamic `import()` calls in the reachable graph fail;
 - real marker roots for both namespaces are present and asserted;
 - legacy paper runtime behavior and production state are unchanged.
+
+## Qualified Evidence Runtime
+
+The independent market-mark collector has a dedicated CLI:
+
+```sh
+npm run marks:collector
+```
+
+It is disabled unless `ROBOT_MARK_COLLECTOR_ENABLED=true`. The process accepts
+only `TINVEST_READONLY_TOKEN`; it never falls back to `INVEST_TOKEN`. Its
+broker endpoint is fixed to `invest-public-api.tbank.ru:443`, and the SDK is
+wrapped to expose only trading-status reads, depth-one order-book reads, and
+disconnect.
+
+Required non-secret runtime settings:
+
+- `ROBOT_MARK_COLLECTOR_LEASE_NAME`;
+- bounded interval, lease TTL, batch, attempts, and backoff settings documented
+  by `market-mark-collector.worker.ts`;
+- the isolated PostgreSQL connection variables already used by the observation
+  worker.
+
+Startup authenticates PostgreSQL, verifies all migration records, verifies the
+physical collector tables/columns, and only then constructs the read-only SDK.
+Collection and shutdown are fenced, bounded, and fail closed.
+
+Do not put a token into Git, this document, a shared `.env`, Compose YAML, or
+the live robot environment. Production activation requires a Hyperion-local
+model-blind credential profile dedicated to this process. Until that profile is
+installed and independently verified, the qualified 14-day evidence window has
+not started.
