@@ -5,7 +5,8 @@ import { VirtualOrderModel } from '../models/virtual-order.model';
 import { ShadowDecisionObservationModel } from '../models/shadow-decision-observation.model';
 import {
     PostRiskVirtualEvidenceSource,
-    RestartSafeVirtualObservationRuntime
+    RestartSafeVirtualObservationRuntime,
+    VirtualObservationRuntime
 } from '../paper/shadow-composition';
 import { decodeVirtualLedgerEvent } from '../virtual/codecs';
 import type { ObservationRunnerState, ObservationScenarioSnapshot, ObservationTick } from '../virtual/observation-runner';
@@ -18,10 +19,15 @@ import { SequelizeObservationTickRepository } from './sequelize-observation-tick
 import sequelize from '../config/database';
 import {
     ObservationExperimentRepository,
+    ObservationExperimentSettings,
     ObservationLease,
     ObservationLeaseRepository,
     runObservationMigrations
 } from '../paper/observation-persistence';
+import { SequelizeShadowSourceOutbox } from '../paper/shadow-source-outbox';
+import { OutboxShadowFanoutRuntime, ShadowScenarioFanoutProcessor } from '../paper/shadow-scenario-fanout';
+import { SequelizeAtomicShadowFanoutRepository } from './sequelize-shadow-fanout.repository';
+import { randomUUID } from 'node:crypto';
 
 interface EvidenceRows {
     readonly account: VirtualAccountModel;
@@ -104,20 +110,27 @@ export const createSequelizeVirtualObservationRuntime = (experimentId: string) =
     );
 
 export interface PreparedVirtualObservationRuntime {
-    readonly runtime: RestartSafeVirtualObservationRuntime;
+    readonly runtime: VirtualObservationRuntime;
     readonly lease: ObservationLease;
 }
 
 export const prepareSequelizeVirtualObservationRuntime = async (
     experimentId: string,
-    leaseTtlMs: number
+    leaseTtlMs: number,
+    settings: ObservationExperimentSettings = {}
 ): Promise<PreparedVirtualObservationRuntime> => {
     await runObservationMigrations(sequelize);
-    await new ObservationExperimentRepository(sequelize).open(experimentId);
+    const config = await new ObservationExperimentRepository(sequelize).open(experimentId, settings);
     const lease = await new ObservationLeaseRepository(sequelize).acquire(
         `virtual-observation:${experimentId}`,
         leaseTtlMs
     );
     if (!lease) throw new Error(`virtual observation experiment already has an active worker: ${experimentId}`);
-    return { runtime: createSequelizeVirtualObservationRuntime(experimentId), lease };
+    const repository = new SequelizeAtomicShadowFanoutRepository(sequelize);
+    const processor = new ShadowScenarioFanoutProcessor(config, repository);
+    const source = new SequelizeShadowSourceOutbox(sequelize, config.executionPolicy.maxQuoteAgeMs);
+    return {
+        runtime: new OutboxShadowFanoutRuntime(source, processor, `fanout:${experimentId}:${randomUUID()}`, leaseTtlMs),
+        lease
+    };
 };

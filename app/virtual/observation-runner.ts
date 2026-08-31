@@ -13,6 +13,7 @@ export interface ObservationScenarioSnapshot {
     readonly slippageIncluded: boolean;
     readonly financingIncluded: boolean;
     readonly benchmarkAvailable: boolean;
+    readonly evidenceQualityReasons?: readonly string[];
 }
 
 export interface ObservationTick {
@@ -79,6 +80,12 @@ const validateSnapshot = (snapshot: ObservationScenarioSnapshot) => {
         benchmarkAvailable: snapshot.benchmarkAvailable
     })) {
         if (typeof value !== 'boolean') throw new TypeError(`${field} must be boolean`);
+    }
+    if (snapshot.evidenceQualityReasons !== undefined) {
+        if (!Array.isArray(snapshot.evidenceQualityReasons)
+            || snapshot.evidenceQualityReasons.some(reason => typeof reason !== 'string' || !reason || reason.trim() !== reason)) {
+            throw new TypeError('evidenceQualityReasons must contain trimmed non-empty strings');
+        }
     }
 };
 
@@ -161,12 +168,15 @@ export const evaluateObservationGate = (evidence: ObservationScenarioEvidence): 
     if (!evidence.feesIncluded) reasons.push('FEES_NOT_INCLUDED');
     if (!evidence.slippageIncluded) reasons.push('SLIPPAGE_NOT_INCLUDED');
     if (!evidence.financingIncluded) reasons.push('FINANCING_NOT_INCLUDED');
-    if (!evidence.benchmarkAvailable) reasons.push('BENCHMARK_UNAVAILABLE');
+    if (!evidence.benchmarkAvailable && !evidence.evidenceQualityReasons?.includes('BENCHMARK_NOT_IMPLEMENTED')) {
+        reasons.push('BENCHMARK_UNAVAILABLE');
+    }
+    reasons.push(...(evidence.evidenceQualityReasons ?? []));
     return freeze({
         virtualAccountId: evidence.virtualAccountId,
         scenarioId: evidence.scenarioId,
         calendarDays,
         qualified: reasons.length === 0,
-        reasons: freeze(reasons)
+        reasons: freeze([...new Set(reasons)].sort())
     });
 };

@@ -1,5 +1,6 @@
 import { startVirtualObservationScheduler, VirtualObservationRuntime } from './shadow-composition';
 import type { ObservationLease } from './observation-persistence';
+import type { ObservationExperimentSettings } from './observation-persistence';
 
 interface PreparedWorkerRuntime {
     readonly runtime: VirtualObservationRuntime;
@@ -9,7 +10,7 @@ interface PreparedWorkerRuntime {
 interface WorkerDependencies {
     readonly authenticate: () => Promise<void>;
     readonly close: () => Promise<void>;
-    readonly prepareRuntime: (experimentId: string, leaseTtlMs: number) => Promise<PreparedWorkerRuntime>;
+    readonly prepareRuntime: (experimentId: string, leaseTtlMs: number, settings: ObservationExperimentSettings) => Promise<PreparedWorkerRuntime>;
 }
 
 interface WorkerEnvironment {
@@ -17,6 +18,11 @@ interface WorkerEnvironment {
     readonly ROBOT_VIRTUAL_OBSERVATION_INTERVAL_MS?: string;
     readonly ROBOT_VIRTUAL_OBSERVATION_EXPERIMENT_ID?: string;
     readonly ROBOT_VIRTUAL_OBSERVATION_LEASE_TTL_MS?: string;
+    readonly ROBOT_VIRTUAL_STARTING_CASH_KOPECKS?: string;
+    readonly ROBOT_VIRTUAL_FEE_BPS?: string;
+    readonly ROBOT_VIRTUAL_SLIPPAGE_BPS?: string;
+    readonly ROBOT_VIRTUAL_QUOTE_MAX_AGE_MS?: string;
+    readonly ROBOT_VIRTUAL_BENCHMARK_ID?: string;
 }
 
 const loadSequelizeDependencies = async (): Promise<WorkerDependencies> => {
@@ -47,9 +53,27 @@ export const runVirtualObservationWorker = async (
     if (!Number.isSafeInteger(leaseTtlMs) || leaseTtlMs <= intervalMs) {
         throw new Error('observation worker lease TTL must be an integer greater than the tick interval');
     }
+    const integer = (name: string, value: string | undefined, fallback: number, minimum: number, maximum: number) => {
+        const parsed = value === undefined ? fallback : Number(value);
+        if (!Number.isSafeInteger(parsed) || parsed < minimum || parsed > maximum) {
+            throw new Error(`${name} must be an integer between ${minimum} and ${maximum}`);
+        }
+        return parsed;
+    };
+    const startingCashRaw = env.ROBOT_VIRTUAL_STARTING_CASH_KOPECKS ?? '100000000';
+    if (!/^[1-9]\d*$/.test(startingCashRaw)) throw new Error('ROBOT_VIRTUAL_STARTING_CASH_KOPECKS must be a positive integer');
+    const settings: ObservationExperimentSettings = {
+        startingCashKopecks: BigInt(startingCashRaw),
+        executionPolicy: {
+            feeBasisPoints: integer('ROBOT_VIRTUAL_FEE_BPS', env.ROBOT_VIRTUAL_FEE_BPS, 10, 0, 10_000),
+            slippageBasisPoints: integer('ROBOT_VIRTUAL_SLIPPAGE_BPS', env.ROBOT_VIRTUAL_SLIPPAGE_BPS, 10, 1, 10_000),
+            maxQuoteAgeMs: integer('ROBOT_VIRTUAL_QUOTE_MAX_AGE_MS', env.ROBOT_VIRTUAL_QUOTE_MAX_AGE_MS, 5_000, 1, 600_000)
+        },
+        ...(env.ROBOT_VIRTUAL_BENCHMARK_ID?.trim() ? { benchmarkId: env.ROBOT_VIRTUAL_BENCHMARK_ID.trim() } : {})
+    };
     const dependencies = await loadDependencies();
     await dependencies.authenticate();
-    const prepared = await dependencies.prepareRuntime(experimentId, leaseTtlMs);
+    const prepared = await dependencies.prepareRuntime(experimentId, leaseTtlMs, settings);
     const scheduler = startVirtualObservationScheduler({ enabled: true, intervalMs },
         () => prepared.runtime);
     let shuttingDown = false;

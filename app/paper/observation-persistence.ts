@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { QueryTypes, Sequelize } from 'sequelize';
+import { DEFAULT_MARGIN_SCENARIO_POLICIES, MarginScenarioPolicy } from '../virtual/margin';
+import type { VirtualExecutionPolicy } from '../virtual/execution';
 
 export const OBSERVATION_SCENARIOS = Object.freeze([
     Object.freeze({ scenarioId: '1.0x', leverage: 1 }),
@@ -10,11 +12,32 @@ export const OBSERVATION_SCENARIOS = Object.freeze([
 export interface ObservationExperimentConfig {
     readonly experimentId: string;
     readonly scenarios: typeof OBSERVATION_SCENARIOS;
+    readonly startingCashKopecks: string;
+    readonly executionPolicy: VirtualExecutionPolicy;
+    readonly marginPolicies: readonly MarginScenarioPolicy[];
+    readonly benchmarkId: string | null;
 }
 
-const canonicalConfig = (experimentId: string): ObservationExperimentConfig => Object.freeze({
+export interface ObservationExperimentSettings {
+    readonly startingCashKopecks?: bigint;
+    readonly executionPolicy?: VirtualExecutionPolicy;
+    readonly benchmarkId?: string;
+}
+
+export const DEFAULT_OBSERVATION_STARTING_CASH_KOPECKS = 100_000_000n;
+export const DEFAULT_OBSERVATION_EXECUTION_POLICY: VirtualExecutionPolicy = Object.freeze({
+    feeBasisPoints: 10,
+    slippageBasisPoints: 10,
+    maxQuoteAgeMs: 5_000
+});
+
+const canonicalConfig = (experimentId: string, settings: ObservationExperimentSettings = {}): ObservationExperimentConfig => Object.freeze({
     experimentId,
-    scenarios: OBSERVATION_SCENARIOS
+    scenarios: OBSERVATION_SCENARIOS,
+    startingCashKopecks: (settings.startingCashKopecks ?? DEFAULT_OBSERVATION_STARTING_CASH_KOPECKS).toString(),
+    executionPolicy: Object.freeze({ ...(settings.executionPolicy ?? DEFAULT_OBSERVATION_EXECUTION_POLICY) }),
+    marginPolicies: Object.freeze(DEFAULT_MARGIN_SCENARIO_POLICIES.map(policy => Object.freeze({ ...policy }))),
+    benchmarkId: settings.benchmarkId?.trim() || null
 });
 
 const serializeConfig = (config: ObservationExperimentConfig) => JSON.stringify(config);
@@ -113,6 +136,43 @@ export const OBSERVATION_MIGRATIONS: readonly Migration[] = Object.freeze([
             `CREATE INDEX IF NOT EXISTS shadow_source_events_account_replay
                 ON shadow_source_events (source_account_id, source_tick_id, sequence)`
         ])
+    },
+    {
+        version: '004_atomic_shadow_fanout',
+        statements: Object.freeze([
+            `CREATE TABLE IF NOT EXISTS virtual_shadow_scenario_states (
+                experiment_id VARCHAR(255) NOT NULL,
+                scenario_id VARCHAR(20) NOT NULL,
+                virtual_account_id VARCHAR(255) NOT NULL,
+                state_version BIGINT NOT NULL DEFAULT 0,
+                state_fingerprint CHAR(64) NOT NULL,
+                state_json TEXT NOT NULL,
+                last_source_tick_id VARCHAR(255),
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (experiment_id, scenario_id),
+                CONSTRAINT virtual_shadow_account_unique UNIQUE (experiment_id, virtual_account_id)
+            )`,
+            `CREATE TABLE IF NOT EXISTS virtual_shadow_margin_audit (
+                experiment_id VARCHAR(255) NOT NULL,
+                source_tick_id VARCHAR(255) NOT NULL,
+                scenario_id VARCHAR(20) NOT NULL,
+                event_id VARCHAR(255) NOT NULL,
+                audit_json TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (experiment_id, source_tick_id, scenario_id, event_id)
+            )`,
+            `CREATE TABLE IF NOT EXISTS virtual_shadow_source_checkpoints (
+                experiment_id VARCHAR(255) NOT NULL,
+                source_tick_id VARCHAR(255) NOT NULL,
+                source_payload_fingerprint CHAR(64) NOT NULL,
+                evidence_tick_id VARCHAR(255) NOT NULL,
+                completed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (experiment_id, source_tick_id)
+            )`,
+            `CREATE INDEX IF NOT EXISTS virtual_shadow_audit_replay
+                ON virtual_shadow_margin_audit (experiment_id, scenario_id, source_tick_id, event_id)`
+        ])
     }
 ]);
 
@@ -142,10 +202,10 @@ export const runObservationMigrations = async (database: Sequelize): Promise<voi
 export class ObservationExperimentRepository {
     constructor(private readonly database: Sequelize) {}
 
-    async open(experimentId: string): Promise<ObservationExperimentConfig> {
+    async open(experimentId: string, settings: ObservationExperimentSettings = {}): Promise<ObservationExperimentConfig> {
         const normalizedId = experimentId.trim();
         if (!normalizedId) throw new Error('experimentId is required');
-        const config = canonicalConfig(normalizedId);
+        const config = canonicalConfig(normalizedId, settings);
         const configJson = serializeConfig(config);
         const configFingerprint = fingerprint(configJson);
         await this.database.query(

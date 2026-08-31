@@ -16,8 +16,8 @@ export interface PostRiskVirtualEvidenceSource {
 }
 
 export interface VirtualObservationRuntime {
-    initialize(): Promise<ObservationRunnerState>;
-    tick(): Promise<ObservationRunnerState>;
+    initialize(): Promise<unknown>;
+    tick(): Promise<unknown>;
 }
 
 export class RestartSafeVirtualObservationRuntime implements VirtualObservationRuntime {
