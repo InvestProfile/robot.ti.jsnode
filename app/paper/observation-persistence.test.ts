@@ -5,7 +5,8 @@ import {
     OBSERVATION_MIGRATIONS,
     ObservationExperimentRepository,
     ObservationLeaseRepository,
-    runObservationMigrations
+    runObservationMigrations,
+    verifyObservationMigrations
 } from './observation-persistence';
 
 interface QueryOptions { replacements?: Record<string, unknown> }
@@ -23,6 +24,9 @@ class FakeDatabase {
     async query(sql: string, options: QueryOptions = {}): Promise<unknown> {
         this.statements.push(sql);
         const values = options.replacements ?? {};
+        if (sql.includes('SELECT version FROM') && values.version === undefined) {
+            return [...this.versions].map(version => ({ version }));
+        }
         if (sql.includes('SELECT version FROM')) return this.versions.has(String(values.version)) ? [{ version: values.version }] : [];
         if (sql.includes('INSERT INTO virtual_observation_schema_versions')) { this.versions.add(String(values.version)); return [[], 1]; }
         if (sql.includes('INSERT INTO virtual_observation_experiments')) {
@@ -77,6 +81,16 @@ describe('virtual observation persistence', () => {
         assert.match(OBSERVATION_MIGRATIONS[3].statements.join('\n'), /virtual_shadow_margin_audit/);
         database.dialect = 'mysql';
         await assert.rejects(runObservationMigrations(sequelize(database)), /require postgres/);
+    });
+
+    it('verifies a fully migrated schema without issuing DDL and fails for a missing version', async () => {
+        const database = new FakeDatabase();
+        await runObservationMigrations(sequelize(database));
+        database.statements.length = 0;
+        await verifyObservationMigrations(sequelize(database));
+        assert.equal(database.statements.some(statement => /CREATE|ALTER/i.test(statement)), false);
+        database.versions.delete(OBSERVATION_MIGRATIONS.at(-1)!.version);
+        await assert.rejects(verifyObservationMigrations(sequelize(database)), /migrations missing/);
     });
 
     it('persists exactly the immutable 1.0x, 1.2x and 1.5x configuration', async () => {

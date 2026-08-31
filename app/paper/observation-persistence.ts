@@ -199,6 +199,20 @@ export const runObservationMigrations = async (database: Sequelize): Promise<voi
     }
 };
 
+export const verifyObservationMigrations = async (database: Sequelize): Promise<void> => {
+    if (database.getDialect() !== 'postgres') {
+        throw new Error(`virtual observation migrations require postgres, got ${database.getDialect()}`);
+    }
+    const applied = await database.query<{ version: string }>(
+        'SELECT version FROM virtual_observation_schema_versions',
+        { type: QueryTypes.SELECT }
+    );
+    const versions = new Set(applied.map(row => row.version));
+    const missing = OBSERVATION_MIGRATIONS.map(migration => migration.version)
+        .filter(version => !versions.has(version));
+    if (missing.length > 0) throw new Error(`virtual observation schema migrations missing: ${missing.join(', ')}`);
+};
+
 export class ObservationExperimentRepository {
     constructor(private readonly database: Sequelize) {}
 

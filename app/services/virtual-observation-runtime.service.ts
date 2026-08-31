@@ -22,7 +22,7 @@ import {
     ObservationExperimentSettings,
     ObservationLease,
     ObservationLeaseRepository,
-    runObservationMigrations
+    verifyObservationMigrations
 } from '../paper/observation-persistence';
 import { SequelizeShadowSourceOutbox } from '../paper/shadow-source-outbox';
 import { OutboxShadowFanoutRuntime, ShadowScenarioFanoutProcessor } from '../paper/shadow-scenario-fanout';
@@ -119,7 +119,7 @@ export const prepareSequelizeVirtualObservationRuntime = async (
     leaseTtlMs: number,
     settings: ObservationExperimentSettings = {}
 ): Promise<PreparedVirtualObservationRuntime> => {
-    await runObservationMigrations(sequelize);
+    await verifyObservationMigrations(sequelize);
     const config = await new ObservationExperimentRepository(sequelize).open(experimentId, settings);
     const lease = await new ObservationLeaseRepository(sequelize).acquire(
         `virtual-observation:${experimentId}`,
