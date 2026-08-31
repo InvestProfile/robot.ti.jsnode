@@ -426,22 +426,30 @@ export class OutboxShadowFanoutRuntime implements VirtualObservationRuntime {
         private readonly source: CompletedShadowTickSource,
         private readonly processor: ShadowScenarioFanoutProcessor,
         private readonly consumerId: string,
-        private readonly claimLeaseMs: number
-    ) {}
+        private readonly claimLeaseMs: number,
+        private readonly maxBatchSize: number = 100
+    ) {
+        if (!Number.isSafeInteger(maxBatchSize) || maxBatchSize <= 0 || maxBatchSize > 1_000) {
+            throw new Error('shadow fanout maxBatchSize must be an integer between 1 and 1000');
+        }
+    }
 
     async initialize() { return undefined; }
 
     async tick(): Promise<ObservationTick | undefined> {
         if (this.running) return this.running;
-        this.running = this.consumeOne();
+        this.running = this.consumeBatch();
         try { return await this.running; } finally { this.running = undefined; }
     }
 
-    private async consumeOne(): Promise<ObservationTick | undefined> {
-        const claimed = await this.source.claimNext(this.consumerId, this.claimLeaseMs);
-        if (!claimed) return undefined;
-        const evidence = await this.processor.process(claimed.tick);
-        if (!await claimed.acknowledge()) throw new Error(`source acknowledgement lease lost: ${claimed.tick.sourceTickId}`);
-        return evidence;
+    private async consumeBatch(): Promise<ObservationTick | undefined> {
+        let latest: ObservationTick | undefined;
+        for (let index = 0; index < this.maxBatchSize; index += 1) {
+            const claimed = await this.source.claimNext(this.consumerId, this.claimLeaseMs);
+            if (!claimed) break;
+            latest = await this.processor.process(claimed.tick);
+            if (!await claimed.acknowledge()) throw new Error(`source acknowledgement lease lost: ${claimed.tick.sourceTickId}`);
+        }
+        return latest;
     }
 }

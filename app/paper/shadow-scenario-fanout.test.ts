@@ -5,7 +5,7 @@ import { OBSERVATION_SCENARIOS } from './observation-persistence';
 import type { ObservationExperimentConfig } from './observation-persistence';
 import { DEFAULT_MARGIN_SCENARIO_POLICIES, marginRiskSnapshot } from '../virtual/margin';
 import type { AtomicShadowFanoutCommit, AtomicShadowFanoutRepository, ShadowScenarioState } from './shadow-scenario-fanout';
-import { openShadowScenarioStates, ShadowScenarioFanoutProcessor } from './shadow-scenario-fanout';
+import { openShadowScenarioStates, OutboxShadowFanoutRuntime, ShadowScenarioFanoutProcessor } from './shadow-scenario-fanout';
 import { evaluateObservationGate, replayObservationTicks } from '../virtual/observation-runner';
 
 const config: ObservationExperimentConfig = Object.freeze({
@@ -65,6 +65,33 @@ class MemoryAtomicRepository implements AtomicShadowFanoutRepository {
 }
 
 describe('three-scenario shadow fanout', () => {
+    it('drains a bounded source batch per scheduler tick instead of growing backlog', async () => {
+        const pending = [tick([], 'batch-1'), tick([], 'batch-2'), tick([], 'batch-3')];
+        const acknowledged: string[] = [];
+        const source = { async claimNext() {
+            const next = pending.shift();
+            if (!next) return undefined;
+            return { tick: next, consumerId: 'worker',
+                acknowledge: async () => { acknowledged.push(next.sourceTickId); return true; } };
+        } };
+        const processed: string[] = [];
+        const processor = { async process(sourceTick: CompleteShadowSourceTick) {
+            processed.push(sourceTick.sourceTickId);
+            return { tickId: sourceTick.sourceTickId, observedAt: sourceTick.completedAt, snapshots: [] };
+        } };
+        const runtime = new OutboxShadowFanoutRuntime(source, processor as unknown as ShadowScenarioFanoutProcessor,
+            'worker', 1_000, 2);
+        assert.equal((await runtime.tick())?.tickId, 'batch-2');
+        assert.deepEqual(processed, ['batch-1', 'batch-2']);
+        assert.deepEqual(acknowledged, ['batch-1', 'batch-2']);
+        assert.equal((await runtime.tick())?.tickId, 'batch-3');
+        assert.deepEqual(processed, ['batch-1', 'batch-2', 'batch-3']);
+        assert.deepEqual(acknowledged, processed);
+        assert.equal(await runtime.tick(), undefined);
+        assert.throws(() => new OutboxShadowFanoutRuntime(source, processor as unknown as ShadowScenarioFanoutProcessor,
+            'worker', 1_000, 0), /maxBatchSize/);
+    });
+
     it('atomically applies one logical allowed decision to exactly all three scenarios', async () => {
         const repository = new MemoryAtomicRepository();
         const evidence = await new ShadowScenarioFanoutProcessor(config, repository).process(tick([decision()]));

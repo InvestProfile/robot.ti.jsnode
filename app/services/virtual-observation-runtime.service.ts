@@ -117,7 +117,8 @@ export interface PreparedVirtualObservationRuntime {
 export const prepareSequelizeVirtualObservationRuntime = async (
     experimentId: string,
     leaseTtlMs: number,
-    settings: ObservationExperimentSettings = {}
+    settings: ObservationExperimentSettings = {},
+    maxBatchSize: number = 100
 ): Promise<PreparedVirtualObservationRuntime> => {
     await verifyObservationMigrations(sequelize);
     const config = await new ObservationExperimentRepository(sequelize).open(experimentId, settings);
@@ -130,7 +131,7 @@ export const prepareSequelizeVirtualObservationRuntime = async (
     const processor = new ShadowScenarioFanoutProcessor(config, repository);
     const source = new SequelizeShadowSourceOutbox(sequelize, config.executionPolicy.maxQuoteAgeMs);
     return {
-        runtime: new OutboxShadowFanoutRuntime(source, processor, `fanout:${experimentId}:${randomUUID()}`, leaseTtlMs),
+        runtime: new OutboxShadowFanoutRuntime(source, processor, `fanout:${experimentId}:${randomUUID()}`, leaseTtlMs, maxBatchSize),
         lease
     };
 };

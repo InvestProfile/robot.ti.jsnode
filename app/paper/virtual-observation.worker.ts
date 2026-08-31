@@ -10,7 +10,7 @@ interface PreparedWorkerRuntime {
 interface WorkerDependencies {
     readonly authenticate: () => Promise<void>;
     readonly close: () => Promise<void>;
-    readonly prepareRuntime: (experimentId: string, leaseTtlMs: number, settings: ObservationExperimentSettings) => Promise<PreparedWorkerRuntime>;
+    readonly prepareRuntime: (experimentId: string, leaseTtlMs: number, settings: ObservationExperimentSettings, maxBatchSize: number) => Promise<PreparedWorkerRuntime>;
 }
 
 interface WorkerEnvironment {
@@ -23,6 +23,7 @@ interface WorkerEnvironment {
     readonly ROBOT_VIRTUAL_SLIPPAGE_BPS?: string;
     readonly ROBOT_VIRTUAL_QUOTE_MAX_AGE_MS?: string;
     readonly ROBOT_VIRTUAL_BENCHMARK_ID?: string;
+    readonly ROBOT_VIRTUAL_OBSERVATION_MAX_BATCH_SIZE?: string;
 }
 
 const loadSequelizeDependencies = async (): Promise<WorkerDependencies> => {
@@ -71,9 +72,11 @@ export const runVirtualObservationWorker = async (
         },
         ...(env.ROBOT_VIRTUAL_BENCHMARK_ID?.trim() ? { benchmarkId: env.ROBOT_VIRTUAL_BENCHMARK_ID.trim() } : {})
     };
+    const maxBatchSize = integer('ROBOT_VIRTUAL_OBSERVATION_MAX_BATCH_SIZE',
+        env.ROBOT_VIRTUAL_OBSERVATION_MAX_BATCH_SIZE, 100, 1, 1_000);
     const dependencies = await loadDependencies();
     await dependencies.authenticate();
-    const prepared = await dependencies.prepareRuntime(experimentId, leaseTtlMs, settings);
+    const prepared = await dependencies.prepareRuntime(experimentId, leaseTtlMs, settings, maxBatchSize);
     const scheduler = startVirtualObservationScheduler({ enabled: true, intervalMs },
         () => prepared.runtime);
     let shuttingDown = false;
