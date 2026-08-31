@@ -2,7 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import type { CompleteShadowSourceTick, ShadowSourceDecisionEvent, ShadowSourceEvent } from './shadow-source-outbox';
 import { OBSERVATION_SCENARIOS } from './observation-persistence';
-import type { ObservationExperimentConfig } from './observation-persistence';
+import type { ObservationExperimentConfig, ObservationExperimentConfigV2 } from './observation-persistence';
+import { createBrokerMarketMark } from '../market-observation/types';
 import { DEFAULT_MARGIN_SCENARIO_POLICIES, marginRiskSnapshot } from '../virtual/margin';
 import type { AtomicShadowFanoutCommit, AtomicShadowFanoutRepository, ShadowScenarioState } from './shadow-scenario-fanout';
 import { openShadowScenarioStates, OutboxShadowFanoutRuntime, ShadowScenarioFanoutProcessor } from './shadow-scenario-fanout';
@@ -16,6 +17,25 @@ const config: ObservationExperimentConfig = Object.freeze({
     marginPolicies: DEFAULT_MARGIN_SCENARIO_POLICIES,
     benchmarkId: null
 });
+
+const v2Config: ObservationExperimentConfigV2 = Object.freeze({
+    ...config, experimentId: 'experiment-v2', benchmarkId: 'benchmark-price-proxy', configVersion: 2,
+    evidenceConfig: Object.freeze({
+        configVersion: 2, marketDataSource: 't-invest-market-data-readonly',
+        sessionPolicyVersion: 't-invest-session-v1-open-only', benchmarkInstrumentUid: 'benchmark-uid',
+        benchmarkMethodology: 'normalized-price-return',
+        benchmarkReturnScope: 'price-only-excludes-dividends-fees-and-total-return',
+        maxMarkAgeMs: 5_000, maxInterInstrumentSkewMs: 1_000
+    })
+});
+
+const marketMark = (instrumentUid: string, markKopecks: bigint, at = "2026-08-31T12:00:00.500Z", suffix = "1") =>
+    createBrokerMarketMark({
+        observationId: "observation:" + instrumentUid + ":" + suffix,
+        sourceIdentity: "source:" + instrumentUid + ":" + suffix, instrumentUid,
+        brokerObservedAt: at, receivedAt: at, bidKopecks: markKopecks - 1n, askKopecks: markKopecks + 1n,
+        markKopecks, source: 't-invest-market-data-readonly', sessionStatus: 'open'
+    });
 
 const decision = (overrides: Partial<ShadowSourceDecisionEvent> = {}): ShadowSourceDecisionEvent => ({
     kind: 'decision', eventId: 'event-1', decisionId: 'decision-1', sourceAccountId: 'source-account',
@@ -37,6 +57,7 @@ class MemoryAtomicRepository implements AtomicShadowFanoutRepository {
     states?: readonly ShadowScenarioState[];
     readonly checkpoints = new Map<string, string>();
     commits = 0;
+    lastCommit?: AtomicShadowFanoutCommit;
     failNext = false;
 
     async hasCheckpoint(_experimentId: string, source: CompleteShadowSourceTick) {
@@ -57,6 +78,7 @@ class MemoryAtomicRepository implements AtomicShadowFanoutRepository {
             return 'idempotent';
         }
         if (this.failNext) { this.failNext = false; throw new Error('simulated crash before commit'); }
+        this.lastCommit = input;
         this.states = input.next;
         this.checkpoints.set(input.sourceTick.sourceTickId, input.sourceTick.payloadFingerprint);
         this.commits += 1;
@@ -288,4 +310,224 @@ describe('three-scenario shadow fanout', () => {
         assert.equal(state?.safetyAudit.filter(entry => entry.outcome === 'applied').length, 1);
         assert.equal(state?.margin.positions.length, 0);
     });
+
+    it("keeps v1 initialization and evidence semantics unchanged", async () => {
+        const initial = openShadowScenarioStates(config, "2026-08-31T12:00:00.000Z");
+        assert.equal(initial.every(state => state.qualityReasons.length === 1
+            && state.qualityReasons[0] === "BENCHMARK_NOT_IMPLEMENTED"), true);
+        const repository = new MemoryAtomicRepository();
+        const evidence = await new ShadowScenarioFanoutProcessor(config, repository).process(tick([decision()]));
+        assert.equal(evidence.snapshots.every(snapshot => snapshot.benchmarkAvailable === false), true);
+        assert.equal(repository.lastCommit?.marketEvidence, undefined);
+    });
+
+    it("fails closed for v2 when the qualified loader is absent", async () => {
+        const repository = new MemoryAtomicRepository();
+        await assert.rejects(new ShadowScenarioFanoutProcessor(v2Config, repository).process(tick([decision()])),
+            /qualified evidence loader is required/);
+        assert.equal(repository.commits, 0);
+        assert.equal(repository.states?.every(state => state.qualityReasons.includes("BENCHMARK_NOT_IMPLEMENTED") === false), true);
+    });
+
+    it("uses execution-only source quotes then one shared qualified mark set", async () => {
+        const repository = new MemoryAtomicRepository();
+        let loads = 0;
+        const evidence = await new ShadowScenarioFanoutProcessor(v2Config, repository, {
+            async loadAsOf(input) {
+                loads += 1;
+                assert.deepEqual(input, { instrumentUids: ["benchmark-uid", "figi-1"],
+                    valuationAt: "2026-08-31T12:00:01.000Z" });
+                return [marketMark("figi-1", 120n), marketMark("benchmark-uid", 200n)];
+            },
+            async loadBenchmarkHistory() { return {}; }
+        }).process(tick([decision()]));
+        assert.equal(loads, 1);
+        assert.equal(repository.states?.every(state => state.margin.positions[0]?.markPriceKopecks === 120n), true);
+        assert.equal(repository.states?.every(state => state.margin.audit.some(entry => entry.eventId.startsWith("mark:event-1")) === false), true);
+        assert.equal(repository.states?.every(state => state.margin.audit.some(entry => entry.eventId.startsWith("qualified-mark:"))), true);
+        assert.equal(evidence.snapshots.every(snapshot => snapshot.benchmarkAvailable === true), true);
+        const result = repository.lastCommit?.marketEvidence;
+        assert.equal(result?.quality, "qualified");
+        if (result?.quality !== "qualified") return;
+        assert.equal(result.benchmark.points.length, 3);
+        assert.equal(new Set(result.benchmark.points.map(item => item.point.observationId)).size, 1);
+        assert.equal(result.markSet.sourceTickId, "source-tick-1");
+        assert.equal(result.initialEquityKopecks, BigInt(v2Config.startingCashKopecks));
+    });
+
+    it("commits typed rejection while preserving virtual processing", async () => {
+        const repository = new MemoryAtomicRepository();
+        const evidence = await new ShadowScenarioFanoutProcessor(v2Config, repository, {
+            async loadAsOf() { return [marketMark("benchmark-uid", 200n)]; },
+            async loadBenchmarkHistory() { throw new Error("history must not load for rejection"); }
+        }).process(tick([decision()]));
+        assert.equal(repository.states?.every(state => state.margin.positions[0]?.quantityLots === 2), true);
+        assert.equal(repository.states?.every(state => state.qualityReasons.includes("MISSING_REQUIRED_MARK:figi-1")), true);
+        const result = repository.lastCommit?.marketEvidence;
+        assert.deepEqual(result, { quality: "rejected", sourceTickId: "source-tick-1",
+            valuationAt: "2026-08-31T12:00:01.000Z", reasons: ["MISSING_REQUIRED_MARK:figi-1"] });
+        assert.equal(evidence.snapshots.every(snapshot => snapshot.benchmarkAvailable === false), true);
+    });
+
+    it("continues benchmark baseline and last points across ticks and processor restart", async () => {
+        const repository = new MemoryAtomicRepository();
+        let currentMarks = [marketMark("figi-1", 120n), marketMark("benchmark-uid", 200n)];
+        const loader = {
+            async loadAsOf() { return currentMarks; },
+            async loadBenchmarkHistory() {
+                const prior = repository.lastCommit?.marketEvidence;
+                return prior?.quality === "qualified" ? { baseline: prior.benchmark.baseline,
+                    lastPoints: prior.benchmark.points.map(item => ({ scenarioId: item.scenarioId, point: item.point })) } : {};
+            }
+        };
+        await new ShadowScenarioFanoutProcessor(v2Config, repository, loader).process(tick([decision()]));
+        const first = repository.lastCommit?.marketEvidence;
+        assert.equal(first?.quality, "qualified");
+        if (first?.quality !== "qualified") return;
+        currentMarks = [marketMark("figi-1", 121n, "2026-08-31T12:00:01.500Z", "2"),
+            marketMark("benchmark-uid", 210n, "2026-08-31T12:00:01.500Z", "2")];
+        const hold = decision({ eventId: "event-2", decisionId: "decision-2", action: "hold", status: "hold", approvedLots: 0,
+            evaluatedAt: "2026-08-31T12:00:01.000Z", quote: { ...decision().quote, quoteObservedAt: "2026-08-31T12:00:01.000Z" } });
+        await new ShadowScenarioFanoutProcessor(v2Config, repository, loader)
+            .process(tick([hold], "source-tick-2", "2026-08-31T12:00:02.000Z"));
+        const second = repository.lastCommit?.marketEvidence;
+        assert.equal(second?.quality, "qualified");
+        if (second?.quality !== "qualified") return;
+        assert.deepEqual(second.benchmark.baseline, first.benchmark.baseline);
+        assert.equal(second.benchmark.points.every(item => item.point.observationId.endsWith(":2")), true);
+        assert.equal(second.benchmark.points.every(item => item.point.benchmarkReturnBps === 500n), true);
+    });
+
+
+
+    it("keeps pending liquidation on rejection then sells from qualified bid in phase order", async () => {
+        const boundedV2: ObservationExperimentConfigV2 = Object.freeze({
+            ...v2Config, experimentId: "liquidation-v2", startingCashKopecks: "1010",
+            executionPolicy: Object.freeze({ feeBasisPoints: 100, slippageBasisPoints: 100, maxQuoteAgeMs: 5_000 })
+        });
+        const repository = new MemoryAtomicRepository();
+        let currentMarks = [marketMark("figi-1", 100n), marketMark("benchmark-uid", 200n)];
+        let history: Awaited<ReturnType<import("./shadow-scenario-fanout").QualifiedFanoutEvidenceLoader["loadBenchmarkHistory"]>> = {};
+        const captureHistory = () => {
+            const result = repository.lastCommit?.marketEvidence;
+            if (result?.quality === "qualified") history = { baseline: result.benchmark.baseline,
+                lastPoints: result.benchmark.points.map(item => ({ scenarioId: item.scenarioId, point: item.point })) };
+        };
+        const loader = {
+            async loadAsOf() { return currentMarks; },
+            async loadBenchmarkHistory() { return history; }
+        };
+        const buy = decision({ approvedLots: 14, lotSize: 1,
+            quote: { ...decision().quote, bidKopecks: 100n, askKopecks: 100n, markKopecks: 100n } });
+        await new ShadowScenarioFanoutProcessor(boundedV2, repository, loader).process(tick([buy], "liq-1"));
+        captureHistory();
+
+        const sourceShock: ShadowSourceEvent = { kind: "mark", eventId: "source-shock", sourceAccountId: "source-account",
+            instrumentId: "figi-1", markedAt: "2026-08-31T12:01:00.000Z", quote: { bidKopecks: 5n, askKopecks: 5n,
+                markKopecks: 5n, quoteObservedAt: "2026-08-31T12:01:00.000Z", quoteTimestampQuality: "exact-source-timestamp" } };
+        currentMarks = [marketMark("figi-1", 37n, "2026-08-31T12:00:59.500Z", "2"),
+            marketMark("benchmark-uid", 190n, "2026-08-31T12:00:59.500Z", "2")];
+        await new ShadowScenarioFanoutProcessor(boundedV2, repository, loader)
+            .process(tick([sourceShock], "liq-2", "2026-08-31T12:01:00.000Z"));
+        captureHistory();
+        const planned = repository.states?.find(state => state.scenarioId === "1.5x");
+        assert.equal(planned?.safetyMode, "reduce-only");
+        assert.deepEqual(planned?.liquidationPlan?.instrumentIds, ["figi-1"]);
+
+        currentMarks = [marketMark("benchmark-uid", 190n, "2026-08-31T12:01:59.500Z", "3")];
+        await new ShadowScenarioFanoutProcessor(boundedV2, repository, loader)
+            .process(tick([{ ...sourceShock, eventId: "source-rejected", markedAt: "2026-08-31T12:02:00.000Z",
+                quote: { ...sourceShock.quote, quoteObservedAt: "2026-08-31T12:02:00.000Z" } }], "liq-3", "2026-08-31T12:02:00.000Z"));
+        const rejected = repository.states?.find(state => state.scenarioId === "1.5x");
+        assert.equal(rejected?.liquidationPlan?.planId, planned?.liquidationPlan?.planId);
+        assert.equal(rejected?.safetyAudit.filter(entry => entry.outcome === "applied").length, 0);
+        assert.deepEqual(repository.lastCommit?.marketEvidence, { quality: "rejected", sourceTickId: "liq-3",
+            valuationAt: "2026-08-31T12:02:00.000Z", reasons: ["MISSING_REQUIRED_MARK:figi-1"] });
+
+        currentMarks = [marketMark("figi-1", 37n, "2026-08-31T12:02:59.500Z", "4"),
+            marketMark("benchmark-uid", 190n, "2026-08-31T12:02:59.500Z", "4")];
+        await new ShadowScenarioFanoutProcessor(boundedV2, repository, loader)
+            .process(tick([{ ...sourceShock, eventId: "source-qualified", markedAt: "2026-08-31T12:03:00.000Z",
+                quote: { ...sourceShock.quote, quoteObservedAt: "2026-08-31T12:03:00.000Z" } }], "liq-4", "2026-08-31T12:03:00.000Z"));
+        const liquidated = repository.states?.find(state => state.scenarioId === "1.5x");
+        assert.equal(liquidated?.margin.positions.length, 0);
+        const audit = liquidated?.margin.audit ?? [];
+        const interestIndex = audit.findIndex(entry => entry.eventId === "interest:qualified:liq-4:1.5x");
+        const markIndex = audit.findIndex(entry => entry.eventId.startsWith("qualified-mark:")
+            && entry.event.kind === "mark" && entry.event.occurredAt === "2026-08-31T12:03:00.000Z");
+        const sellIndex = audit.findIndex(entry => entry.eventId.includes("forced-liquidate:"));
+        assert.equal(interestIndex >= 0 && interestIndex < markIndex && markIndex < sellIndex, true);
+        const sell = audit[sellIndex]?.event;
+        assert.equal(sell?.kind, "sell");
+        assert.equal(sell?.kind === "sell" && sell.executionPriceKopecks, 35n);
+        assert.equal(audit.some(entry => entry.eventId.includes("source-qualified")), false);
+    });
+
+
+    it("accrues debt at every v2 decision timestamp before the completed-at mark phase", async () => {
+        const debtConfig: ObservationExperimentConfigV2 = Object.freeze({
+            ...v2Config, experimentId: "decision-interest-v2", startingCashKopecks: "1010",
+            executionPolicy: Object.freeze({ feeBasisPoints: 100, slippageBasisPoints: 0, maxQuoteAgeMs: 5_000 })
+        });
+        const repository = new MemoryAtomicRepository();
+        let currentMarks = [marketMark("figi-1", 100n), marketMark("benchmark-uid", 200n)];
+        let history: Awaited<ReturnType<import("./shadow-scenario-fanout").QualifiedFanoutEvidenceLoader["loadBenchmarkHistory"]>> = {};
+        const loader = {
+            async loadAsOf() { return currentMarks; },
+            async loadBenchmarkHistory() { return history; }
+        };
+        const buy = decision({ approvedLots: 14, lotSize: 1,
+            quote: { ...decision().quote, bidKopecks: 100n, askKopecks: 100n, markKopecks: 100n } });
+        await new ShadowScenarioFanoutProcessor(debtConfig, repository, loader).process(tick([buy], "interest-1"));
+        const first = repository.lastCommit?.marketEvidence;
+        assert.equal(first?.quality, "qualified");
+        if (first?.quality !== "qualified") return;
+        history = { baseline: first.benchmark.baseline,
+            lastPoints: first.benchmark.points.map(item => ({ scenarioId: item.scenarioId, point: item.point })) };
+        currentMarks = [marketMark("figi-1", 100n, "2026-08-31T12:00:03.500Z", "interest-2"),
+            marketMark("benchmark-uid", 200n, "2026-08-31T12:00:03.500Z", "interest-2")];
+        const holdAt = (eventId: string, evaluatedAt: string) => decision({ eventId, decisionId: eventId,
+            action: "hold", status: "hold", approvedLots: 0, evaluatedAt,
+            quote: { ...decision().quote, quoteObservedAt: evaluatedAt } });
+        await new ShadowScenarioFanoutProcessor(debtConfig, repository, loader).process(tick([
+            holdAt("interest-decision-1", "2026-08-31T12:00:02.000Z"),
+            holdAt("interest-decision-2", "2026-08-31T12:00:03.000Z")
+        ], "interest-2", "2026-08-31T12:00:04.000Z"));
+        const leveraged = repository.states?.find(state => state.scenarioId === "1.5x");
+        const accrualTimes = leveraged?.margin.audit
+            .filter(entry => entry.event.kind === "interest" && entry.event.occurredAt > "2026-08-31T12:00:01.000Z")
+            .map(entry => entry.event.occurredAt);
+        assert.deepEqual(accrualTimes, ["2026-08-31T12:00:02.000Z", "2026-08-31T12:00:03.000Z",
+            "2026-08-31T12:00:04.000Z"]);
+        const finalMark = leveraged?.margin.audit.find(entry => entry.event.kind === "mark"
+            && entry.event.occurredAt === "2026-08-31T12:00:04.000Z");
+        assert.equal(finalMark?.event.kind, "mark");
+    });
+
+    it("clears prior tick market rejection reasons when the next v2 tick qualifies", async () => {
+        const repository = new MemoryAtomicRepository();
+        let currentMarks = [marketMark("figi-1", 100n, "2026-08-31T11:59:50.000Z", "stale"),
+            marketMark("benchmark-uid", 200n)];
+        const loader = {
+            async loadAsOf() { return currentMarks; },
+            async loadBenchmarkHistory() { return {}; }
+        };
+        const firstHold = decision({ action: "hold", status: "hold", approvedLots: 0 });
+        await new ShadowScenarioFanoutProcessor(v2Config, repository, loader).process(tick([firstHold], "stale-1"));
+        assert.equal(repository.states?.every(state => state.qualityReasons.includes("STALE_MARK:figi-1")), true);
+        assert.equal(repository.states?.every(state => state.qualityReasons.includes("QUOTE_TIMESTAMP_APPROXIMATE")), true);
+
+        currentMarks = [marketMark("figi-1", 101n, "2026-08-31T12:00:01.500Z", "fresh"),
+            marketMark("benchmark-uid", 201n, "2026-08-31T12:00:01.500Z", "fresh")];
+        const secondHold = decision({ eventId: "fresh-event", decisionId: "fresh-decision", action: "hold", status: "hold",
+            approvedLots: 0, evaluatedAt: "2026-08-31T12:00:01.000Z",
+            quote: { ...decision().quote, quoteObservedAt: "2026-08-31T12:00:01.000Z" } });
+        const evidence = await new ShadowScenarioFanoutProcessor(v2Config, repository, loader)
+            .process(tick([secondHold], "fresh-2", "2026-08-31T12:00:02.000Z"));
+        assert.equal(evidence.snapshots.every(snapshot => snapshot.benchmarkAvailable), true);
+        assert.equal(repository.states?.every(state => state.qualityReasons.includes("STALE_MARK:figi-1") === false), true);
+        assert.equal(repository.states?.every(state => state.qualityReasons.includes("QUOTE_TIMESTAMP_APPROXIMATE")), true);
+        assert.equal(repository.lastCommit?.marketEvidence?.quality, "qualified");
+    });
+
 });

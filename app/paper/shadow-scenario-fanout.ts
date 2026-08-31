@@ -4,7 +4,16 @@ import { ShadowRunner } from './shadow-runner';
 import type { CompleteShadowSourceTick, ShadowSourceEvent } from './shadow-source-outbox';
 import type { ClaimedShadowSourceTick } from './shadow-source-outbox';
 import type { VirtualObservationRuntime } from './shadow-composition';
-import type { ObservationExperimentConfig } from './observation-persistence';
+import type { ObservationExperimentConfig, ObservationExperimentConfigV2 } from './observation-persistence';
+import {
+    applyQualifiedMarksToScenarios,
+    buildQualifiedBenchmarkEvidence,
+    prepareQualifiedShadowTick,
+    type PersistedScenarioBenchmarkPoint,
+    type QualifiedMarketEvidenceLoader
+} from './qualified-shadow-evidence';
+import type { MarketMarkQualificationReason, QualifiedMarketMarkSet } from './qualified-market-mark-set';
+import type { BenchmarkBaseline } from '../virtual/benchmark';
 import {
     applyMarginScenarioEvent,
     marginRiskSnapshot,
@@ -57,12 +66,34 @@ export interface ShadowScenarioState {
     }[];
 }
 
+export interface QualifiedFanoutEvidenceLoader extends QualifiedMarketEvidenceLoader {
+    loadBenchmarkHistory(experimentId: string): Promise<
+        Readonly<{ baseline?: undefined; lastPoints?: undefined }>
+        | Readonly<{ baseline: BenchmarkBaseline; lastPoints: readonly PersistedScenarioBenchmarkPoint[] }>
+    >;
+}
+
+export type ShadowMarketEvidenceResult = Readonly<{
+    quality: 'qualified';
+    markSet: QualifiedMarketMarkSet;
+    benchmark: ReturnType<typeof buildQualifiedBenchmarkEvidence>;
+    sessionPolicyVersion: ObservationExperimentConfigV2['evidenceConfig']['sessionPolicyVersion'];
+    benchmarkInstrumentUid: string;
+    initialEquityKopecks: bigint;
+}> | Readonly<{
+    quality: 'rejected';
+    sourceTickId: string;
+    valuationAt: string;
+    reasons: readonly MarketMarkQualificationReason[];
+}>;
+
 export interface AtomicShadowFanoutCommit {
     readonly experimentId: string;
     readonly sourceTick: CompleteShadowSourceTick;
     readonly previous: readonly ShadowScenarioState[];
     readonly next: readonly ShadowScenarioState[];
     readonly evidenceTick: ObservationTick;
+    readonly marketEvidence?: ShadowMarketEvidenceResult;
 }
 
 export interface AtomicShadowFanoutRepository {
@@ -105,7 +136,8 @@ export const openShadowScenarioStates = (
         safetyMode: 'normal',
         liquidationFailureCount: 0,
         safetyAudit: Object.freeze([]),
-        qualityReasons: Object.freeze(['BENCHMARK_NOT_IMPLEMENTED']),
+        qualityReasons: Object.freeze('configVersion' in config && config.configVersion === 2
+            ? [] : ['BENCHMARK_NOT_IMPLEMENTED']),
         decisionAudit: Object.freeze([])
     });
 }));
@@ -202,6 +234,70 @@ const executePendingLiquidation = (
     }), rejected ? ['LIQUIDATION_EXECUTION_FAILED'] : []);
 };
 
+const executeQualifiedPendingLiquidation = (
+    state: ShadowScenarioState,
+    tick: CompleteShadowSourceTick,
+    config: ObservationExperimentConfig,
+    markSet: QualifiedMarketMarkSet
+): ShadowScenarioState => {
+    const plan = state.liquidationPlan;
+    if (plan === undefined) return state;
+    const marks = new Map(markSet.marks.map(mark => [mark.instrumentUid, mark]));
+    const simulator = new DeterministicVirtualExecutionSimulator();
+    const fills: { instrumentId: string; fill?: VirtualFill; reason?: string }[] = plan.instrumentIds.map(instrumentId => {
+        const mark = marks.get(instrumentId);
+        const position = state.margin.positions.find(item => item.instrumentId === instrumentId);
+        if (mark === undefined || position === undefined) {
+            return { instrumentId, reason: `missing qualified liquidation input: ${instrumentId}` };
+        }
+        const execution = simulator.execute({
+            id: `liquidate:${plan.planId}:${instrumentId}`, virtualAccountId: state.virtualAccountId, instrumentId,
+            side: "sell", quantityLots: position.quantityLots, submittedAt: tick.completedAt
+        }, {
+            instrumentId, bidKopecks: mark.bidKopecks, askKopecks: mark.askKopecks, lotSize: position.lotSize,
+            observedAt: mark.brokerObservedAt
+        }, { now: tick.completedAt, cashKopecks: state.margin.cashKopecks, availableLots: position.quantityLots },
+        config.executionPolicy);
+        return execution.status === "filled" ? { instrumentId, fill: execution.fill }
+            : { instrumentId, reason: `qualified liquidation execution rejected: ${instrumentId}: ${execution.reason}` };
+    });
+    const failure = fills.find(item => item.reason !== undefined);
+    let margin = state.margin;
+    let appliedCount = 0;
+    let failureReason: string | undefined = failure?.reason;
+    if (failureReason === undefined) {
+        for (const candidate of fills) {
+            if (marginRiskSnapshot(margin).maintenanceSatisfied) break;
+            if (candidate.fill === undefined) throw new Error(`prevalidated qualified liquidation fill missing: ${candidate.instrumentId}`);
+            const fill = candidate.fill;
+            const applied = applyMarginScenarioEvent(margin, {
+                id: `forced-${fill.orderId}`, kind: "sell", instrumentId: fill.instrumentId,
+                quantityLots: fill.quantityLots, executionPriceKopecks: fill.executionPriceKopecks,
+                feeKopecks: fill.feeKopecks, occurredAt: fill.filledAt
+            });
+            if (applied.outcome === "rejected") {
+                failureReason = `qualified liquidation margin rejected: ${fill.instrumentId}: ${applied.reason ?? "unknown"}`;
+                break;
+            }
+            margin = applied.state;
+            appliedCount += 1;
+        }
+    }
+    const rejected = failureReason !== undefined;
+    return applyQuality(Object.freeze({
+        ...state, margin: rejected ? state.margin : margin, safetyMode: rejected ? "reduce-only" : "normal",
+        ...(rejected ? { liquidationPlan: plan } : { liquidationPlan: undefined }),
+        liquidationFailureCount: state.liquidationFailureCount + (rejected ? 1 : 0),
+        closedVirtualTrades: state.closedVirtualTrades + (rejected ? 0 : appliedCount),
+        safetyAudit: Object.freeze([...state.safetyAudit, Object.freeze({
+            auditId: `liquidation:${tick.sourceTickId}:${state.scenarioId}`, occurredAt: tick.completedAt,
+            outcome: rejected ? "rejected" : "applied",
+            reason: failureReason ?? "qualified forced liquidation restored maintenance margin with configured execution costs"
+        })])
+    }), rejected ? ["LIQUIDATION_EXECUTION_FAILED"] : []);
+};
+
+
 const accrueInterest = (state: ShadowScenarioState, at: string, eventId: string): ShadowScenarioState => {
     if (state.margin.debtKopecks === 0n || state.margin.interestAccruedThroughAt === at) return state;
     const result = applyMarginScenarioEvent(state.margin, {
@@ -231,10 +327,11 @@ const applyMark = (state: ShadowScenarioState, event: ShadowSourceEvent): Shadow
 const processDecision = async (
     source: ShadowScenarioState,
     event: Extract<ShadowSourceEvent, { kind: 'decision' }>,
-    config: ObservationExperimentConfig
+    config: ObservationExperimentConfig,
+    applySourceQuoteMark = true
 ): Promise<ShadowScenarioState> => {
     let state = accrueInterest(source, event.evaluatedAt, event.eventId);
-    state = applyMark(state, event);
+    if (applySourceQuoteMark) state = applyMark(state, event);
     let execution: VirtualExecutionResult | undefined;
     let marginRejectionReason: string | undefined;
     const simulator = new DeterministicVirtualExecutionSimulator();
@@ -331,10 +428,21 @@ const applyQuality = (state: ShadowScenarioState, reasons: readonly string[]): S
     qualityReasons: Object.freeze([...new Set([...state.qualityReasons, ...reasons])].sort())
 });
 
+const isTickScopedMarketQualityReason = (reason: string): boolean =>
+    reason === 'MARK_SET_SKEW_EXCEEDED'
+    || ['MISSING_REQUIRED_MARK:', 'STALE_MARK:', 'CROSSED_MARK:', 'OUT_OF_SPREAD_MARK:',
+        'INVALID_MARK_FINGERPRINT:', 'SESSION_STATUS_NOT_QUALIFIED:'].some(prefix => reason.startsWith(prefix));
+
+const clearTickScopedMarketQualityReasons = (state: ShadowScenarioState): ShadowScenarioState => Object.freeze({
+    ...state,
+    qualityReasons: Object.freeze(state.qualityReasons.filter(reason => !isTickScopedMarketQualityReason(reason)))
+});
+
 export class ShadowScenarioFanoutProcessor {
     constructor(
         private readonly config: ObservationExperimentConfig,
-        private readonly repository: AtomicShadowFanoutRepository
+        private readonly repository: AtomicShadowFanoutRepository,
+        private readonly qualifiedEvidenceLoader?: QualifiedFanoutEvidenceLoader
     ) {}
 
     async process(sourceTick: CompleteShadowSourceTick): Promise<ObservationTick> {
@@ -342,30 +450,67 @@ export class ShadowScenarioFanoutProcessor {
             return Object.freeze({ tickId: `fanout:${sourceTick.sourceTickId}`, observedAt: sourceTick.completedAt, snapshots: Object.freeze([]) });
         }
         const previous = await this.repository.loadOrInitialize(this.config, sourceTick.startedAt);
-        if (previous.length !== 3) throw new Error('atomic fanout requires exactly three scenario states');
-        let next = previous.map(state => executePendingLiquidation(state, sourceTick, this.config));
-        const explicitMarks = new Set(sourceTick.events.filter(event => event.kind === 'mark').map(event => event.instrumentId));
-        for (const event of sourceTick.events) {
-            next = await Promise.all(next.map(async scenario => {
-                let state = applyQuality(scenario, qualityForEvent(event));
-                if (event.kind === 'mark') {
-                    state = accrueInterest(state, event.markedAt, event.eventId);
-                    return applyMark(state, event);
-                }
-                return processDecision(state, event, this.config);
-            }));
+        if (previous.length !== 3) throw new Error("atomic fanout requires exactly three scenario states");
+        const v2Config = isQualifiedEvidenceConfig(this.config) ? this.config : undefined;
+        if (v2Config && this.qualifiedEvidenceLoader === undefined) {
+            throw new Error("qualified evidence loader is required for v2 observation experiments");
         }
-        next = next.map(state => {
-            const missing = state.margin.positions.some(position => !explicitMarks.has(position.instrumentId));
-            return applyQuality(state, missing ? ['MISSING_MARK_EVENT'] : []);
-        });
+        const prepared = v2Config ? await prepareQualifiedShadowTick({
+            config: v2Config, sourceTick, states: previous, loader: this.qualifiedEvidenceLoader!
+        }) : undefined;
+        let next: readonly ShadowScenarioState[];
+        let marketEvidence: ShadowMarketEvidenceResult | undefined;
+
+        if (v2Config === undefined) {
+            next = previous.map(state => executePendingLiquidation(state, sourceTick, this.config));
+            const explicitMarks = new Set(sourceTick.events.filter(event => event.kind === "mark").map(event => event.instrumentId));
+            for (const event of sourceTick.events) {
+                next = await Promise.all(next.map(async scenario => {
+                    let state = applyQuality(scenario, qualityForEvent(event));
+                    if (event.kind === "mark") {
+                        state = accrueInterest(state, event.markedAt, event.eventId);
+                        return applyMark(state, event);
+                    }
+                    return processDecision(state, event, this.config);
+                }));
+            }
+            next = next.map(state => {
+                const missing = state.margin.positions.some(position => explicitMarks.has(position.instrumentId) === false);
+                return applyQuality(state, missing ? ["MISSING_MARK_EVENT"] : []);
+            });
+        } else {
+            next = previous;
+            for (const event of sourceTick.events) {
+                next = await Promise.all(next.map(async scenario => {
+                    const state = applyQuality(scenario, qualityForEvent(event));
+                    return event.kind === "decision" ? processDecision(state, event, this.config, false) : state;
+                }));
+            }
+            next = next.map(clearTickScopedMarketQualityReasons);
+            if (prepared?.qualification.quality === "rejected") {
+                const rejectionReasons = prepared.qualification.reasons;
+                next = next.map(state => applyQuality(state, rejectionReasons));
+                marketEvidence = Object.freeze({
+                    quality: "rejected", sourceTickId: sourceTick.sourceTickId,
+                    valuationAt: sourceTick.completedAt, reasons: rejectionReasons
+                });
+            } else if (prepared?.qualification.quality === "qualified") {
+                const markSet = prepared.qualification;
+                next = next.map(state => accrueInterest(state, sourceTick.completedAt, `qualified:${sourceTick.sourceTickId}`));
+                next = applyQualifiedMarksToScenarios(next, markSet);
+                next = next.map(state => executeQualifiedPendingLiquidation(state, sourceTick, this.config, markSet));
+            } else {
+                throw new Error("v2 market evidence preparation missing");
+            }
+        }
+
         next = next.map(state => {
             const before = previous.find(item => item.scenarioId === state.scenarioId);
-            if (!before) throw new Error(`missing previous scenario: ${state.scenarioId}`);
+            if (before === undefined) throw new Error(`missing previous scenario: ${state.scenarioId}`);
             const priorRisk = marginRiskSnapshot(before.margin);
             const risk = marginRiskSnapshot(state.margin);
-            if (!risk.reconciled) throw new Error(`scenario accounting invariant corrupted: ${state.scenarioId}`);
-            const newlyBreached = priorRisk.maintenanceSatisfied && !risk.maintenanceSatisfied;
+            if (risk.reconciled === false) throw new Error(`scenario accounting invariant corrupted: ${state.scenarioId}`);
+            const newlyBreached = priorRisk.maintenanceSatisfied && risk.maintenanceSatisfied === false;
             const plan = newlyBreached ? Object.freeze({
                 planId: `pm07:${sourceTick.sourceTickId}:${state.scenarioId}`,
                 createdAt: sourceTick.completedAt,
@@ -374,18 +519,32 @@ export class ShadowScenarioFanoutProcessor {
             return Object.freeze({
                 ...state,
                 invariantViolationCount: state.invariantViolationCount,
-                marginBreachCount: state.marginBreachCount
-                    + (newlyBreached ? 1 : 0),
-                safetyMode: newlyBreached ? 'reduce-only' : state.safetyMode,
+                marginBreachCount: state.marginBreachCount + (newlyBreached ? 1 : 0),
+                safetyMode: newlyBreached ? "reduce-only" : state.safetyMode,
                 ...(plan ? { liquidationPlan: plan } : {}),
                 safetyAudit: newlyBreached ? Object.freeze([...state.safetyAudit, Object.freeze({
                     auditId: `plan:${sourceTick.sourceTickId}:${state.scenarioId}`,
-                    occurredAt: sourceTick.completedAt,
-                    outcome: 'planned' as const,
-                    reason: 'maintenance margin breached; deterministic virtual liquidation planned'
+                    occurredAt: sourceTick.completedAt, outcome: "planned" as const,
+                    reason: "maintenance margin breached; deterministic virtual liquidation planned"
                 })]) : state.safetyAudit
             });
         });
+
+        if (v2Config && prepared?.qualification.quality === "qualified") {
+            const history = await this.qualifiedEvidenceLoader!.loadBenchmarkHistory(v2Config.experimentId);
+            marketEvidence = Object.freeze({
+                quality: "qualified",
+                markSet: prepared.qualification,
+                benchmark: buildQualifiedBenchmarkEvidence({
+                    config: v2Config, markSet: prepared.qualification, states: next,
+                    ...(history.baseline ? { persistedBaseline: history.baseline } : {}),
+                    ...(history.lastPoints ? { persistedLastPoints: history.lastPoints } : {})
+                }),
+                sessionPolicyVersion: v2Config.evidenceConfig.sessionPolicyVersion,
+                benchmarkInstrumentUid: v2Config.evidenceConfig.benchmarkInstrumentUid,
+                initialEquityKopecks: BigInt(v2Config.startingCashKopecks)
+            });
+        }
         const evidenceTick: ObservationTick = Object.freeze({
             tickId: `fanout:${sourceTick.sourceTickId}`,
             observedAt: sourceTick.completedAt,
@@ -401,19 +560,24 @@ export class ShadowScenarioFanoutProcessor {
                     marginBreachCount: state.marginBreachCount,
                     feesIncluded: configHasExplicitCosts(this.config),
                     slippageIncluded: this.config.executionPolicy.slippageBasisPoints > 0,
-                    financingIncluded: state.margin.policy.leverage === '1x' || state.margin.policy.annualInterestBps > 0,
-                    benchmarkAvailable: false,
+                    financingIncluded: state.margin.policy.leverage === "1x" || state.margin.policy.annualInterestBps > 0,
+                    benchmarkAvailable: marketEvidence?.quality === "qualified",
                     evidenceQualityReasons: state.qualityReasons
                 });
             }))
         });
-        await this.repository.commit({ experimentId: this.config.experimentId, sourceTick, previous, next, evidenceTick });
+        await this.repository.commit({ experimentId: this.config.experimentId, sourceTick, previous, next, evidenceTick,
+            ...(marketEvidence ? { marketEvidence } : {}) });
         return evidenceTick;
     }
 }
 
+
 const configHasExplicitCosts = (config: ObservationExperimentConfig) =>
     Number.isSafeInteger(config.executionPolicy.feeBasisPoints) && config.executionPolicy.feeBasisPoints >= 0;
+
+const isQualifiedEvidenceConfig = (config: ObservationExperimentConfig): config is ObservationExperimentConfigV2 =>
+    'configVersion' in config && config.configVersion === 2;
 
 export interface CompletedShadowTickSource {
     claimNext(consumerId: string, leaseMs: number): Promise<ClaimedShadowSourceTick | undefined>;
