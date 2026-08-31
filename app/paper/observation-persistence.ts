@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { QueryTypes, Sequelize } from 'sequelize';
 import { DEFAULT_MARGIN_SCENARIO_POLICIES, MarginScenarioPolicy } from '../virtual/margin';
 import type { VirtualExecutionPolicy } from '../virtual/execution';
+import { QUALIFIED_EVIDENCE_MIGRATIONS } from './qualified-evidence-migrations';
 
 export const OBSERVATION_SCENARIOS = Object.freeze([
     Object.freeze({ scenarioId: '1.0x', leverage: 1 }),
@@ -203,7 +204,8 @@ export const OBSERVATION_MIGRATIONS: readonly Migration[] = Object.freeze([
             `CREATE INDEX IF NOT EXISTS virtual_shadow_audit_replay
                 ON virtual_shadow_margin_audit (experiment_id, scenario_id, source_tick_id, event_id)`
         ])
-    }
+    },
+    ...QUALIFIED_EVIDENCE_MIGRATIONS
 ]);
 
 export const runObservationMigrations = async (database: Sequelize): Promise<void> => {
@@ -252,12 +254,13 @@ export class ObservationExperimentRepository {
         const config = canonicalConfig(normalizedId, settings);
         const configJson = serializeConfig(config);
         const configFingerprint = fingerprint(configJson);
+        const evidence = 'configVersion' in config ? config.evidenceConfig : undefined;
         await this.database.query(
             `INSERT INTO virtual_observation_experiments
-                (experiment_id, config_fingerprint, config_json)
-             VALUES (:experimentId, :configFingerprint, :configJson)
+                (experiment_id, config_fingerprint, config_json, config_version, market_data_source, session_policy_version, benchmark_instrument_uid, benchmark_methodology, benchmark_return_scope)
+             VALUES (:experimentId, :configFingerprint, :configJson, :configVersion, :marketDataSource, :sessionPolicyVersion, :benchmarkInstrumentUid, :benchmarkMethodology, :benchmarkReturnScope)
              ON CONFLICT (experiment_id) DO NOTHING`,
-            { replacements: { experimentId: normalizedId, configFingerprint, configJson } }
+            { replacements: { experimentId: normalizedId, configFingerprint, configJson, configVersion: evidence?.configVersion ?? null, marketDataSource: evidence?.marketDataSource ?? null, sessionPolicyVersion: evidence?.sessionPolicyVersion ?? null, benchmarkInstrumentUid: evidence?.benchmarkInstrumentUid ?? null, benchmarkMethodology: evidence?.benchmarkMethodology ?? null, benchmarkReturnScope: evidence?.benchmarkReturnScope ?? null } }
         );
         const rows = await this.database.query<{ config_fingerprint: string; config_json: string }>(
             `SELECT config_fingerprint, config_json FROM virtual_observation_experiments
