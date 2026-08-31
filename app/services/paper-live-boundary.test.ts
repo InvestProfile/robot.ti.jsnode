@@ -12,6 +12,7 @@ type BoundaryViolation = {
 };
 
 const LAB_NAMESPACES = ['paper', 'virtual', 'market-observation'] as const;
+const LAB_SERVICE_ROOTS = ['app/services/sequelize-qualified-market-evidence.repository.ts'] as const;
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts']);
 const FORBIDDEN_GATEWAY_FILES = [
     'app/services/orders.service.ts',
@@ -94,7 +95,10 @@ const loadCompilerOptions = (projectRoot: string): ts.CompilerOptions => {
 
 const analyzeBoundary = (projectRoot: string): { roots: string[]; violations: BoundaryViolation[] } => {
     const appRoot = normalized(path.join(projectRoot, 'app'));
-    const roots = LAB_NAMESPACES.flatMap(namespace => listSourceFiles(path.join(appRoot, namespace)));
+    const roots = [
+        ...LAB_NAMESPACES.flatMap(namespace => listSourceFiles(path.join(appRoot, namespace))),
+        ...LAB_SERVICE_ROOTS.map(file => normalized(path.join(projectRoot, file))).filter(file => fs.existsSync(file))
+    ];
     const compilerOptions = loadCompilerOptions(projectRoot);
     const forbiddenFiles = new Set(FORBIDDEN_GATEWAY_FILES.map(file => normalized(path.join(projectRoot, file))));
     const violations: BoundaryViolation[] = [];
@@ -175,6 +179,7 @@ describe('Paper/Margin Lab architecture boundary', () => {
         assert(relativeRoots.includes('app/paper/index.ts'), 'app/paper/index.ts must be a scanned root');
         assert(relativeRoots.includes('app/virtual/index.ts'), 'app/virtual/index.ts must be a scanned root');
         assert(relativeRoots.includes('app/market-observation/types.ts'), 'market-observation namespace must be scanned');
+        assert(relativeRoots.includes('app/services/sequelize-qualified-market-evidence.repository.ts'), 'qualified evidence service must be scanned');
         assert.deepEqual(result.violations, [], result.violations.map(item => displayViolation(projectRoot, item)).join('\n'));
     });
 
