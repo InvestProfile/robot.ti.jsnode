@@ -23,6 +23,10 @@ interface WorkerEnvironment {
     readonly ROBOT_VIRTUAL_SLIPPAGE_BPS?: string;
     readonly ROBOT_VIRTUAL_QUOTE_MAX_AGE_MS?: string;
     readonly ROBOT_VIRTUAL_BENCHMARK_ID?: string;
+    readonly ROBOT_VIRTUAL_EVIDENCE_VERSION?: string;
+    readonly ROBOT_VIRTUAL_BENCHMARK_INSTRUMENT_UID?: string;
+    readonly ROBOT_VIRTUAL_EVIDENCE_MAX_MARK_AGE_MS?: string;
+    readonly ROBOT_VIRTUAL_EVIDENCE_MAX_INTER_INSTRUMENT_SKEW_MS?: string;
     readonly ROBOT_VIRTUAL_OBSERVATION_MAX_BATCH_SIZE?: string;
 }
 
@@ -48,6 +52,9 @@ export const runVirtualObservationWorker = async (
     // The disabled worker exits before loading Sequelize, models, or persistence adapters.
     if (!enabled) return;
     const intervalMs = Number(env.ROBOT_VIRTUAL_OBSERVATION_INTERVAL_MS ?? 15 * 60 * 1000);
+    if (!Number.isSafeInteger(intervalMs) || intervalMs <= 0 || intervalMs > 24 * 60 * 60 * 1000) {
+        throw new Error('ROBOT_VIRTUAL_OBSERVATION_INTERVAL_MS must be a positive safe integer no greater than 86400000');
+    }
     const experimentId = String(env.ROBOT_VIRTUAL_OBSERVATION_EXPERIMENT_ID ?? '').trim();
     if (!experimentId) throw new Error('enabled observation worker requires ROBOT_VIRTUAL_OBSERVATION_EXPERIMENT_ID');
     const leaseTtlMs = Number(env.ROBOT_VIRTUAL_OBSERVATION_LEASE_TTL_MS ?? intervalMs * 3);
@@ -63,6 +70,18 @@ export const runVirtualObservationWorker = async (
     };
     const startingCashRaw = env.ROBOT_VIRTUAL_STARTING_CASH_KOPECKS ?? '100000000';
     if (!/^[1-9]\d*$/.test(startingCashRaw)) throw new Error('ROBOT_VIRTUAL_STARTING_CASH_KOPECKS must be a positive integer');
+    const evidenceVersion = String(env.ROBOT_VIRTUAL_EVIDENCE_VERSION ?? '1').trim();
+    if (evidenceVersion !== '1' && evidenceVersion !== '2') {
+        throw new Error('ROBOT_VIRTUAL_EVIDENCE_VERSION must be 1 or 2');
+    }
+    const benchmarkId = env.ROBOT_VIRTUAL_BENCHMARK_ID?.trim();
+    const benchmarkInstrumentUid = env.ROBOT_VIRTUAL_BENCHMARK_INSTRUMENT_UID?.trim();
+    if (evidenceVersion === '2' && !benchmarkId) {
+        throw new Error('ROBOT_VIRTUAL_BENCHMARK_ID is required for evidence version 2');
+    }
+    if (evidenceVersion === '2' && !benchmarkInstrumentUid) {
+        throw new Error('ROBOT_VIRTUAL_BENCHMARK_INSTRUMENT_UID is required for evidence version 2');
+    }
     const settings: ObservationExperimentSettings = {
         startingCashKopecks: BigInt(startingCashRaw),
         executionPolicy: {
@@ -70,7 +89,21 @@ export const runVirtualObservationWorker = async (
             slippageBasisPoints: integer('ROBOT_VIRTUAL_SLIPPAGE_BPS', env.ROBOT_VIRTUAL_SLIPPAGE_BPS, 10, 1, 10_000),
             maxQuoteAgeMs: integer('ROBOT_VIRTUAL_QUOTE_MAX_AGE_MS', env.ROBOT_VIRTUAL_QUOTE_MAX_AGE_MS, 5_000, 1, 600_000)
         },
-        ...(env.ROBOT_VIRTUAL_BENCHMARK_ID?.trim() ? { benchmarkId: env.ROBOT_VIRTUAL_BENCHMARK_ID.trim() } : {})
+        ...(benchmarkId ? { benchmarkId } : {}),
+        ...(evidenceVersion === '2' ? {
+            evidenceConfig: Object.freeze({
+                configVersion: 2 as const,
+                marketDataSource: 't-invest-market-data-readonly' as const,
+                sessionPolicyVersion: 't-invest-session-v1-open-only' as const,
+                benchmarkInstrumentUid: benchmarkInstrumentUid!,
+                benchmarkMethodology: 'normalized-price-return' as const,
+                benchmarkReturnScope: 'price-only-excludes-dividends-fees-and-total-return' as const,
+                maxMarkAgeMs: integer('ROBOT_VIRTUAL_EVIDENCE_MAX_MARK_AGE_MS',
+                    env.ROBOT_VIRTUAL_EVIDENCE_MAX_MARK_AGE_MS, 5_000, 1, Number.MAX_SAFE_INTEGER),
+                maxInterInstrumentSkewMs: integer('ROBOT_VIRTUAL_EVIDENCE_MAX_INTER_INSTRUMENT_SKEW_MS',
+                    env.ROBOT_VIRTUAL_EVIDENCE_MAX_INTER_INSTRUMENT_SKEW_MS, 1_000, 0, Number.MAX_SAFE_INTEGER)
+            })
+        } : {})
     };
     const maxBatchSize = integer('ROBOT_VIRTUAL_OBSERVATION_MAX_BATCH_SIZE',
         env.ROBOT_VIRTUAL_OBSERVATION_MAX_BATCH_SIZE, 100, 1, 1_000);

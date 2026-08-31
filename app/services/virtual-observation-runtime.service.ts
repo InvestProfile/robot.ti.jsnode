@@ -27,6 +27,7 @@ import {
 import { SequelizeShadowSourceOutbox } from '../paper/shadow-source-outbox';
 import { OutboxShadowFanoutRuntime, ShadowScenarioFanoutProcessor } from '../paper/shadow-scenario-fanout';
 import { SequelizeAtomicShadowFanoutRepository } from './sequelize-shadow-fanout.repository';
+import { SequelizeQualifiedMarketEvidenceReadRepository } from './sequelize-qualified-market-evidence.repository';
 import { randomUUID } from 'node:crypto';
 
 interface EvidenceRows {
@@ -114,6 +115,18 @@ export interface PreparedVirtualObservationRuntime {
     readonly lease: ObservationLease;
 }
 
+export const completeAcquiredVirtualObservationRuntime = async (
+    lease: ObservationLease,
+    construct: () => PreparedVirtualObservationRuntime | Promise<PreparedVirtualObservationRuntime>
+): Promise<PreparedVirtualObservationRuntime> => {
+    try {
+        return await construct();
+    } catch (error) {
+        await lease.release();
+        throw error;
+    }
+};
+
 export const prepareSequelizeVirtualObservationRuntime = async (
     experimentId: string,
     leaseTtlMs: number,
@@ -127,11 +140,19 @@ export const prepareSequelizeVirtualObservationRuntime = async (
         leaseTtlMs
     );
     if (!lease) throw new Error(`virtual observation experiment already has an active worker: ${experimentId}`);
-    const repository = new SequelizeAtomicShadowFanoutRepository(sequelize);
-    const processor = new ShadowScenarioFanoutProcessor(config, repository);
-    const source = new SequelizeShadowSourceOutbox(sequelize, config.executionPolicy.maxQuoteAgeMs);
-    return {
-        runtime: new OutboxShadowFanoutRuntime(source, processor, `fanout:${experimentId}:${randomUUID()}`, leaseTtlMs, maxBatchSize),
-        lease
-    };
+    return completeAcquiredVirtualObservationRuntime(lease, () => {
+        const repository = new SequelizeAtomicShadowFanoutRepository(sequelize);
+        const processor = new ShadowScenarioFanoutProcessor(
+            config,
+            repository,
+            'configVersion' in config
+                ? new SequelizeQualifiedMarketEvidenceReadRepository(sequelize)
+                : undefined
+        );
+        const source = new SequelizeShadowSourceOutbox(sequelize, config.executionPolicy.maxQuoteAgeMs);
+        return {
+            runtime: new OutboxShadowFanoutRuntime(source, processor, `fanout:${experimentId}:${randomUUID()}`, leaseTtlMs, maxBatchSize),
+            lease
+        };
+    });
 };
