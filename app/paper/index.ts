@@ -5,3 +5,4 @@ export * from './shadow-intent.adapter';
 export * from './shadow-observation.repository';
 export * from './read-api';
 export * from './shadow-runner';
+export * from './shadow-composition';

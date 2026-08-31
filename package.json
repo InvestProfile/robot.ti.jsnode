@@ -9,6 +9,7 @@
     "start": "node build/index.js",
     "local": "npm run build && npm run start",
     "robot": "npm run build && npm run start",
+    "observation:worker": "npm run build && node build/paper/virtual-observation.worker.js",
     "decisions": "npm run build && node build/reports/decisions.report.js",
     "scan:buy": "npm run build && node build/reports/buy-scan.report.js",
     "analyst:forecasts": "npm run build && node build/reports/analyst-forecasts.report.js",
