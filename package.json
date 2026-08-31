@@ -10,6 +10,7 @@
     "local": "npm run build && npm run start",
     "robot": "npm run build && npm run start",
     "observation:worker": "npm run build && node build/paper/virtual-observation.worker.js",
+    "marks:collector": "npm run build && node build/reports/market-mark-collector.report.js",
     "decisions": "npm run build && node build/reports/decisions.report.js",
     "scan:buy": "npm run build && node build/reports/buy-scan.report.js",
     "analyst:forecasts": "npm run build && node build/reports/analyst-forecasts.report.js",
@@ -42,7 +43,7 @@
     "ui:preview": "vite preview --host 0.0.0.0",
     "prod": "npm run robot",
     "lint": "eslint app ui vite.config.ts --ext .ts,.js,.jsx",
-    "test:unit": "node --test build/services/*.test.js build/strategies/*.test.js build/http/*.test.js build/utils/*.test.js build/virtual/*.test.js build/paper/*.test.js build/market-observation/*.test.js",
+    "test:unit": "node --test build/services/*.test.js build/strategies/*.test.js build/http/*.test.js build/utils/*.test.js build/virtual/*.test.js build/paper/*.test.js build/market-observation/*.test.js build/reports/*.test.js",
     "test": "npm run build && npm run test:unit && npm run ui:build"
   },
   "keywords": [],
