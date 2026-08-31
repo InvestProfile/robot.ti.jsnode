@@ -64,6 +64,7 @@ class FakeDatabase {
 }
 
 const sequelize = (database: FakeDatabase) => database as unknown as Sequelize;
+const LEGACY_CONFIG_JSON = '{"experimentId":"legacy","scenarios":[{"scenarioId":"1.0x","leverage":1},{"scenarioId":"1.2x","leverage":1.2},{"scenarioId":"1.5x","leverage":1.5}],"startingCashKopecks":"100000000","executionPolicy":{"feeBasisPoints":10,"slippageBasisPoints":10,"maxQuoteAgeMs":5000},"marginPolicies":[{"leverage":"1x","version":"pm06-v1","initialMarginBps":10000,"maintenanceMarginBps":7500,"annualInterestBps":0,"allowBorrowedAveragingDown":false,"markMaxAgeSeconds":300},{"leverage":"1.2x","version":"pm06-v1","initialMarginBps":8334,"maintenanceMarginBps":6667,"annualInterestBps":1800,"allowBorrowedAveragingDown":false,"markMaxAgeSeconds":300},{"leverage":"1.5x","version":"pm06-v1","initialMarginBps":6667,"maintenanceMarginBps":5000,"annualInterestBps":1800,"allowBorrowedAveragingDown":false,"markMaxAgeSeconds":300}],"benchmarkId":null}';
 
 describe('virtual observation persistence', () => {
     it('applies additive PostgreSQL migrations once and rejects another dialect', async () => {
@@ -107,6 +108,27 @@ describe('virtual observation persistence', () => {
         assert.ok(persisted);
         database.experiments.set('experiment-1', { ...persisted, config_json: '{"changed":true}' });
         await assert.rejects(repository.open('experiment-1'), /configuration conflict/);
+    });
+
+    it('keeps legacy config byte-compatible and makes v2 explicit and immutable', async () => {
+        const database = new FakeDatabase();
+        const repository = new ObservationExperimentRepository(sequelize(database));
+        const legacy = await repository.open('legacy');
+        assert.equal('configVersion' in legacy, false);
+        assert.equal(database.experiments.get('legacy')?.config_json, LEGACY_CONFIG_JSON);
+        const evidenceConfig = {
+            configVersion: 2 as const,
+            marketDataSource: 't-invest-market-data-readonly' as const,
+            sessionPolicyVersion: 't-invest-session-v1-open-only' as const,
+            benchmarkInstrumentUid: 'f509af83-6e71-462f-901f-bcb073f6773b',
+            benchmarkMethodology: 'normalized-price-return' as const,
+            benchmarkReturnScope: 'price-only-excludes-dividends-fees-and-total-return' as const
+        };
+        const qualified = await repository.open('qualified', { evidenceConfig });
+        assert.equal('configVersion' in qualified && qualified.configVersion, 2);
+        assert.deepEqual(await repository.open('qualified', { evidenceConfig }), qualified);
+        await assert.rejects(repository.open('qualified'));
+        await assert.rejects(repository.open('bad', { evidenceConfig: { ...evidenceConfig, benchmarkInstrumentUid: ' ' } }));
     });
 
     it('allows one lease owner, expiry takeover, renewal and owner-safe release', async () => {

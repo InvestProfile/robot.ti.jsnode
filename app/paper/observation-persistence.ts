@@ -22,6 +22,21 @@ export interface ObservationExperimentSettings {
     readonly startingCashKopecks?: bigint;
     readonly executionPolicy?: VirtualExecutionPolicy;
     readonly benchmarkId?: string;
+    readonly evidenceConfig?: QualifiedEvidenceConfig;
+}
+
+export interface QualifiedEvidenceConfig {
+    readonly configVersion: 2;
+    readonly marketDataSource: 't-invest-market-data-readonly';
+    readonly sessionPolicyVersion: 't-invest-session-v1-open-only';
+    readonly benchmarkInstrumentUid: string;
+    readonly benchmarkMethodology: 'normalized-price-return';
+    readonly benchmarkReturnScope: 'price-only-excludes-dividends-fees-and-total-return';
+}
+
+export interface ObservationExperimentConfigV2 extends ObservationExperimentConfig {
+    readonly configVersion: 2;
+    readonly evidenceConfig: QualifiedEvidenceConfig;
 }
 
 export const DEFAULT_OBSERVATION_STARTING_CASH_KOPECKS = 100_000_000n;
@@ -31,7 +46,7 @@ export const DEFAULT_OBSERVATION_EXECUTION_POLICY: VirtualExecutionPolicy = Obje
     maxQuoteAgeMs: 5_000
 });
 
-const canonicalConfig = (experimentId: string, settings: ObservationExperimentSettings = {}): ObservationExperimentConfig => Object.freeze({
+const canonicalConfigV1 = (experimentId: string, settings: ObservationExperimentSettings = {}): ObservationExperimentConfig => Object.freeze({
     experimentId,
     scenarios: OBSERVATION_SCENARIOS,
     startingCashKopecks: (settings.startingCashKopecks ?? DEFAULT_OBSERVATION_STARTING_CASH_KOPECKS).toString(),
@@ -39,6 +54,21 @@ const canonicalConfig = (experimentId: string, settings: ObservationExperimentSe
     marginPolicies: Object.freeze(DEFAULT_MARGIN_SCENARIO_POLICIES.map(policy => Object.freeze({ ...policy }))),
     benchmarkId: settings.benchmarkId?.trim() || null
 });
+
+const canonicalConfig = (experimentId: string, settings: ObservationExperimentSettings = {}): ObservationExperimentConfig | ObservationExperimentConfigV2 => {
+    const legacy = canonicalConfigV1(experimentId, settings);
+    if (!settings.evidenceConfig) return legacy;
+    const evidence = settings.evidenceConfig;
+    const benchmarkInstrumentUid = evidence.benchmarkInstrumentUid.trim();
+    if (!benchmarkInstrumentUid) throw new Error('benchmarkInstrumentUid is required for qualified evidence config');
+    if (evidence.configVersion !== 2 || evidence.marketDataSource !== 't-invest-market-data-readonly'
+        || evidence.sessionPolicyVersion !== 't-invest-session-v1-open-only'
+        || evidence.benchmarkMethodology !== 'normalized-price-return'
+        || evidence.benchmarkReturnScope !== 'price-only-excludes-dividends-fees-and-total-return') {
+        throw new Error('unsupported qualified evidence configuration');
+    }
+    return Object.freeze({ ...legacy, configVersion: 2 as const, evidenceConfig: Object.freeze({ ...evidence, benchmarkInstrumentUid }) });
+};
 
 const serializeConfig = (config: ObservationExperimentConfig) => JSON.stringify(config);
 const fingerprint = (value: string) => createHash('sha256').update(value).digest('hex');
