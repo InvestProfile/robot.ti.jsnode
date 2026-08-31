@@ -4035,9 +4035,12 @@ function PaperLab() {
           <Stat label="Failures" value={observation.source?.failures ?? 'unknown'} />
           <Stat label="Scenario parity" value={observation.parity?.complete ? '3/3' : `${observation.parity?.present?.length || 0}/3`} />
           <Stat label="Benchmark" value={observation.benchmark?.state || 'unavailable'} />
+          <Stat label="Evidence version" value={observation.marketEvidence?.configVersion || 1} />
+          <Stat label="Market evidence" value={observation.marketEvidence?.quality || 'missing'} />
         </div>
         <p className="muted">Config fingerprint: {observation.experiment?.configFingerprint || 'missing'} · immutable config read-only</p>
         <p className="muted">Latest success: {observation.source?.latestSuccessAt ? time(observation.source.latestSuccessAt) : 'missing'} · latest failure: {observation.source?.latestFailureAt ? time(observation.source.latestFailureAt) : 'none'}</p>
+        {(observation.marketEvidence?.rejectionReasons || []).length ? <p className="muted">Exact market rejection reasons: {observation.marketEvidence.rejectionReasons.join(', ')}</p> : null}
       </Card>
       <Card title="Сценарии и evidence gate" className="wide"><Table rows={observation.scenarios || []} empty="Scenario state missing — DEGRADED" columns={[
         { key: 'scenarioId', label: 'Scenario' }, { key: 'leverage', label: 'Leverage' },
@@ -4052,6 +4055,15 @@ function PaperLab() {
         { key: 'observedAt', label: 'Observed', render: (row) => time(row.observedAt) },
         { key: 'scenarioId', label: 'Scenario' },
         { key: 'equityKopecks', label: 'Equity', className: 'right', render: (row) => kopecks(row.equityKopecks) }
+      ]} /></Card>
+      <Card title="Benchmark comparison (bounded)" className="wide"><Table rows={observation.benchmark?.curve || []} empty="Qualified benchmark curve missing — INSUFFICIENT-EVIDENCE" columns={[
+        { key: 'valuationAt', label: 'Valuation', render: (row) => time(row.valuationAt) },
+        { key: 'scenarioId', label: 'Scenario' },
+        { key: 'scenarioEquityKopecks', label: 'Scenario equity', className: 'right', render: (row) => kopecks(row.scenarioEquityKopecks) },
+        { key: 'benchmarkEquityKopecks', label: 'Benchmark equity', className: 'right', render: (row) => kopecks(row.benchmarkEquityKopecks) },
+        { key: 'scenarioReturnBps', label: 'Scenario bps', className: 'right' },
+        { key: 'benchmarkReturnBps', label: 'Benchmark bps', className: 'right' },
+        { key: 'excessReturnBps', label: 'Excess bps', className: 'right' }
       ]} /></Card>
       <Card title="Gate reasons / cumulative alerts" className="wide"><Table rows={observation.alerts || []} empty="Evidence alerts missing — DEGRADED" columns={[
         { key: 'severity', label: 'Severity' }, { key: 'reason', label: 'Reason' }

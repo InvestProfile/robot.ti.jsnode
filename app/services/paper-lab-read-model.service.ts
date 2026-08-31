@@ -30,7 +30,24 @@ interface ObservationRows {
     ticks: readonly { observed_at: string; payload_json: string; updated_at: Date | string }[];
     checkpoint?: { completed_at: Date | string };
     source: readonly { status: string; count: string; latest_at?: Date | string }[];
+    benchmarkPoints: readonly { scenario_id: string; mark_set_id: string; valuation_at: Date | string;
+        scenario_equity_kopecks: string; benchmark_equity_kopecks: string;
+        scenario_pnl_kopecks: string; benchmark_pnl_kopecks: string;
+        scenario_return_bps: string; benchmark_return_bps: string;
+        excess_pnl_kopecks: string; excess_return_bps: string }[];
 }
+
+export const filterCompleteBenchmarkPointSets = <T extends { readonly mark_set_id: string; readonly scenario_id: string }>(
+    rows: readonly T[]
+): readonly T[] => {
+    const expected = '1.0x,1.2x,1.5x';
+    const grouped = new Map<string, T[]>();
+    for (const row of rows) grouped.set(row.mark_set_id, [...(grouped.get(row.mark_set_id) ?? []), row]);
+    const complete = new Set([...grouped.entries()].filter(([, points]) =>
+        points.length === 3 && [...new Set(points.map(point => point.scenario_id))].sort().join(',') === expected
+    ).map(([markSetId]) => markSetId));
+    return Object.freeze(rows.filter(row => complete.has(row.mark_set_id)));
+};
 
 export interface PaperLabCursor {
     readonly virtualAccountId: string;
@@ -114,7 +131,7 @@ export class SequelizePaperLabReadModelStore implements PaperLabReadModelStore {
         const match = matches[0];
         if (!match) return undefined;
         const experimentId = match.experiment_id;
-        const [experiments, leases, states, ticks, checkpoints, source] = await Promise.all([
+        const [experiments, leases, states, ticks, checkpoints, source, benchmarkPoints] = await Promise.all([
             sequelize.query<ObservationRows['experiment'] & object>(`SELECT experiment_id, config_fingerprint, config_json, created_at, updated_at
                 FROM virtual_observation_experiments WHERE experiment_id = :experimentId LIMIT 1`,
             { replacements: { experimentId }, type: QueryTypes.SELECT }),
@@ -135,9 +152,28 @@ export class SequelizePaperLabReadModelStore implements PaperLabReadModelStore {
                      WHEN status = 'complete' THEN 'processed' ELSE status END AS status,
                 COUNT(*)::text AS count, MAX(COALESCE(completed_at, updated_at)) AS latest_at
                 FROM shadow_source_ticks GROUP BY 1`,
-            { type: QueryTypes.SELECT })
+            { type: QueryTypes.SELECT }),
+            sequelize.query<ObservationRows["benchmarkPoints"][number]>(`WITH latest_sets AS (
+                    SELECT mark_set_id, MAX(valuation_at) AS valuation_at
+                    FROM virtual_normalized_benchmark_points WHERE experiment_id = :experimentId
+                    GROUP BY mark_set_id
+                    HAVING COUNT(*) = 3 AND COUNT(DISTINCT scenario_id) = 3
+                        AND ARRAY_AGG(scenario_id ORDER BY scenario_id) = ARRAY['1.0x', '1.2x', '1.5x']::text[]
+                    ORDER BY valuation_at DESC, mark_set_id DESC LIMIT :setLimit
+                ) SELECT points.scenario_id, points.mark_set_id, points.valuation_at,
+                    points.scenario_equity_kopecks::text, points.benchmark_equity_kopecks::text,
+                    points.scenario_pnl_kopecks::text, points.benchmark_pnl_kopecks::text,
+                    points.scenario_return_bps::text, points.benchmark_return_bps::text,
+                    points.excess_pnl_kopecks::text, points.excess_return_bps::text
+                FROM virtual_normalized_benchmark_points points
+                INNER JOIN latest_sets ON latest_sets.mark_set_id = points.mark_set_id
+                WHERE points.experiment_id = :experimentId
+                ORDER BY points.valuation_at ASC, points.mark_set_id ASC, points.scenario_id ASC`,
+            { replacements: { experimentId, setLimit: Math.max(1, Math.floor(Math.min(limit, PAPER_LAB_MAX_EQUITY_POINTS) / 3)) },
+                type: QueryTypes.SELECT })
         ]);
-        return { experiment: experiments[0], lease: leases[0], states, ticks: [...ticks].reverse(), checkpoint: checkpoints[0], source };
+        return { experiment: experiments[0], lease: leases[0], states, ticks: [...ticks].reverse(),
+            checkpoint: checkpoints[0], source, benchmarkPoints: filterCompleteBenchmarkPointSets(benchmarkPoints) };
     }
 }
 
@@ -164,7 +200,9 @@ const serializeDeep = (value: unknown): unknown => {
 const buildObservationMonitoring = (rows: ObservationRows, now: Date) => {
     if (!rows.experiment) return { state: 'DEGRADED', reasons: ['EXPERIMENT_CONFIG_MISSING'] };
     const config = JSON.parse(rows.experiment.config_json) as Record<string, unknown>;
-    const ticks = rows.ticks.map(row => decodeTaggedBigints<ObservationTick>(row.payload_json));
+    type StoredObservationTick = ObservationTick & { marketEvidence?: { quality: "qualified" | "rejected"; reasons?: readonly string[] } };
+    const storedTicks = rows.ticks.map(row => decodeTaggedBigints<StoredObservationTick>(row.payload_json));
+    const ticks: ObservationTick[] = storedTicks;
     let evidence: ObservationRunnerState | undefined;
     let replayError: string | undefined;
     try { evidence = replayObservationTicks(rows.experiment.experiment_id, ticks); }
@@ -202,9 +240,17 @@ const buildObservationMonitoring = (rows: ObservationRows, now: Date) => {
     const curve = ticks.flatMap(tick => tick.snapshots.map(snapshot => ({ observedAt: tick.observedAt,
         scenarioId: snapshot.scenarioId, virtualAccountId: snapshot.virtualAccountId,
         equityKopecks: serializePaperKopecks(snapshot.equityKopecks) })));
+    const latestMarketEvidence = storedTicks.at(-1)?.marketEvidence;
     const benchmarkId = typeof config.benchmarkId === 'string' ? config.benchmarkId : null;
     const benchmarkAvailable = evidence?.scenarios.length
         ? evidence.scenarios.every(item => item.benchmarkAvailable) : false;
+    const benchmarkCurve = rows.benchmarkPoints.map(point => ({
+        scenarioId: point.scenario_id, markSetId: point.mark_set_id, valuationAt: iso(point.valuation_at),
+        scenarioEquityKopecks: point.scenario_equity_kopecks, benchmarkEquityKopecks: point.benchmark_equity_kopecks,
+        scenarioPnlKopecks: point.scenario_pnl_kopecks, benchmarkPnlKopecks: point.benchmark_pnl_kopecks,
+        scenarioReturnBps: point.scenario_return_bps, benchmarkReturnBps: point.benchmark_return_bps,
+        excessPnlKopecks: point.excess_pnl_kopecks, excessReturnBps: point.excess_return_bps
+    }));
     const qualified = gates.length === 3 && gates.every(gate => gate.qualified) && workerState === 'fresh' && parity
         && quality.length === 0 && benchmarkAvailable;
     const scenarioDtos = states.map(item => {
@@ -234,8 +280,12 @@ const buildObservationMonitoring = (rows: ObservationRows, now: Date) => {
         parity: { expected, present, complete: parity }, scenarios: scenarioDtos,
         equityCurve: curve, gates: gates.map(gate => ({ ...gate, state: gate.qualified ? 'qualified' : 'insufficient' })),
         alerts: quality.map(reason => ({ severity: 'warning', reason })),
+        marketEvidence: { configVersion: typeof config.configVersion === 'number' ? config.configVersion : 1,
+            quality: latestMarketEvidence?.quality ?? 'missing', rejectionReasons: latestMarketEvidence?.quality === 'rejected'
+                ? [...(latestMarketEvidence.reasons ?? [])] : [] },
         benchmark: { benchmarkId, available: benchmarkAvailable,
-            state: benchmarkAvailable ? 'available' : benchmarkId ? 'configured-unavailable' : 'not-configured' },
+            state: benchmarkAvailable ? 'available' : benchmarkId ? 'configured-unavailable' : 'not-configured',
+            curve: benchmarkCurve },
         approximation: { state: quality.some(reason => reason.includes('APPROXIMATE') || reason === 'COLLAPSED_SPREAD')
             ? 'approximate' : 'unknown' }, replayError
     };

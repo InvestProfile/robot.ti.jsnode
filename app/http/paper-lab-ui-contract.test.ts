@@ -12,7 +12,7 @@ describe('Paper Lab dashboard contract', () => {
     it('renders explicit loading, empty, stale, error and unavailable evidence states', () => {
         const source = readFileSync('ui/src/main.jsx', 'utf8');
         for (const phrase of ['Загрузка Paper Lab', 'Эксперименты не созданы', 'Данные устарели', 'Ошибка Paper Lab',
-            'INSUFFICIENT-EVIDENCE', 'Observation experiment', 'Equity curve (bounded)', 'Gate reasons / cumulative alerts']) {
+            'INSUFFICIENT-EVIDENCE', 'Observation experiment', 'Equity curve (bounded)', 'Gate reasons / cumulative alerts', 'Evidence version', 'Exact market rejection reasons', 'Benchmark comparison (bounded)']) {
             assert(source.includes(phrase), `missing UI state: ${phrase}`);
         }
         assert(source.includes('/api/paper-lab?limit=50'));
