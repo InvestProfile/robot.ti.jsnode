@@ -11,7 +11,7 @@ type BoundaryViolation = {
     chain: string[];
 };
 
-const LAB_NAMESPACES = ['paper', 'virtual'] as const;
+const LAB_NAMESPACES = ['paper', 'virtual', 'market-observation'] as const;
 const SOURCE_EXTENSIONS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mts', '.cts']);
 const FORBIDDEN_GATEWAY_FILES = [
     'app/services/orders.service.ts',
@@ -146,10 +146,12 @@ const createFixtureProject = (files: Record<string, string>) => {
     temporaryProjects.push(projectRoot);
     fs.mkdirSync(path.join(projectRoot, 'app/paper'), { recursive: true });
     fs.mkdirSync(path.join(projectRoot, 'app/virtual'), { recursive: true });
+    fs.mkdirSync(path.join(projectRoot, 'app/market-observation'), { recursive: true });
     fs.writeFileSync(path.join(projectRoot, 'package.json'), JSON.stringify({ name: 'robot.ti.jsnode' }));
     fs.writeFileSync(path.join(projectRoot, 'tsconfig.json'), JSON.stringify({ compilerOptions: { module: 'commonjs' } }));
     fs.writeFileSync(path.join(projectRoot, 'app/paper/index.ts'), 'export const paper = true;');
     fs.writeFileSync(path.join(projectRoot, 'app/virtual/index.ts'), 'export const virtual = true;');
+    fs.writeFileSync(path.join(projectRoot, 'app/market-observation/index.ts'), 'export const marketObservation = true;');
 
     for (const [relativePath, source] of Object.entries(files)) {
         const file = path.join(projectRoot, relativePath);
@@ -172,6 +174,7 @@ describe('Paper/Margin Lab architecture boundary', () => {
         const relativeRoots = result.roots.map(file => path.relative(projectRoot, file));
         assert(relativeRoots.includes('app/paper/index.ts'), 'app/paper/index.ts must be a scanned root');
         assert(relativeRoots.includes('app/virtual/index.ts'), 'app/virtual/index.ts must be a scanned root');
+        assert(relativeRoots.includes('app/market-observation/types.ts'), 'market-observation namespace must be scanned');
         assert.deepEqual(result.violations, [], result.violations.map(item => displayViolation(projectRoot, item)).join('\n'));
     });
 

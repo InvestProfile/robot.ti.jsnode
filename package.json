@@ -42,7 +42,7 @@
     "ui:preview": "vite preview --host 0.0.0.0",
     "prod": "npm run robot",
     "lint": "eslint app ui vite.config.ts --ext .ts,.js,.jsx",
-    "test:unit": "node --test build/services/*.test.js build/strategies/*.test.js build/http/*.test.js build/utils/*.test.js build/virtual/*.test.js build/paper/*.test.js",
+    "test:unit": "node --test build/services/*.test.js build/strategies/*.test.js build/http/*.test.js build/utils/*.test.js build/virtual/*.test.js build/paper/*.test.js build/market-observation/*.test.js",
     "test": "npm run build && npm run test:unit && npm run ui:build"
   },
   "keywords": [],
