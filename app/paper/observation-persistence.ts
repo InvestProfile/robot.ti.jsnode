@@ -61,6 +61,49 @@ export const OBSERVATION_MIGRATIONS: readonly Migration[] = Object.freeze([
             `CREATE INDEX IF NOT EXISTS virtual_observation_time_sequence
                 ON virtual_observation_ticks (experiment_id, observed_at, sequence)`
         ])
+    },
+    {
+        version: '002_shadow_source_outbox',
+        statements: Object.freeze([
+            `CREATE TABLE IF NOT EXISTS shadow_source_ticks (
+                source_tick_id VARCHAR(255) PRIMARY KEY,
+                status VARCHAR(20) NOT NULL CHECK (status IN ('collecting', 'complete', 'failed')),
+                started_at TIMESTAMPTZ NOT NULL,
+                completed_at TIMESTAMPTZ,
+                expected_event_count INTEGER NOT NULL CHECK (expected_event_count >= 0),
+                actual_event_count INTEGER NOT NULL DEFAULT 0 CHECK (actual_event_count >= 0),
+                policy_version VARCHAR(255) NOT NULL,
+                config_fingerprint CHAR(64) NOT NULL,
+                payload_fingerprint CHAR(64),
+                failure_reason TEXT,
+                claimed_by VARCHAR(255),
+                claimed_until TIMESTAMPTZ,
+                processed_at TIMESTAMPTZ,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                CONSTRAINT shadow_source_tick_terminal_shape CHECK (
+                    (status = 'collecting' AND completed_at IS NULL AND payload_fingerprint IS NULL AND failure_reason IS NULL)
+                    OR (status = 'complete' AND completed_at IS NOT NULL AND payload_fingerprint IS NOT NULL AND failure_reason IS NULL AND actual_event_count = expected_event_count)
+                    OR (status = 'failed' AND completed_at IS NOT NULL AND failure_reason IS NOT NULL)
+                )
+            )`,
+            `CREATE TABLE IF NOT EXISTS shadow_source_events (
+                source_tick_id VARCHAR(255) NOT NULL REFERENCES shadow_source_ticks(source_tick_id),
+                sequence INTEGER NOT NULL CHECK (sequence >= 0),
+                event_id VARCHAR(255) NOT NULL,
+                event_kind VARCHAR(20) NOT NULL CHECK (event_kind IN ('decision', 'mark')),
+                instrument_id VARCHAR(255) NOT NULL,
+                payload_fingerprint CHAR(64) NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (source_tick_id, sequence),
+                CONSTRAINT shadow_source_event_id_unique UNIQUE (source_tick_id, event_id)
+            )`,
+            `CREATE INDEX IF NOT EXISTS shadow_source_completed_claim
+                ON shadow_source_ticks (status, processed_at, claimed_until, completed_at, source_tick_id)`,
+            `CREATE INDEX IF NOT EXISTS shadow_source_events_replay
+                ON shadow_source_events (source_tick_id, sequence)`
+        ])
     }
 ]);
 
@@ -76,7 +119,7 @@ export const runObservationMigrations = async (database: Sequelize): Promise<voi
                 { replacements: { version: migration.version }, type: QueryTypes.SELECT, transaction }
             );
             if (applied.length > 0) return;
-            for (const statement of migration.statements.slice(1)) {
+            for (const statement of migration.statements) {
                 await database.query(statement, { transaction });
             }
             await database.query(

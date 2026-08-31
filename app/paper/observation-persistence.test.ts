@@ -67,8 +67,11 @@ describe('virtual observation persistence', () => {
         await runObservationMigrations(sequelize(database));
         const firstCount = database.statements.length;
         await runObservationMigrations(sequelize(database));
-        assert.equal(database.versions.has(OBSERVATION_MIGRATIONS[0].version), true);
-        assert.equal(database.statements.length, firstCount + 2);
+        assert.equal(OBSERVATION_MIGRATIONS.every(migration => database.versions.has(migration.version)), true);
+        assert.equal(database.statements.some(statement => statement.includes('CREATE TABLE IF NOT EXISTS shadow_source_ticks')), true);
+        assert.equal(database.statements.length, firstCount + (OBSERVATION_MIGRATIONS.length * 2));
+        assert.match(OBSERVATION_MIGRATIONS[1].statements.join('\n'), /CREATE TABLE IF NOT EXISTS shadow_source_ticks/);
+        assert.match(OBSERVATION_MIGRATIONS[1].statements.join('\n'), /CREATE TABLE IF NOT EXISTS shadow_source_events/);
         database.dialect = 'mysql';
         await assert.rejects(runObservationMigrations(sequelize(database)), /require postgres/);
     });
