@@ -3995,6 +3995,7 @@ function PaperLab() {
   if (state === 'empty') return <div className="paper-state">Эксперименты не созданы</div>;
 
   const metrics = payload?.reconciliation?.metrics || {};
+  const observation = payload?.observation || {};
   const stale = payload?.freshness?.state === 'stale';
   const kopecks = (value, options) => formatPaperKopecks(value, options);
   return (
@@ -4009,7 +4010,10 @@ function PaperLab() {
           <Pill tone={payload?.reconciliation?.status === 'error' ? 'bad' : payload?.reconciliation?.status === 'degraded' ? 'warn' : 'good'}>
             reconciliation: {payload?.reconciliation?.status || 'unknown'}
           </Pill>
-          {stale ? <Pill tone="warn">Данные устарели</Pill> : <Pill tone="good">fresh</Pill>}
+          <Pill tone={observation.state === 'QUALIFIED' ? 'good' : observation.state === 'DEGRADED' ? 'warn' : 'bad'}>
+            evidence: {observation.state || 'DEGRADED'}
+          </Pill>
+          {stale ? <Pill tone="warn">Данные устарели</Pill> : null}
         </div>
         {payload?.reconciliation?.reason ? <p className="muted">{payload.reconciliation.reason}</p> : null}
         <div className="stats compact">
@@ -4020,8 +4024,38 @@ function PaperLab() {
           <Stat label="Fees" value={kopecks(metrics.feesKopecks)} />
           <Stat label="Turnover" value={kopecks(metrics.turnoverKopecks)} />
         </div>
-        <p className="muted">Equity curve и benchmark пока недоступны: нужен воспроизводимый time-series evidence layer.</p>
+        <p className="muted">Missing, stale и approximate evidence всегда отображается как DEGRADED/INSUFFICIENT-EVIDENCE.</p>
       </Card>
+      <Card title="Observation experiment" className="wide">
+        <div className="stats compact">
+          <Stat label="Experiment" value={observation.experiment?.experimentId || 'missing'} />
+          <Stat label="Worker" value={observation.worker?.state || 'missing'} />
+          <Stat label="Heartbeat" value={observation.worker?.latestActivityAt ? time(observation.worker.latestActivityAt) : 'missing'} />
+          <Stat label="Backlog" value={observation.source?.backlog ?? 'unknown'} />
+          <Stat label="Failures" value={observation.source?.failures ?? 'unknown'} />
+          <Stat label="Scenario parity" value={observation.parity?.complete ? '3/3' : `${observation.parity?.present?.length || 0}/3`} />
+          <Stat label="Benchmark" value={observation.benchmark?.state || 'unavailable'} />
+        </div>
+        <p className="muted">Config fingerprint: {observation.experiment?.configFingerprint || 'missing'} · immutable config read-only</p>
+        <p className="muted">Latest success: {observation.source?.latestSuccessAt ? time(observation.source.latestSuccessAt) : 'missing'} · latest failure: {observation.source?.latestFailureAt ? time(observation.source.latestFailureAt) : 'none'}</p>
+      </Card>
+      <Card title="Сценарии и evidence gate" className="wide"><Table rows={observation.scenarios || []} empty="Scenario state missing — DEGRADED" columns={[
+        { key: 'scenarioId', label: 'Scenario' }, { key: 'leverage', label: 'Leverage' },
+        { key: 'closedVirtualTrades', label: 'Closed', className: 'right' },
+        { key: 'marginBreachCount', label: 'Margin breaches', className: 'right' },
+        { key: 'equity', label: 'Equity', className: 'right', render: (row) => kopecks(row.margin?.equityKopecks) },
+        { key: 'drawdown', label: 'Max drawdown', className: 'right', render: (row) => row.drawdown ? `${kopecks(row.drawdown.maximumDrawdownKopecks)} · ${row.drawdown.maximumDrawdownBps} bps` : 'missing' },
+        { key: 'costs', label: 'Debt / interest', className: 'right', render: (row) => `${kopecks(row.costs?.debtKopecks)} / ${kopecks(row.costs?.accruedInterestKopecks)}` },
+        { key: 'qualityReasons', label: 'Alerts', render: (row) => (row.qualityReasons || []).join(', ') || 'none' }
+      ]} /></Card>
+      <Card title="Equity curve (bounded)" className="wide"><Table rows={observation.equityCurve || []} empty="Equity curve missing — INSUFFICIENT-EVIDENCE" columns={[
+        { key: 'observedAt', label: 'Observed', render: (row) => time(row.observedAt) },
+        { key: 'scenarioId', label: 'Scenario' },
+        { key: 'equityKopecks', label: 'Equity', className: 'right', render: (row) => kopecks(row.equityKopecks) }
+      ]} /></Card>
+      <Card title="Gate reasons / cumulative alerts" className="wide"><Table rows={observation.alerts || []} empty="Evidence alerts missing — DEGRADED" columns={[
+        { key: 'severity', label: 'Severity' }, { key: 'reason', label: 'Reason' }
+      ]} /></Card>
       <Card title="Позиции" className="wide"><Table rows={payload?.positions || []} empty="Открытых virtual-позиций нет" columns={[
         { key: 'instrumentId', label: 'Инструмент' }, { key: 'quantityLots', label: 'Лоты', className: 'right' },
         { key: 'costBasisKopecks', label: 'Себестоимость', className: 'right', render: (row) => kopecks(row.costBasisKopecks) },

@@ -16,7 +16,9 @@ const emptyStore = (listAccounts: PaperLabReadModelStore['listAccounts']): Paper
     async listFills() { return []; },
     async listReconciliationFills() { return []; },
     async listReconciliationLedger() { return []; },
-    async listDecisions() { return []; }
+    async listDecisions() { return []; },
+    async listObservationAccounts() { return []; },
+    async loadObservationRows() { return undefined; }
 });
 
 describe('Paper Lab bounded read model', () => {
@@ -64,5 +66,41 @@ describe('Paper Lab bounded read model', () => {
         now += 1;
         await service.load(undefined, 50);
         assert.equal(calls, 2);
+    });
+
+    it('renders missing and stale observation evidence as insufficient, never qualified', async () => {
+        const store = {
+            ...emptyStore(async () => []),
+            async loadObservationRows() {
+                return {
+                    experiment: {
+                        experiment_id: 'exp-1', config_fingerprint: 'a'.repeat(64),
+                        config_json: JSON.stringify({ experimentId: 'exp-1', scenarios: [
+                            { scenarioId: '1.0x', leverage: 1 }, { scenarioId: '1.2x', leverage: 1.2 },
+                            { scenarioId: '1.5x', leverage: 1.5 }
+                        ], startingCashKopecks: '100000000', benchmarkId: 'IMOEX' }),
+                        created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z'
+                    },
+                    lease: { owner_id: 'worker', expires_at: '2026-08-01T00:10:00Z', updated_at: '2026-08-01T00:00:00Z' },
+                    states: [], ticks: [], checkpoint: undefined,
+                    source: [{ status: 'backlog', count: '7', latest_at: '2026-08-01T00:00:00Z' },
+                        { status: 'failed', count: '2', latest_at: '2026-08-01T00:01:00Z' }]
+                };
+            }
+        } as PaperLabReadModelStore;
+        const service = new PaperLabReadModelService(store, () => new Date('2026-08-02T00:00:00Z'));
+        const payload = await service.load('virtual:exp-1:1.0x', 50);
+        const monitoring = payload.observation as {
+            state: string; worker: { state: string }; parity: { complete: boolean };
+            source: { backlog: number; failures: number }; benchmark: { state: string }; reasons: string[];
+        };
+        assert.equal(monitoring.state, 'INSUFFICIENT-EVIDENCE');
+        assert.equal(monitoring.worker.state, 'stale');
+        assert.equal(monitoring.parity.complete, false);
+        assert.equal(monitoring.source.backlog, 7);
+        assert.equal(monitoring.source.failures, 2);
+        assert.equal(monitoring.benchmark.state, 'configured-unavailable');
+        assert.equal(monitoring.reasons.includes('WORKER_HEARTBEAT_STALE'), true);
+        assert.equal(monitoring.reasons.includes('THREE_SCENARIO_PARITY_FAILED'), true);
     });
 });

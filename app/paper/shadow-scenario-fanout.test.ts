@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import type { CompleteShadowSourceTick, ShadowSourceDecisionEvent, ShadowSourceEvent } from './shadow-source-outbox';
 import { OBSERVATION_SCENARIOS } from './observation-persistence';
 import type { ObservationExperimentConfig } from './observation-persistence';
-import { DEFAULT_MARGIN_SCENARIO_POLICIES } from '../virtual/margin';
+import { DEFAULT_MARGIN_SCENARIO_POLICIES, marginRiskSnapshot } from '../virtual/margin';
 import type { AtomicShadowFanoutCommit, AtomicShadowFanoutRepository, ShadowScenarioState } from './shadow-scenario-fanout';
 import { openShadowScenarioStates, ShadowScenarioFanoutProcessor } from './shadow-scenario-fanout';
 import { evaluateObservationGate, replayObservationTicks } from '../virtual/observation-runner';
@@ -178,5 +178,87 @@ describe('three-scenario shadow fanout', () => {
         assert.equal(repository.states?.every(state => state.decisionAudit.at(-1)?.executionStatus === 'margin-rejected'), true);
         assert.equal(repository.states?.every(state => state.margin.audit.at(-1)?.outcome === 'rejected'), true);
         assert.equal(evidence.snapshots.every(snapshot => snapshot.evidenceQualityReasons?.includes('SCENARIO_MARGIN_REJECTION')), true);
+    });
+
+    it('persists breach as reduce-only, then deterministically liquidates and recovers', async () => {
+        const bounded = Object.freeze({ ...config, startingCashKopecks: '1010',
+            executionPolicy: Object.freeze({ feeBasisPoints: 100, slippageBasisPoints: 100, maxQuoteAgeMs: 5_000 }) });
+        const repository = new MemoryAtomicRepository();
+        const processor = new ShadowScenarioFanoutProcessor(bounded, repository);
+        await processor.process(tick([decision({ approvedLots: 14, lotSize: 1,
+            quote: { ...decision().quote, bidKopecks: 100n, askKopecks: 100n, markKopecks: 100n } })], 'pm07-open'));
+        const shock: ShadowSourceEvent = { kind: 'mark', eventId: 'pm07-shock', sourceAccountId: 'source-account',
+            instrumentId: 'figi-1', markedAt: '2026-08-31T12:01:00.000Z', quote: { bidKopecks: 37n, askKopecks: 37n,
+                markKopecks: 37n, quoteObservedAt: '2026-08-31T12:01:00.000Z', quoteTimestampQuality: 'exact-source-timestamp' } };
+        await processor.process(tick([shock], 'pm07-shock', '2026-08-31T12:01:00.000Z'));
+        const breached = repository.states?.find(state => state.scenarioId === '1.5x');
+        assert.equal(breached?.safetyMode, 'reduce-only');
+        assert.deepEqual(breached?.liquidationPlan?.instrumentIds, ['figi-1']);
+        assert.equal(breached?.safetyAudit.at(-1)?.outcome, 'planned');
+
+        await processor.process(tick([{ ...shock, eventId: 'pm07-liquidation-mark', markedAt: '2026-08-31T12:01:01.000Z',
+            quote: { ...shock.quote, quoteObservedAt: '2026-08-31T12:01:01.000Z' } }], 'pm07-liquidate', '2026-08-31T12:01:01.000Z'));
+        const recovered = repository.states?.find(state => state.scenarioId === '1.5x');
+        assert.equal(recovered?.margin.positions.length, 0);
+        assert.equal(recovered?.safetyMode, 'normal');
+        assert.equal(recovered?.liquidationPlan, undefined);
+        assert.equal(recovered?.marginBreachCount, 1);
+        assert.equal(recovered?.liquidationFailureCount, 0);
+        assert.equal(recovered?.safetyAudit.at(-1)?.outcome, 'applied');
+        const liquidation = recovered?.margin.audit.find(entry => entry.eventId.includes('forced-liquidate:'));
+        assert.equal(liquidation?.event.kind, 'sell');
+        assert.equal(liquidation?.event.kind === 'sell' && liquidation.event.executionPriceKopecks, 36n);
+        assert.equal(liquidation?.event.kind === 'sell' && liquidation.event.feeKopecks, 6n);
+        const risk = recovered && marginRiskSnapshot(recovered.margin);
+        assert.equal(risk?.equityKopecks, 78n);
+        assert.equal(recovered?.margin.cashKopecks, 78n);
+        assert.equal(recovered?.margin.debtKopecks, 0n);
+        assert.equal(risk?.maintenanceSatisfied, true);
+    });
+
+    it('rejects averaging in reduce-only locally while preserving other scenarios and cumulative failures', async () => {
+        const bounded = Object.freeze({ ...config, startingCashKopecks: '1010',
+            executionPolicy: Object.freeze({ feeBasisPoints: 100, slippageBasisPoints: 0, maxQuoteAgeMs: 5_000 }) });
+        const repository = new MemoryAtomicRepository();
+        const processor = new ShadowScenarioFanoutProcessor(bounded, repository);
+        await processor.process(tick([decision({ approvedLots: 14, lotSize: 1,
+            quote: { ...decision().quote, bidKopecks: 100n, askKopecks: 100n, markKopecks: 100n } })], 'isolation-open'));
+        const shock: ShadowSourceEvent = { kind: 'mark', eventId: 'isolation-shock', sourceAccountId: 'source-account',
+            instrumentId: 'figi-1', markedAt: '2026-08-31T12:01:00.000Z', quote: { bidKopecks: 37n, askKopecks: 37n,
+                markKopecks: 37n, quoteObservedAt: '2026-08-31T12:01:00.000Z', quoteTimestampQuality: 'exact-source-timestamp' } };
+        await processor.process(tick([shock], 'isolation-shock', '2026-08-31T12:01:00.000Z'));
+        await processor.process(tick([decision({ eventId: 'no-average', decisionId: 'no-average', instrumentId: 'figi-2',
+            approvedLots: 1, lotSize: 1, evaluatedAt: '2026-08-31T12:01:01.000Z', quote: { ...decision().quote,
+                quoteObservedAt: '2026-08-31T12:01:01.000Z' } })], 'isolation-buy', '2026-08-31T12:01:01.000Z'));
+        const reduced = repository.states?.find(state => state.scenarioId === '1.5x');
+        assert.equal(reduced?.decisionAudit.at(-1)?.rejectionReason, 'scenario is reduce-only');
+        assert.equal(reduced?.margin.positions.some(position => position.instrumentId === 'figi-2'), false);
+        assert.equal(reduced?.liquidationFailureCount, 1);
+        assert.equal(repository.states?.filter(state => state.scenarioId !== '1.5x')
+            .every(state => state.margin.positions.some(position => position.instrumentId === 'figi-2')), true);
+    });
+
+    it('keeps liquidation plan atomic across crash and applies replay once', async () => {
+        const bounded = Object.freeze({ ...config, startingCashKopecks: '1010',
+            executionPolicy: Object.freeze({ feeBasisPoints: 100, slippageBasisPoints: 0, maxQuoteAgeMs: 5_000 }) });
+        const repository = new MemoryAtomicRepository();
+        const processor = new ShadowScenarioFanoutProcessor(bounded, repository);
+        await processor.process(tick([decision({ approvedLots: 14, lotSize: 1,
+            quote: { ...decision().quote, bidKopecks: 100n, askKopecks: 100n, markKopecks: 100n } })], 'replay-open'));
+        const shock: ShadowSourceEvent = { kind: 'mark', eventId: 'replay-shock', sourceAccountId: 'source-account',
+            instrumentId: 'figi-1', markedAt: '2026-08-31T12:01:00.000Z', quote: { bidKopecks: 37n, askKopecks: 37n,
+                markKopecks: 37n, quoteObservedAt: '2026-08-31T12:01:00.000Z', quoteTimestampQuality: 'exact-source-timestamp' } };
+        await processor.process(tick([shock], 'replay-shock', '2026-08-31T12:01:00.000Z'));
+        const before = repository.states;
+        const liquidationTick = tick([{ ...shock, eventId: 'replay-liquidate', markedAt: '2026-08-31T12:01:01.000Z',
+            quote: { ...shock.quote, quoteObservedAt: '2026-08-31T12:01:01.000Z' } }], 'replay-liquidate', '2026-08-31T12:01:01.000Z');
+        repository.failNext = true;
+        await assert.rejects(processor.process(liquidationTick), /simulated crash/);
+        assert.deepEqual(repository.states, before);
+        await processor.process(liquidationTick);
+        await processor.process(liquidationTick);
+        const state = repository.states?.find(item => item.scenarioId === '1.5x');
+        assert.equal(state?.safetyAudit.filter(entry => entry.outcome === 'applied').length, 1);
+        assert.equal(state?.margin.positions.length, 0);
     });
 });

@@ -13,9 +13,23 @@ import {
 } from '../virtual/margin';
 import {
     DeterministicVirtualExecutionSimulator,
-    VirtualExecutionResult
+    VirtualExecutionResult,
+    VirtualFill
 } from '../virtual/execution';
 import type { ObservationTick } from '../virtual/observation-runner';
+
+export interface ShadowLiquidationPlan {
+    readonly planId: string;
+    readonly createdAt: string;
+    readonly instrumentIds: readonly string[];
+}
+
+export interface ShadowSafetyAuditEntry {
+    readonly auditId: string;
+    readonly occurredAt: string;
+    readonly outcome: 'planned' | 'applied' | 'rejected';
+    readonly reason: string;
+}
 
 export const FANOUT_SCENARIO_IDS = Object.freeze(['1.0x', '1.2x', '1.5x'] as const);
 export type FanoutScenarioId = typeof FANOUT_SCENARIO_IDS[number];
@@ -28,6 +42,10 @@ export interface ShadowScenarioState {
     readonly invariantViolationCount: number;
     readonly marginBreachCount: number;
     readonly rejectedExecutionCount: number;
+    readonly safetyMode: 'normal' | 'reduce-only';
+    readonly liquidationPlan?: ShadowLiquidationPlan;
+    readonly liquidationFailureCount: number;
+    readonly safetyAudit: readonly ShadowSafetyAuditEntry[];
     readonly qualityReasons: readonly string[];
     readonly decisionAudit: readonly {
         readonly eventId: string;
@@ -84,6 +102,9 @@ export const openShadowScenarioStates = (
         invariantViolationCount: 0,
         marginBreachCount: 0,
         rejectedExecutionCount: 0,
+        safetyMode: 'normal',
+        liquidationFailureCount: 0,
+        safetyAudit: Object.freeze([]),
         qualityReasons: Object.freeze(['BENCHMARK_NOT_IMPLEMENTED']),
         decisionAudit: Object.freeze([])
     });
@@ -98,6 +119,88 @@ const qualityForEvent = (event: ShadowSourceEvent) => {
 
 const availableLots = (state: ShadowScenarioState, instrumentId: string) =>
     state.margin.positions.find(position => position.instrumentId === instrumentId)?.quantityLots ?? 0;
+
+const liquidationOrder = (state: ShadowScenarioState) => [...state.margin.positions].sort((left, right) => {
+    const leftValue = left.markPriceKopecks * BigInt(left.lotSize) * BigInt(left.quantityLots);
+    const rightValue = right.markPriceKopecks * BigInt(right.lotSize) * BigInt(right.quantityLots);
+    if (leftValue !== rightValue) return leftValue > rightValue ? -1 : 1;
+    return left.instrumentId.localeCompare(right.instrumentId);
+});
+
+const executePendingLiquidation = (
+    state: ShadowScenarioState,
+    tick: CompleteShadowSourceTick,
+    config: ObservationExperimentConfig
+): ShadowScenarioState => {
+    const plan = state.liquidationPlan;
+    if (!plan) return state;
+    state = accrueInterest(state, tick.completedAt, `pm07:${tick.sourceTickId}`);
+    const quotes = new Map(tick.events.map(event => [event.instrumentId, event.quote]));
+    const simulator = new DeterministicVirtualExecutionSimulator();
+    const fills: { instrumentId: string; fill?: VirtualFill; reason?: string }[] = plan.instrumentIds.map(instrumentId => {
+        const quote = quotes.get(instrumentId);
+        const position = state.margin.positions.find(item => item.instrumentId === instrumentId);
+        if (!quote || !position) return { instrumentId, reason: `missing liquidation input: ${instrumentId}` };
+        const execution = simulator.execute({
+            id: `liquidate:${plan.planId}:${instrumentId}`,
+            virtualAccountId: state.virtualAccountId,
+            instrumentId,
+            side: 'sell',
+            quantityLots: position.quantityLots,
+            submittedAt: tick.completedAt
+        }, {
+            instrumentId,
+            bidKopecks: quote.bidKopecks,
+            askKopecks: quote.askKopecks,
+            lotSize: position.lotSize,
+            observedAt: quote.quoteObservedAt
+        }, {
+            now: tick.completedAt,
+            cashKopecks: state.margin.cashKopecks,
+            availableLots: position.quantityLots
+        }, config.executionPolicy);
+        return execution.status === 'filled' ? { instrumentId, fill: execution.fill }
+            : { instrumentId, reason: `liquidation execution rejected: ${instrumentId}: ${execution.reason}` };
+    });
+    const failure = fills.find(item => item.reason !== undefined);
+    let margin = state.margin;
+    let appliedCount = 0;
+    let failureReason: string | undefined = failure?.reason;
+    if (!failureReason) {
+        for (const candidate of fills) {
+            if (marginRiskSnapshot(margin).maintenanceSatisfied) break;
+            if (!candidate.fill) throw new Error(`prevalidated liquidation fill missing: ${candidate.instrumentId}`);
+            const fill = candidate.fill;
+            const applied = applyMarginScenarioEvent(margin, {
+                id: `forced-${fill.orderId}`,
+                kind: 'sell', instrumentId: fill.instrumentId, quantityLots: fill.quantityLots,
+                executionPriceKopecks: fill.executionPriceKopecks, feeKopecks: fill.feeKopecks,
+                occurredAt: fill.filledAt
+            });
+            if (applied.outcome === 'rejected') {
+                failureReason = `liquidation margin rejected: ${fill.instrumentId}: ${applied.reason ?? 'unknown'}`;
+                break;
+            }
+            margin = applied.state;
+            appliedCount += 1;
+        }
+    }
+    const rejected = failureReason !== undefined;
+    return applyQuality(Object.freeze({
+        ...state,
+        margin: rejected ? state.margin : margin,
+        safetyMode: rejected ? 'reduce-only' : 'normal',
+        ...(rejected ? { liquidationPlan: plan } : { liquidationPlan: undefined }),
+        liquidationFailureCount: state.liquidationFailureCount + (rejected ? 1 : 0),
+        closedVirtualTrades: state.closedVirtualTrades + (rejected ? 0 : appliedCount),
+        safetyAudit: Object.freeze([...state.safetyAudit, Object.freeze({
+            auditId: `liquidation:${tick.sourceTickId}:${state.scenarioId}`,
+            occurredAt: tick.completedAt,
+            outcome: rejected ? 'rejected' : 'applied',
+            reason: failureReason ?? 'forced liquidation restored maintenance margin with configured execution costs'
+        })])
+    }), rejected ? ['LIQUIDATION_EXECUTION_FAILED'] : []);
+};
 
 const accrueInterest = (state: ShadowScenarioState, at: string, eventId: string): ShadowScenarioState => {
     if (state.margin.debtKopecks === 0n || state.margin.interestAccruedThroughAt === at) return state;
@@ -158,6 +261,16 @@ const processDecision = async (
         source: event.sourceAccountId,
         reason: event.reason
     });
+    if (state.safetyMode === 'reduce-only' && adaptation.intent?.side === 'buy') {
+        return applyQuality(Object.freeze({
+            ...state,
+            rejectedExecutionCount: state.rejectedExecutionCount + 1,
+            decisionAudit: Object.freeze([...state.decisionAudit, Object.freeze({
+                eventId: event.eventId, decisionId: event.decisionId, action: event.action, status: event.status,
+                executionStatus: 'margin-rejected' as const, rejectionReason: 'scenario is reduce-only'
+            })])
+        }), ['SCENARIO_REDUCE_ONLY_REJECTION']);
+    }
     await runner.run({
         adaptation,
         ...(adaptation.intent ? {
@@ -195,6 +308,9 @@ const processDecision = async (
         } else {
             state = Object.freeze({ ...state, margin: applied.state,
                 closedVirtualTrades: state.closedVirtualTrades + (fill.side === 'sell' ? 1 : 0) });
+            if (fill.side === 'sell' && marginRiskSnapshot(applied.state).maintenanceSatisfied) {
+                state = Object.freeze({ ...state, safetyMode: 'normal', liquidationPlan: undefined });
+            }
         }
     }
     return Object.freeze({
@@ -227,7 +343,7 @@ export class ShadowScenarioFanoutProcessor {
         }
         const previous = await this.repository.loadOrInitialize(this.config, sourceTick.startedAt);
         if (previous.length !== 3) throw new Error('atomic fanout requires exactly three scenario states');
-        let next = [...previous];
+        let next = previous.map(state => executePendingLiquidation(state, sourceTick, this.config));
         const explicitMarks = new Set(sourceTick.events.filter(event => event.kind === 'mark').map(event => event.instrumentId));
         for (const event of sourceTick.events) {
             next = await Promise.all(next.map(async scenario => {
@@ -249,11 +365,25 @@ export class ShadowScenarioFanoutProcessor {
             const priorRisk = marginRiskSnapshot(before.margin);
             const risk = marginRiskSnapshot(state.margin);
             if (!risk.reconciled) throw new Error(`scenario accounting invariant corrupted: ${state.scenarioId}`);
+            const newlyBreached = priorRisk.maintenanceSatisfied && !risk.maintenanceSatisfied;
+            const plan = newlyBreached ? Object.freeze({
+                planId: `pm07:${sourceTick.sourceTickId}:${state.scenarioId}`,
+                createdAt: sourceTick.completedAt,
+                instrumentIds: Object.freeze(liquidationOrder(state).map(position => position.instrumentId))
+            }) : state.liquidationPlan;
             return Object.freeze({
                 ...state,
                 invariantViolationCount: state.invariantViolationCount,
                 marginBreachCount: state.marginBreachCount
-                    + (priorRisk.maintenanceSatisfied && !risk.maintenanceSatisfied ? 1 : 0)
+                    + (newlyBreached ? 1 : 0),
+                safetyMode: newlyBreached ? 'reduce-only' : state.safetyMode,
+                ...(plan ? { liquidationPlan: plan } : {}),
+                safetyAudit: newlyBreached ? Object.freeze([...state.safetyAudit, Object.freeze({
+                    auditId: `plan:${sourceTick.sourceTickId}:${state.scenarioId}`,
+                    occurredAt: sourceTick.completedAt,
+                    outcome: 'planned' as const,
+                    reason: 'maintenance margin breached; deterministic virtual liquidation planned'
+                })]) : state.safetyAudit
             });
         });
         const evidenceTick: ObservationTick = Object.freeze({

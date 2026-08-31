@@ -11,11 +11,13 @@ const { formatPaperKopecks } = require(path.resolve('ui/src/paper-money.cjs')) a
 describe('Paper Lab dashboard contract', () => {
     it('renders explicit loading, empty, stale, error and unavailable evidence states', () => {
         const source = readFileSync('ui/src/main.jsx', 'utf8');
-        for (const phrase of ['Загрузка Paper Lab', 'Эксперименты не созданы', 'Данные устарели', 'Ошибка Paper Lab', 'Equity curve и benchmark пока недоступны']) {
+        for (const phrase of ['Загрузка Paper Lab', 'Эксперименты не созданы', 'Данные устарели', 'Ошибка Paper Lab',
+            'INSUFFICIENT-EVIDENCE', 'Observation experiment', 'Equity curve (bounded)', 'Gate reasons / cumulative alerts']) {
             assert(source.includes(phrase), `missing UI state: ${phrase}`);
         }
         assert(source.includes('/api/paper-lab?limit=50'));
         assert(source.includes('virtualAccountId=${encodeURIComponent(nextId)}'));
+        assert(!source.includes('Paper Lab trade'));
     });
 
     it('keeps PaperLab at module scope and forbids lossy Number conversion', () => {
