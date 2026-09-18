@@ -1,6 +1,18 @@
 # Current State
 
-Last updated: 2026-06-08.
+Runtime safety update: 2026-09-18. Older feature notes below retain their original context.
+
+## Verified 2026-09-18
+
+- Historical reconciliation verified 513 executions and repaired 288 existing
+  rows; no missing executions or remaining lot/position mismatches were found.
+- Current-account broker trade P/L: gross -1322.02 RUB, commissions 125.66 RUB,
+  net -1447.68 RUB. These are trade results, not the account balance.
+- Active robot release: `/home/mil/releases/robot-ti-safety-42f5457`, production
+  base `d2cbd7d` plus the reviewed safety overlay; see [[RUNBOOK]].
+- Effective actions remain `sell`; trading is explicitly paused to preserve the
+  old runtime's open circuit breaker across restart. Do not silently clear it.
+- Evidence, backups and verification: [[ACCOUNTING_AUDIT_2026-09-18]].
 
 ## Operating Mode
 

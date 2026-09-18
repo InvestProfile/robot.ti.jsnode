@@ -8,9 +8,9 @@ If a new AI thread needs to work on this project, start by reading only this fil
 
 - The robot is a Node.js/TypeScript T-Invest trading system with a React dashboard.
 - Main branch for active work: `test`.
-- Production server path: `/home/mil/robot.ti.jsnode`.
+- Production access: SSH alias `hyperion-trading`; robot runs from a read-only release under `/home/mil/releases`. See [[RUNBOOK]] for the active release/Compose file.
 - Local workspace path: `/Users/mil/Projects/my/tinkoff/robot.ti.jsnode`.
-- The server directory is not a git repository; deploy with `git archive HEAD | ssh ... tar -x`.
+- The server directories are not Git repositories. Stage reviewed `git archive` content into a new release and validate it before switching the robot-specific Compose mount.
 - Secrets live in `.env`; never commit tokens, passwords, cookies, or PSID values.
 
 ## Read This First
@@ -48,7 +48,7 @@ First read docs/START_HERE.md, then only the linked docs/files relevant to the t
 Do not load the whole project into context unless necessary.
 Preserve secrets. Do not print .env tokens/cookies.
 Use npm test and npm run lint before deploy when code changes.
-Server deploy is by git archive to /home/mil/robot.ti.jsnode, because the server folder is not a git repo.
+Server deploy uses git archive into a new immutable release; inspect docs/RUNBOOK.md and the active Compose mount first.
 ```
 
 ## Working Rules
