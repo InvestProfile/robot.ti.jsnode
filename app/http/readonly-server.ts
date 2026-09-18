@@ -55,6 +55,7 @@ import { isOpenOrderStatus, isRejectedOrderStatus } from '../utils/order-status'
 import StopLossStrategy from '../strategies/stop-loss.strategy';
 import PaperLabReadModelService from '../services/paper-lab-read-model.service';
 import { handlePaperReadApi } from '../paper/read-api';
+import { AuthCoreAdapter, authCoreConfig } from './auth-core';
 
 type AccountMode = 'trade' | 'observe';
 
@@ -1916,7 +1917,19 @@ const handleDeleteSocialProfile = async (req: IncomingMessage, res: ServerRespon
     }
 };
 
-const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedAt: string) => {
+const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedAt: string, authCore?: AuthCoreAdapter) => {
+    if (authCore && await authCore.handle(req, res, () => {
+        const runtime = getTradingRuntimeState();
+        return {
+            startedAt,
+            isTickRunning: runtime.isTickRunning,
+            lastTickStartedAt: runtime.lastTickStartedAt,
+            lastTickFinishedAt: runtime.lastTickFinishedAt,
+            consecutiveTickErrors: runtime.consecutiveTickErrors,
+            circuitBreakerOpen: runtime.circuitBreakerOpen
+        };
+    })) return;
+    if (authCore && !requireAuth(req, res)) return;
     const url = new URL(req.url ?? '/', 'http://localhost');
 
     if (url.pathname === '/api/health') {
@@ -2371,8 +2384,19 @@ export const startReadOnlyHttpServer = () => {
 
     const port = parsePort(env.ROBOT_HTTP_PORT);
     const startedAt = new Date().toISOString();
+    let authCore: AuthCoreAdapter | undefined;
+    try {
+        const config = authCoreConfig(process.env);
+        if (config) {
+            if (!env.ROBOT_WEB_PASSWORD || env.ROBOT_WEB_PASSWORD === config.secret) throw new Error('Separate operational credential required');
+            authCore = new AuthCoreAdapter(config);
+        }
+    } catch {
+        console.error('Read-only HTTP server disabled: invalid Auth Core configuration.');
+        return undefined;
+    }
     const server = http.createServer((req, res) => {
-        void handleRequest(req, res, startedAt).catch(error => {
+        void handleRequest(req, res, startedAt, authCore).catch(error => {
             console.error('HTTP API error:', error);
             json(res, 500, { error: error instanceof Error ? error.message : String(error) });
         });
