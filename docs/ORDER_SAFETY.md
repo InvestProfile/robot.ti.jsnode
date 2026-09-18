@@ -45,7 +45,8 @@ Accounting includes:
 - Immediate post-sell stop cancellation requires a fully filled sell and no remaining robot-owned lots for the account/instrument. New, partially filled, or position-reducing sells retain protection.
 - `trades.lot` stores the instrument lot size; `lotsRequested` stores the requested number of lots.
 - Reconciliation selects non-final orders before applying the 40-row batch limit, without an age cutoff. An in-process ID cursor rotates through batches, including persistent failures; incomplete filled records remain eligible for metadata repair. Restarting resets the cursor.
-- These changes affect future processing. Existing incorrect lot sizes or falsely rejected historical trades require a separate broker-backed accounting audit before repair.
+- Historical records were audited and repaired on 2026-09-18; see [[ACCOUNTING_AUDIT_2026-09-18]].
+- Order-state reconciliation stores positive `averagePositionPrice` as the per-security execution price. `GetOrderState.executedOrderPrice` is aggregate and must not overwrite that field.
 
 ## Broker Sell Sync
 

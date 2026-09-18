@@ -70,7 +70,10 @@ export default class OrderReconciliationService {
         const state = orderState as unknown as Record<string, unknown>;
         const status = normalizeOrderStatus(state.executionReportStatus);
         const orderType = normalizeOrderType(state.orderType);
-        const executedPrice = moneyParts(state.executedOrderPrice);
+        // GetOrderState.executedOrderPrice is an aggregate, unlike PostOrder.
+        // Persist the per-security average so multi-share lots keep their true price.
+        const averagePrice = moneyParts(state.averagePositionPrice);
+        const executedPrice = moneyValue(averagePrice.units, averagePrice.nano) > 0 ? averagePrice : moneyParts(undefined);
         const totalAmount = moneyParts(state.totalOrderAmount);
 
         await trade.update({

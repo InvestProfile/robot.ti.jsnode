@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { Op } from 'sequelize';
 import { TradesModel } from '../models/trades.model';
 import OrderReconciliationService from './order-reconciliation.service';
+import OrdersService from './orders.service';
+
+const reconcileTrade = OrderReconciliationService.reconcileTrade;
 
 // Evaluate the Sequelize predicates against an in-memory fixture; no broker or DB calls.
 const matches = (value: any, predicate: any): boolean => {
@@ -96,5 +99,37 @@ describe('order reconciliation scheduling', () => {
         ];
         await OrderReconciliationService.reconcileOpenOrders();
         assert.deepEqual(visited, [1, 2]);
+    });
+});
+
+
+describe('broker order-state price normalization', () => {
+    it('stores per-security price rather than the aggregate order value', async () => {
+        mock.method(OrdersService, 'getOrderState', async () => ({
+            orderId: 'broker-order', executionReportStatus: 1, lotsExecuted: 2,
+            executedOrderPrice: { units: 1659, nano: 600000000 },
+            averagePositionPrice: { units: 82, nano: 980000000 }
+        }));
+        const row: Record<string, unknown> = { accountId: 'test-account', orderId: 'broker-order' };
+        const model = { get: () => row, update: async (patch: Record<string, unknown>) => Object.assign(row, patch) } as unknown as TradesModel;
+        await reconcileTrade.call(OrderReconciliationService, model);
+        assert.equal(row.executedPriceUnits, 82);
+        assert.equal(row.executedPriceNano, 980000000);
+        assert.equal(row.lotsExecuted, 2);
+    });
+
+    it('preserves known unit price when no positive average is provided', async () => {
+        mock.method(OrdersService, 'getOrderState', async () => ({
+            orderId: 'broker-order', executionReportStatus: 4,
+            executedOrderPrice: { units: 829, nano: 800000000 },
+            averagePositionPrice: { units: 0, nano: 0 }
+        }));
+        const row: Record<string, unknown> = {
+            accountId: 'test-account', orderId: 'broker-order', executedPriceUnits: '82', executedPriceNano: '980000000'
+        };
+        const model = { get: () => row, update: async (patch: Record<string, unknown>) => Object.assign(row, patch) } as unknown as TradesModel;
+        await reconcileTrade.call(OrderReconciliationService, model);
+        assert.equal(row.executedPriceUnits, '82');
+        assert.equal(row.executedPriceNano, '980000000');
     });
 });
