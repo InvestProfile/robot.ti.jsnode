@@ -39,6 +39,14 @@ Accounting includes:
 - filled/executed orders;
 - confirmed broker orders eligible for P/L matching.
 
+## Tracked Order Regression Fixes
+
+- A protective-stop or position-state failure after a successful order must not overwrite the broker execution status or executed lots. Errors after a broker response are reconciled rather than classified as a submission rejection.
+- Immediate post-sell stop cancellation requires a fully filled sell and no remaining robot-owned lots for the account/instrument. New, partially filled, or position-reducing sells retain protection.
+- `trades.lot` stores the instrument lot size; `lotsRequested` stores the requested number of lots.
+- Reconciliation selects non-final orders before applying the 40-row batch limit, without an age cutoff. An in-process ID cursor rotates through batches, including persistent failures; incomplete filled records remain eligible for metadata repair. Restarting resets the cursor.
+- These changes affect future processing. Existing incorrect lot sizes or falsely rejected historical trades require a separate broker-backed accounting audit before repair.
+
 ## Broker Sell Sync
 
 Broker-side protective stops can fill without the main robot sell path creating a local trade row first. To keep P/L honest:

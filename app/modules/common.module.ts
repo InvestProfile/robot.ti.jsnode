@@ -426,7 +426,7 @@ export const ensureProtectiveStopsForOpenRobotPositions = async (config: RobotCo
     }
 };
 
-const submitTrackedOrder = async (input: {
+export const submitTrackedOrder = async (input: {
     config: RobotConfig;
     accountId: string;
     side: OrderSide;
@@ -469,12 +469,13 @@ const submitTrackedOrder = async (input: {
         accountId: input.accountId,
         ticker: input.ticker,
         name: input.name,
-        lot: input.quantityLots,
+        lot: input.lot,
         clientOrderId,
         lotsRequested: input.quantityLots,
         orderType: orderTypeLabel(orderType)
     });
 
+    let brokerAccepted = false;
     try {
         const orderResult = await orderService.postOrder(
             input.accountId,
@@ -491,6 +492,7 @@ const submitTrackedOrder = async (input: {
             clientOrderId
         );
 
+        brokerAccepted = true;
         const metadata = getOrderMetadata(orderResult);
 
         await TradesService.updateOrderMetadata(pendingTrade, {
@@ -499,40 +501,54 @@ const submitTrackedOrder = async (input: {
             instrumentId: input.instrumentUid
         });
 
-        if (input.side === ORDER_SIDE.BUY && !isRejectedOrderStatus(metadata.status)) {
-            const executedLots = Number(metadata.lotsExecuted ?? 0);
-            const entryPrice = moneyPartsToNumber(metadata.executedPriceUnits, metadata.executedPriceNano)
-                ?? moneyPartsToNumber(input.price.units, input.price.nano);
+        // Post-fill failures must never rewrite the broker's execution result.
+        try {
+            if (input.side === ORDER_SIDE.BUY && !isRejectedOrderStatus(metadata.status)) {
+                const executedLots = Number(metadata.lotsExecuted ?? 0);
+                const entryPrice = moneyPartsToNumber(metadata.executedPriceUnits, metadata.executedPriceNano)
+                    ?? moneyPartsToNumber(input.price.units, input.price.nano);
 
-            await PositionStateService.resetHighWaterMark({
-                accountId: input.accountId,
-                figi: input.figi,
-                instrumentUid: input.instrumentUid,
-                ticker: input.ticker,
-                name: input.name,
-                currentPrice: entryPrice ?? 0
-            });
-
-            if (executedLots > 0 && entryPrice) {
-                await placeProtectiveStopForBuy({
-                    config: input.config,
+                await PositionStateService.resetHighWaterMark({
                     accountId: input.accountId,
                     figi: input.figi,
                     instrumentUid: input.instrumentUid,
                     ticker: input.ticker,
                     name: input.name,
-                    quantityLots: executedLots,
-                    entryPrice
+                    currentPrice: entryPrice ?? 0
+                });
+
+                if (executedLots > 0 && entryPrice) {
+                    await placeProtectiveStopForBuy({
+                        config: input.config,
+                        accountId: input.accountId,
+                        figi: input.figi,
+                        instrumentUid: input.instrumentUid,
+                        ticker: input.ticker,
+                        name: input.name,
+                        quantityLots: executedLots,
+                        entryPrice
+                    });
+                }
+            }
+
+            if (input.side === ORDER_SIDE.SELL && metadata.status === 'EXECUTION_REPORT_STATUS_FILL') {
+                const ledger = await RobotPositionLedgerService.getLedger(input.config);
+                const stillOwned = ledger.items.some(item =>
+                    item.accountId === input.accountId
+                    && item.instrumentUid === input.instrumentUid
+                    && Number(item.lots) > 0
+                );
+                if (!stillOwned) await cancelProtectiveStopsAfterSell({
+                    config: input.config,
+                    accountId: input.accountId,
+                    instrumentUid: input.instrumentUid,
+                    ticker: input.ticker
                 });
             }
-        }
-
-        if (input.side === ORDER_SIDE.SELL && !isRejectedOrderStatus(metadata.status)) {
-            await cancelProtectiveStopsAfterSell({
-                config: input.config,
-                accountId: input.accountId,
-                instrumentUid: input.instrumentUid,
-                ticker: input.ticker
+        } catch (error) {
+            console.error('Post-order protection update failed:', {
+                clientOrderId,
+                error: getErrorMessage(error)
             });
         }
 
@@ -544,7 +560,7 @@ const submitTrackedOrder = async (input: {
             executionPolicy
         };
     } catch (error) {
-        if (isPostOrderRejectedError(error)) {
+        if (!brokerAccepted && isPostOrderRejectedError(error)) {
             await TradesService.markOrderRejected(pendingTrade, error);
             return {
                 orderResult: undefined,

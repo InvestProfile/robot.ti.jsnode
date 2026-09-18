@@ -1,10 +1,9 @@
 import { Op } from 'sequelize';
 import { TradesModel } from '../models/trades.model';
 import OrdersService from './orders.service';
-import { isFinalOrderStatus, normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
+import { FINAL_ORDER_STATUSES, isFinalOrderStatus, normalizeOrderStatus, normalizeOrderType } from '../utils/order-status';
 import { OrderIdType } from 'tinkoff-sdk-grpc-js/dist/generated/orders';
 
-const RECONCILIATION_LOOKBACK_MS = 36 * 60 * 60 * 1000;
 const RECONCILIATION_LIMIT = 40;
 
 const moneyParts = (value: unknown) => {
@@ -34,6 +33,7 @@ const isResourceExhausted = (error: unknown) => {
 };
 
 export default class OrderReconciliationService {
+    private static reconciliationCursor = 0;
     private static async getOrderState(accountId: string, orderId: string, clientOrderId?: string) {
         if (clientOrderId) {
             try {
@@ -92,7 +92,6 @@ export default class OrderReconciliationService {
     }
 
     static async reconcileOpenOrders() {
-        const since = new Date(Date.now() - RECONCILIATION_LOOKBACK_MS);
         const trades = await TradesModel.findAll({
             where: {
                 [Op.and]: [
@@ -102,10 +101,20 @@ export default class OrderReconciliationService {
                             { clientOrderId: { [Op.ne]: null } }
                         ]
                     },
-                    { createdAt: { [Op.gte]: since } }
+                    { id: { [Op.gt]: this.reconciliationCursor } },
+                    { [Op.or]: [
+                        { status: { [Op.notIn]: FINAL_ORDER_STATUSES } },
+                        { status: null },
+                        // Repair filled rows whose execution metadata is incomplete.
+                        { status: 'EXECUTION_REPORT_STATUS_FILL', [Op.or]: [
+                            { lotsExecuted: null },
+                            { lotsExecuted: { [Op.lte]: 0 } },
+                            { executedPriceUnits: null, totalAmountUnits: null }
+                        ] }
+                    ] }
                 ]
             } as any,
-            order: [['createdAt', 'DESC']],
+            order: [['id', 'ASC']],
             limit: RECONCILIATION_LIMIT
         });
 
@@ -115,6 +124,7 @@ export default class OrderReconciliationService {
         let failed = 0;
 
         for (const trade of trades) {
+            this.reconciliationCursor = trade.id;
             const data = trade.get({ plain: true }) as Record<string, unknown>;
             const accountId = data.accountId ? String(data.accountId) : undefined;
             const orderId = data.orderId ? String(data.orderId) : undefined;
@@ -144,6 +154,10 @@ export default class OrderReconciliationService {
                     break;
                 }
             }
+        }
+
+        if (trades.length === 0 || (trades.length < RECONCILIATION_LIMIT && this.reconciliationCursor === trades[trades.length - 1]?.id)) {
+            this.reconciliationCursor = 0;
         }
 
         if (checked > 0 || failed > 0) {

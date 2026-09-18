@@ -5,13 +5,14 @@ import {
     orderTypeToJSON
 } from 'tinkoff-sdk-grpc-js/dist/generated/orders';
 
-const FINAL_STATUSES = new Set([
+export const FINAL_ORDER_STATUSES = [
     'EXECUTION_REPORT_STATUS_FILL',
     'EXECUTION_REPORT_STATUS_REJECTED',
     'EXECUTION_REPORT_STATUS_CANCELLED',
     'LOCAL_POST_REJECTED',
     'LOCAL_VALIDATION_FAILED'
-]);
+];
+const FINAL_STATUSES = new Set(FINAL_ORDER_STATUSES);
 
 const REJECTED_STATUSES = new Set([
     'EXECUTION_REPORT_STATUS_REJECTED',
