@@ -48,7 +48,8 @@ logout.addEventListener('submit', async event => {
  try {
   const r = await request('/auth/logout', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(new FormData(logout)) });
   if (r.status === 401 || r.status === 403) { deny(r.status); return; }
-  if (!r.ok && r.status !== 503) throw new Error('logout');
+  const result = await r.json();
+  if (!(r.ok && result.ok === true) && !(r.status === 503 && result.remoteRevoked === false)) throw new Error('logout');
   byId('snapshot').hidden = true; byId('signin').hidden = false;
   notice(r.ok ? 'Вы вышли из T-Invest Robot.' : 'Локальный сеанс завершён. Auth недоступен: завершение удалённого сеанса не подтверждено.');
  } catch { byId('snapshot').hidden = true; notice('Не удалось подтвердить выход. Проверьте соединение и повторите попытку.'); }
