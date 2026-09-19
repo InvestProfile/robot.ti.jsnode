@@ -1,5 +1,8 @@
 # Auth Core SSO — T-Invest, 2026-09-19
 
+После исходного rollout выполнен [UX redirect update fe755bd](AUTH-CORE-UX-20260919.md);
+текущий consumer release указан там и в RUNBOOK. Ниже — evidence исходной активации.
+
 Auth owner принял серверный контракт и этот отчёт. Дополнение:
 [read-only evidence subject/secret, logging, probes](AUTH-CORE-HANDOFF-20260919.md).
 

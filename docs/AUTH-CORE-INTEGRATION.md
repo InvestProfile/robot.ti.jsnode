@@ -19,10 +19,10 @@ Auth owner принял серверный контракт и deployment report
 
 | Маршрут | Доступ / действие |
 | --- | --- |
-| GET / без credentials | Страница со ссылкой входа, новая вкладка, noopener/noreferrer |
+| GET / или /viewer без SSO-cookie | 303 /auth/login → существующий hosted Auth, без Basic prompt |
 | GET /auth/login | State + PKCE S256, транзакция на 10 минут, HTTPS hosted Auth |
 | GET /auth/callback | Однократное потребление локальной транзакции, exchange + introspect |
-| GET /viewer | Отдельная серверная страница состояния, без React/admin интерфейса |
+| GET /viewer с действующей SSO | Каноническая защищённая страница состояния, без React/admin интерфейса; GET / после introspect → 303 /viewer |
 | GET /api/viewer/status | Та же минимальная проекция состояния в JSON |
 | POST /auth/logout | Точная Origin + CSRF, удаление локальной сессии и remote revoke |
 | Все остальные маршруты/методы с SSO-cookie | Запрет; сначала актуальная introspection |

@@ -3,9 +3,9 @@
 ## Verified 2026-09-19 — Auth SSO
 
 T-Invest SSO activated for admin viewer at https://tinvest.robot.vpn/.
-Active release: `/home/mil/releases/robot-ti-sso-b2581b9`, safety base plus
+Active release: `/home/mil/releases/robot-ti-sso-ux-fe755bd`, safety base plus
 Auth adapter only. Trading remains paused, actions sell-only. Backend loopback
-5757; VPN nginx HTTPS entry. See [[AUTH-CORE-DEPLOYMENT-20260919]] for evidence,
+5757; VPN nginx HTTPS entry. See [[AUTH-CORE-UX-20260919]] and [[AUTH-CORE-DEPLOYMENT-20260919]] for evidence,
 CA trust requirements and rollback. Older release notes below are historical.
 
 Runtime safety update: 2026-09-18. Older feature notes below retain their original context.
