@@ -102,7 +102,7 @@ test('successful PKCE login uses isolated secure cookies; every read introspects
     for (const path of ['/viewer', '/api/viewer/status']) assert.equal((await f.request(path, { cookie })).status, 200);
     assert.equal(f.calls.filter(call => call.path === 'introspect').length, 3);
     assert.equal(f.reads(), 2);
-    assert.match((await f.request('/')).data, /target="_blank" rel="noopener noreferrer"/);
+    assert.equal((await f.request('/')).headers.location, '/auth/login');
 });
 
 test('direct requests and forged actor/role denied, Basic is only an explicit separate path', async () => {
@@ -110,7 +110,7 @@ test('direct requests and forged actor/role denied, Basic is only an explicit se
     assert.equal((await f.request('/api/status', { owner_id: 'subject-1', role: 'admin' })).status, 401);
     assert.equal((await f.request('/api/status', { authorization: 'Basic synthetic' })).handled, false);
     assert.equal((await f.request('/api/status', { authorization: 'Basic synthetic', cookie: '__Host-tinvest-session=invalid' })).status, 401);
-    assert.equal((await f.request('/viewer', { authorization: 'Basic synthetic' })).status, 401);
+    assert.equal((await f.request('/viewer', { authorization: 'Basic synthetic' })).headers.location, '/auth/login');
     assert.equal(f.reads(), 0);
 });
 
@@ -214,3 +214,49 @@ test('malformed callback URL never escapes to application error logging; duplica
     const { cookie } = await f.login();
     assert.equal((await f.request('/viewer', { cookie: `${cookie}; ${cookie}` })).status, 401);
 });
+
+
+test('browser landing redirects through existing login; APIs and invalid cookies never redirect', async () => {
+    const f = fixture();
+    for (const path of ['/', '/viewer', '/?next=https://evil.example']) {
+        const r = await f.request(path);
+        assert.equal(r.status, 303);
+        assert.equal(r.headers.location, '/auth/login');
+        assert.equal(r.headers['www-authenticate'], undefined);
+        assert.equal(r.headers['cache-control'], 'no-store');
+    }
+    for (const path of ['/api/health', '/api/status', '/api/viewer/status', '/auth/callback']) {
+        const r = await f.request(path);
+        assert.equal(r.status, 401);
+        assert.equal(r.headers.location, undefined);
+    }
+    for (const path of ['/', '/viewer']) {
+        const r = await f.request(path, { cookie: '__Host-tinvest-session=invalid', authorization: 'Basic synthetic' });
+        assert.equal(r.status, 401);
+        assert.equal(r.headers.location, undefined);
+        assert.equal((await f.request(path, {}, 'POST')).status, 401);
+    }
+    assert.equal((await f.request('/', { authorization: 'Basic synthetic' })).handled, false);
+    assert.equal(f.reads(), 0);
+    const { cookie } = await f.login();
+    const r = await f.request('/', { cookie });
+    assert.equal(r.status, 303);
+    assert.equal(r.headers.location, '/viewer');
+    assert.equal((await f.request('/viewer', { cookie })).status, 200);
+});
+
+for (const reason of ['revoked', 'local-grant', 'outage']) {
+    test(`landing preserves ${reason} without redirect loops`, async () => {
+        for (const path of ['/', '/viewer']) {
+            const f = fixture();
+            const { cookie } = await f.login();
+            if (reason === 'revoked') f.active(false);
+            else if (reason === 'local-grant') f.subject('subject-2');
+            else f.failure('timeout');
+            const r = await f.request(path, { cookie });
+            assert.equal(r.status, reason === 'outage' ? 503 : 403);
+            assert.equal(r.headers.location, undefined);
+            assert.equal(f.reads(), 0);
+        }
+    });
+}

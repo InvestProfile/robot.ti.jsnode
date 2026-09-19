@@ -149,8 +149,8 @@ export class AuthCoreAdapter {
             }
             const session = this.sessions.get(sessionId);
             if (!session) {
-                if (req.method === 'GET' && url.pathname === '/' && sessionValues.length === 0) {
-                    return html('<h1>T-Invest Robot</h1><a href="/auth/login" target="_blank" rel="noopener noreferrer">Войти через Auth Core</a>');
+                if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/viewer') && sessionValues.length === 0) {
+                    return redirect('/auth/login');
                 }
                 return reply(401, { error: 'Authentication required', login: '/auth/login' });
             }
@@ -180,6 +180,7 @@ export class AuthCoreAdapter {
                 res.setHeader('set-cookie', cookie(SESSION, '', 0));
                 return reply(403, { error: 'Viewer access denied' });
             }
+            if (req.method === 'GET' && url.pathname === '/' && !url.search) return redirect('/viewer');
             if (req.method !== 'GET' || !viewerRoute || url.search) return reply(403, { error: 'Operation not permitted for SSO viewer' });
             if (url.pathname === '/api/viewer/status') return reply(200, { status: readStatus() });
             // Data is rendered as escaped JSON; no scripts, broker calls, account IDs or error text.
