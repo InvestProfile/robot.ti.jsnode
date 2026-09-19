@@ -13,21 +13,26 @@ repeated API-heavy reports during trading hours.
 
 ## Production inventory
 
-Verified on 2026-09-18:
+Updated on 2026-09-19; SSO rollout: [[AUTH-CORE-DEPLOYMENT-20260919]].
 
 - Use SSH alias `hyperion-trading` from Athena. It selects the project-specific
   key and remote user; bare `ssh igorjan94.ru` does not select that profile.
 - `/home/mil/robot.ti.jsnode` is not a Git repository and is not the running
   robot's source mount. The social collector still uses that directory.
 - The robot runs from a separate release mounted read-only at `/code`.
-- Active safety release:
-  `/home/mil/releases/robot-ti-safety-42f5457`.
+- Active safety + SSO release:
+  `/home/mil/releases/robot-ti-sso-b2581b9`.
 - Compose file:
-  `/home/mil/robot.ti.jsnode/docker-compose.robot-safety-42f5457.yml`.
+  `/home/mil/robot.ti.jsnode/docker-compose.robot-sso-b2581b9.yml`.
 - The robot's separate writable environment mount is `/run/robot-env`.
 - Preserve `ROBOT_LIVE_ALLOWED_ACTIONS=sell` and the existing shadow-outbox
   setting. `ROBOT_TRADING_PAUSED=true` carries forward the pre-deploy open
   circuit breaker across process restart; do not clear this pause implicitly.
+
+SSO viewer is limited to process diagnostics. The backend is loopback-only;
+use https://tinvest.robot.vpn with the dedicated public CA trusted. Auth
+backchannel routing, CA bundle and static container IP are part of the matched
+Compose configuration and must be retained.
 
 Inspect actual mounts and the effective API configuration before each deploy.
 Do not recreate the robot with the old default Compose file: that can restore
@@ -66,7 +71,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 hyperion-trading \
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=10 hyperion-trading \
   'docker-compose -p robottijsnode \
-    -f /home/mil/robot.ti.jsnode/docker-compose.robot-safety-42f5457.yml \
+    -f /home/mil/robot.ti.jsnode/docker-compose.robot-sso-b2581b9.yml \
     up -d --no-deps --force-recreate robot'
 ```
 

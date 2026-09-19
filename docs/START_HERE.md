@@ -30,7 +30,7 @@ If a new AI thread needs to work on this project, start by reading only this fil
 | --- | --- |
 | App startup/runtime loop | `app/index.ts`, `app/modules/common.module.ts` |
 | Config/env/runtime overrides | `app/config/env.config.ts`, `app/config/robot.config.ts`, `app/services/runtime-config.service.ts` |
-| Auth Core SSO | [[AUTH-CORE-INTEGRATION]], `app/http/auth-core.ts` |
+| Auth Core SSO | [[AUTH-CORE-INTEGRATION]], [[AUTH-CORE-DEPLOYMENT-20260919]], `app/http/auth-core.ts` |
 | HTTP dashboard API | `app/http/readonly-server.ts` |
 | Dashboard UI | `ui/src/main.jsx`, `ui/src/styles.css` |
 | Buy pipeline | `app/services/buy-signal-evaluator.service.ts`, `app/services/daily-buy-list.service.ts`, `app/strategies/score-buy.strategy.ts` |
