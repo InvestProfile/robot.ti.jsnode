@@ -260,3 +260,19 @@ for (const reason of ['revoked', 'local-grant', 'outage']) {
         }
     });
 }
+
+test('viewer page is protected, responsive, and uses per-response CSP nonces without operator assets', async () => {
+    const f = fixture();
+    const { cookie } = await f.login();
+    const a = await f.request('/viewer', { cookie });
+    const b = await f.request('/viewer', { cookie });
+    assert.equal(a.status, 200);
+    assert.match(a.data, /Обзор состояния/);
+    assert.match(a.data, /name="viewport"/);
+    assert.ok(!a.data.includes('<pre>') && !a.data.includes('/assets/'));
+    const nonce = /<script nonce="([^"]+)"/.exec(a.data)![1];
+    assert.ok(String(a.headers['content-security-policy']).includes(`script-src 'nonce-${nonce}'`));
+    assert.ok(String(a.headers['content-security-policy']).includes(`style-src 'nonce-${nonce}'`));
+    assert.ok(!String(a.headers['content-security-policy']).includes('unsafe-inline'));
+    assert.notEqual(a.headers['content-security-policy'], b.headers['content-security-policy']);
+});

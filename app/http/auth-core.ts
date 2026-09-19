@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { IncomingMessage, ServerResponse } from 'node:http';
+import { renderViewerPage } from './viewer-page';
 
 const CLIENT = 'tinvest.robot';
 const SESSION = '__Host-tinvest-session';
@@ -104,7 +105,7 @@ export class AuthCoreAdapter {
         const redirect = (location: string) => { res.writeHead(303, { location }); res.end(); return true; };
         const html = (body: string) => {
             res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-            res.end(`<!doctype html><html lang="ru"><meta charset="utf-8"><title>T-Invest — просмотр</title><body>${body}</body></html>`);
+            res.end(`<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>T-Invest — просмотр</title><body>${body}</body></html>`);
             return true;
         };
         for (const [key, value] of this.transactions) if (value.expires <= this.now()) this.transactions.delete(key);
@@ -183,9 +184,9 @@ export class AuthCoreAdapter {
             if (req.method === 'GET' && url.pathname === '/' && !url.search) return redirect('/viewer');
             if (req.method !== 'GET' || !viewerRoute || url.search) return reply(403, { error: 'Operation not permitted for SSO viewer' });
             if (url.pathname === '/api/viewer/status') return reply(200, { status: readStatus() });
-            // Data is rendered as escaped JSON; no scripts, broker calls, account IDs or error text.
-            const escaped = JSON.stringify(readStatus(), null, 2).replace(/[<>&]/g, char => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[char]!));
-            return html(`<h1>Состояние T-Invest Robot</h1><pre>${escaped}</pre><a href="/viewer">Обновить</a><form method="post" action="/auth/logout"><input type="hidden" name="csrf" value="${session.csrf}"><button>Выйти</button></form>`);
+            const nonce = opaque();
+            res.setHeader('content-security-policy', `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'nonce-${nonce}'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'`);
+            return html(renderViewerPage(readStatus(), session.csrf, nonce, this.now()));
         } catch {
             // Never log upstream errors, callback queries or credentials; no legacy fallback.
             return reply(503, { error: 'Auth Core unavailable', ...(url.pathname === '/auth/logout' ? { remoteRevoked: false } : {}) });
