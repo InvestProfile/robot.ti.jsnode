@@ -1,5 +1,8 @@
 # Auth Core SSO — T-Invest, 2026-09-19
 
+Auth owner принял серверный контракт и этот отчёт. Дополнение:
+[read-only evidence subject/secret, logging, probes](AUTH-CORE-HANDOFF-20260919.md).
+
 Пользователь разрешил продолжить без выключенного Mac и выбрал `admin`.
 Серверная активация выполнена на Hyperion. Доступ:
 **https://tinvest.robot.vpn/** (VPN). Hosted Auth: **https://auth.vpn**;
