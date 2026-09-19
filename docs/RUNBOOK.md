@@ -21,9 +21,9 @@ Updated on 2026-09-19; SSO rollout: [[AUTH-CORE-DEPLOYMENT-20260919]].
   robot's source mount. The social collector still uses that directory.
 - The robot runs from a separate release mounted read-only at `/code`.
 - Active safety + SSO release:
-  `/home/mil/releases/robot-ti-sso-ux-fe755bd`.
+  `/home/mil/releases/robot-ti-viewer-b69d1a8`.
 - Compose file:
-  `/home/mil/robot.ti.jsnode/docker-compose.robot-sso-ux-fe755bd.yml`.
+  `/home/mil/robot.ti.jsnode/docker-compose.robot-viewer-b69d1a8.yml`.
 - The robot's separate writable environment mount is `/run/robot-env`.
 - Preserve `ROBOT_LIVE_ALLOWED_ACTIONS=sell` and the existing shadow-outbox
   setting. `ROBOT_TRADING_PAUSED=true` carries forward the pre-deploy open
@@ -71,7 +71,7 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 hyperion-trading \
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=10 hyperion-trading \
   'docker-compose -p robottijsnode \
-    -f /home/mil/robot.ti.jsnode/docker-compose.robot-sso-ux-fe755bd.yml \
+    -f /home/mil/robot.ti.jsnode/docker-compose.robot-viewer-b69d1a8.yml \
     up -d --no-deps --force-recreate robot'
 ```
 
