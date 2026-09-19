@@ -116,3 +116,44 @@ Owner закрыл membership/local grant, совпадение и раздел�
 Логи/probes приняты только в описанных границах. Полный исторический log audit,
 внешний probe inventory, будущее продление TLS и Mac-шаги остаются отдельными
 задачами владельцев, без новых полномочий и без повторного rollout.
+
+## Дополнительная серверная сверка 2026-09-19
+
+По поручению пользователя продолжена серверная проверка; device-проверки
+исключены из текущего объёма. Runtime, credentials, membership, торговые
+настройки и общий trading-control не менялись. HTTP smoke/deploy не повторялись.
+
+- TLS handshake на Hyperion к 127.0.0.1:443 с SNI tinvest.robot.vpn и проверкой
+  выделенным публичным CA успешен. Сертификат действителен с 2026-09-19 04:44:33
+  до **2026-12-18 04:44:33 UTC**, оставалось 89.69 суток.
+- `tinvest-tls-renew.timer`: active/waiting, daily, randomized delay 1h,
+  persistent; следующий запуск 2026-09-20 00:55:43 MSK. LastTriggerUSec и
+  ExecMainStartTimestamp пусты: запусков ещё не было. Result=success и
+  ExecMainStatus=0 сами по себе не подтверждают выполненное продление.
+- Изолированная проверка репозиторного `ops/auth-core/tinvest-tls-remote.py`
+  с временными ключами и реальным OpenSSL прошла: перевыпуск сертификата
+  со сроком 1 день, сохранение CA, проверка hostname/цепочки, no-op для нового
+  90-дневного сертификата, восстановление прежних cert/key при ошибке nginx -t.
+  Только nginx/systemctl подменялись; production сертификаты не использовались.
+  Это проверка исходной логики, не запуск установленного root-only maintainer.
+- Полностью прочитан доступный архив `tinvest.robot.vpn.access.log.1`:
+  510 строк / 119764 байта, auth-query совпадений по описанному выше шаблону 0.
+  Текущий T-Invest error.log пуст. Текущий T-Invest access.log и общий nginx
+  access/error.log вместе с .1 и .2.gz–.14.gz недоступны mil.
+  `sudo -n -l` требует пароль; новые broker-профили/полномочия не создавались.
+- На Athena проверены 69 обычных файлов: /etc/cron.d (3),
+  /etc/systemd/system (51), /etc/rsyslog.d (2), user systemd anton (13).
+  Root spool crontabs пуст, /etc/prometheus отсутствует. Единственное совпадение
+  T-Invest — t-invest-mcp-proxy.service, без health/probe/check и /api/health.
+  Symlinks, env/key/pem и файлы больше 1 MiB исключались. Это дополняет,
+  но не заменяет ранее описанный inventory Hyperion.
+
+В проверенном объёме HTTP health probe consumer по-прежнему не найден.
+Код `/api/health` расположен после requireAuth при включённом Auth Core:
+для существующего внешнего probe нужен явный Basic; SSO viewer его не заменяет.
+Новые probes и credentials не создавались.
+
+Остаток: root-only журналы/cron Hyperion и неизвестные внешние collectors/probes
+не проверены; первый фактический запуск TLS timer ещё предстоит подтвердить.
+Нельзя заявлять полный аудит исторических логов или уже выполненное
+автоматическое продление. Серверная приёмка SSO остаётся подтверждённой.
