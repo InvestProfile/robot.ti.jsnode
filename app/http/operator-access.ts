@@ -20,6 +20,6 @@ export function operatorRouteAllowed(method: string, pathname: string): boolean 
     if (method === 'GET') return reads.has(pathname) || pathname === '/' || pathname === '/index.html'
         || /^\/assets\/[A-Za-z0-9_.-]+\.(js|css|png|svg|webp)$/.test(pathname);
     if (method === 'POST' && (settings.has(pathname) || pathname === '/api/social-profiles')) return true;
-    if (/^\/api\/social-profiles\/[A-Za-z0-9_-]+$/.test(pathname)) return method === 'PUT' || method === 'DELETE';
-    return method === 'POST' && /^\/api\/social-profiles\/[A-Za-z0-9_-]+\/toggle$/.test(pathname);
+    if (/^\/api\/social-profiles\/[A-Za-z0-9_.-]+$/.test(pathname)) return method === 'PUT' || method === 'DELETE';
+    return method === 'POST' && /^\/api\/social-profiles\/[A-Za-z0-9_.-]+\/toggle$/.test(pathname);
 }

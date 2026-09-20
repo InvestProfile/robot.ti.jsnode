@@ -313,7 +313,7 @@ test('exact operator gets ordinary application and assets, session metadata cont
 test('operator API including compute GET requires session CSRF; mutation requires exact Origin', async () => {
     const f = operatorFixture(); const { cookie } = await f.login();
     const csrf = JSON.parse((await f.request('/auth/session', { cookie })).data).csrfToken;
-    for (const [path, method] of [['/api/accounts', 'GET'], ['/api/buy-scan', 'GET'], ['/api/admin/risk-settings', 'POST'], ['/api/social-profiles/profile', 'PUT'], ['/api/social-profiles/profile', 'DELETE']]) {
+    for (const [path, method] of [['/api/accounts', 'GET'], ['/api/buy-scan', 'GET'], ['/api/admin/risk-settings', 'POST'], ['/api/social-profiles/profile.name', 'PUT'], ['/api/social-profiles/profile', 'DELETE']]) {
         for (const headers of [{}, { 'x-csrf-token': 'wrong' }, { 'x-csrf-token': csrf, origin: 'https://evil.example' }] as Record<string, string>[]) {
             const r = await f.request(path, { cookie, ...headers }, method); assert.equal(r.status, 403); assert.equal(r.operator, false);
         }
