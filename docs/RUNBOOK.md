@@ -13,7 +13,7 @@ repeated API-heavy reports during trading hours.
 
 ## Production inventory
 
-Updated on 2026-09-19; SSO rollout: [[AUTH-CORE-DEPLOYMENT-20260919]].
+Updated on 2026-09-20; personal access: [[AUTH-CORE-OPERATOR-20260920]]. Historical SSO rollout: [[AUTH-CORE-DEPLOYMENT-20260919]].
 
 - Use SSH alias `hyperion-trading` from Athena. It selects the project-specific
   key and remote user; bare `ssh igorjan94.ru` does not select that profile.
@@ -21,15 +21,17 @@ Updated on 2026-09-19; SSO rollout: [[AUTH-CORE-DEPLOYMENT-20260919]].
   robot's source mount. The social collector still uses that directory.
 - The robot runs from a separate release mounted read-only at `/code`.
 - Active safety + SSO release:
-  `/home/mil/releases/robot-ti-viewer-b69d1a8`.
+  `/home/mil/releases/robot-ti-access-4c0265b`.
 - Compose file:
-  `/home/mil/robot.ti.jsnode/docker-compose.robot-viewer-b69d1a8.yml`.
+  `/home/mil/robot.ti.jsnode/docker-compose.robot-access-4c0265b.yml`.
 - The robot's separate writable environment mount is `/run/robot-env`.
 - Preserve `ROBOT_LIVE_ALLOWED_ACTIONS=sell` and the existing shadow-outbox
   setting. `ROBOT_TRADING_PAUSED=true` carries forward the pre-deploy open
   circuit breaker across process restart; do not clear this pause implicitly.
 
-SSO viewer is limited to process diagnostics. The backend is loopback-only;
+The pinned owner SSO subject accesses the ordinary dashboard. Live activation,
+account-mode, direct broker mutations and credential updates remain blocked
+for this SSO path. Other subjects are not granted operator access. The backend is loopback-only;
 use https://tinvest.robot.vpn with the dedicated public CA trusted. Auth
 backchannel routing, CA bundle and static container IP are part of the matched
 Compose configuration and must be retained.
@@ -71,16 +73,22 @@ ssh -o BatchMode=yes -o ConnectTimeout=10 hyperion-trading \
 ```bash
 ssh -o BatchMode=yes -o ConnectTimeout=10 hyperion-trading \
   'docker-compose -p robottijsnode \
-    -f /home/mil/robot.ti.jsnode/docker-compose.robot-viewer-b69d1a8.yml \
+    -f /home/mil/robot.ti.jsnode/docker-compose.robot-access-4c0265b.yml \
     up -d --no-deps --force-recreate robot'
 ```
 
 6. Authenticate to the dashboard using credentials loaded inside the container,
    never printed or passed in shell arguments. Check `/api/health`, `/api/status`,
-   and `/api/order-safety`; verify the actual mounted release and at least one
-   completed post-restart tick. Confirm no unintended trades or policy changes.
+   and `/api/order-safety`; verify the actual mounted release and, while paused, confirm the trading process and preview warmup did not
+   start. Do not trigger ticks/scans to validate an access deployment. Confirm
+   no unintended trades or policy changes.
 
 ## Rollback
+
+For the 2026-09-20 access change, use the prepared
+`docker-compose.robot-access-rollback-4c0265b.yml` after checking current safety
+settings. It preserves the paused-start guards; the old viewer Compose alone
+would restart background cycles. See [[AUTH-CORE-OPERATOR-20260920]].
 
 Retain the prior release and Compose file. Before rollback, copy the prior file
 into a rollback-specific file and preserve the **current** trading pause and

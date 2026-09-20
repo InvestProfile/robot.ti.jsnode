@@ -2,7 +2,7 @@
 
 После исходного rollout выполнены [redirect fe755bd](AUTH-CORE-UX-20260919.md)
 и [viewer UI b69d1a8](AUTH-CORE-VIEWER-20260919.md). Текущий consumer release
-указан в viewer UI отчёте и RUNBOOK. Ниже — evidence исходной активации.
+указан в [personal access отчёте 2026-09-20](AUTH-CORE-OPERATOR-20260920.md) и RUNBOOK. Ниже — evidence исходной активации.
 
 Auth owner принял серверный контракт и этот отчёт. Дополнение:
 [read-only evidence subject/secret, logging, probes](AUTH-CORE-HANDOFF-20260919.md).

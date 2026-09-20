@@ -1,136 +1,101 @@
-# Auth Core — локальный адаптер T-Invest
+# Auth Core — персональный доступ T-Invest
 
-**Актуальный статус, 2026-09-19:** SSO развёрнут на Hyperion по отдельному
-разрешению пользователя. Допущен конкретный существующий пользователь Auth
-с login `admin`, только как viewer состояния процесса. Это не операторская
-роль через SSO. [Релизы, доказательства и откат](AUTH-CORE-DEPLOYMENT-20260919.md).
-Исходный запрос: [AUTH-CORE-INTEGRATION-REQUEST](AUTH-CORE-INTEGRATION-REQUEST.md).
-Auth owner принял серверный контракт и deployment report. Дополнительная
-[сверка subject/secret, логов и probes](AUTH-CORE-HANDOFF-20260919.md) фиксирует
-доказательства без значений секретов и незакрытые границы проверки.
+**Актуально 2026-09-20:** пользователь разрешил ранее выбранному immutable
+Auth subject обычный кабинет T-Invest вместо диагностического viewer.
+[Source, deploy, проверки и rollback](AUTH-CORE-OPERATOR-20260920.md).
+Это локальный персональный grant T-Invest, не глобальная роль admin и не права
+другим пользователям/consumers. Login `admin` — исторический выбор человека;
+авторизация не зависит от login, displayName или role.
 
-Контракт: Auth Core `9003f5ff71fb9505e412383c89d3f5f29ee01801`,
-`docs/multi-service-sso.md` и `server/sso.mjs`. Это внутренний SSO, не OIDC.
+## Модель доступа
 
-## Маршруты и разрешения
+`AuthCoreAdapter` работает до любых обработчиков и загрузки RuntimeConfig.
+Каждый защищённый запрос проходит Auth introspection: active, service
+`tinvest.robot`, валидный срок и точный user.id. Дополнительно проверяется
+локальная allowlist для пары issuer + immutable subject.
 
-Адаптер `app/http/auth-core.ts` подключён в `readonly-server.ts` **до** любых
-существующих обработчиков, включая health и загрузку RuntimeConfig.
+- `ROBOT_AUTH_OPERATOR_SUBJECTS`: точные UUID, которым разрешён существующий
+  кабинет. Production — только один ранее подтверждённый owner subject.
+- `ROBOT_AUTH_VIEWER_SUBJECTS`: прежний диагностический доступ. Сам по себе
+  он не открывает кабинет. При наличии operator grant тот имеет приоритет.
+- Только проверенный сервером запрос получает WeakSet-метку для requireAuth.
+  Заголовок/role/owner_id клиента такой меткой не являются.
+- Upstream membership обязательна для обоих режимов. Даже локально допущенный
+  UUID при отзыве Auth membership получает отказ на следующем запросе.
 
-| Маршрут | Доступ / действие |
+Обычный UI открывает существующие счета, портфель, журнал и другие разделы
+этого экземпляра сервиса. Новая многопользовательская модель разделения
+брокерских счетов не вводится: это доступ выбранного владельца к его кабинету.
+Дополнительных subjects в operator allowlist добавлять без поручения нельзя.
+
+## Маршруты
+
+| Маршрут | Поведение |
 | --- | --- |
-| GET / или /viewer без SSO-cookie | 303 /auth/login → существующий hosted Auth, без Basic prompt |
-| GET /auth/login | State + PKCE S256, транзакция на 10 минут, HTTPS hosted Auth |
-| GET /auth/callback | Однократное потребление локальной транзакции, exchange + introspect |
-| GET /viewer с действующей SSO | Читаемые карточки процесса, время обновления, Обновить/Выйти; без operator API; GET / после introspect → 303 /viewer |
-| GET /api/viewer/status | Та же минимальная проекция состояния в JSON |
-| POST /auth/logout | Точная Origin + CSRF, удаление локальной сессии и remote revoke |
-| Все остальные маршруты/методы с SSO-cookie | Запрет; сначала актуальная introspection |
+| GET / или /viewer без SSO-cookie | 303 /auth/login → hosted Auth |
+| GET /auth/login | State + PKCE, локальная транзакция 10 минут |
+| GET /auth/callback | Однократный exchange + introspect; operator → /, viewer → /viewer |
+| GET /auth/session | После introspect: access, session CSRF, список ограничений; без credentials/UUID/upstream token |
+| GET / и assets с operator SSO | Прежний React dashboard; CSP self, cache-control no-store |
+| GET /viewer с operator SSO | 303 / |
+| API operator | Явный allowlist operator-access.ts + session CSRF header, включая GET |
+| POST/PUT/DELETE operator | Дополнительно точная Origin; существующая валидация handler сохраняется |
+| POST /auth/logout | Origin + CSRF, удаление local session, remote revoke |
+| Viewer-only subject | Прежние /viewer и /api/viewer/status; прочие операции запрещены |
 
-Оба viewer GET читают только `getTradingRuntimeState()` из памяти. Поля:
-startedAt, isTickRunning, lastTickStartedAt, lastTickFinishedAt,
-consecutiveTickErrors, circuitBreakerOpen. Нет счетов, позиций, настроек,
-произвольного текста ошибок, БД, файловых записей, запросов брокера и очередей.
-GET с query-параметрами также запрещён.
+Все API GET требуют CSRF для operator, поскольку часть старых GET запускает
+вычисления или запись кеша. Frontend получает CSRF через /auth/session и
+передаёт x-csrf-token. Ни Basic password, ни client secret, ни upstream SSO
+токен в браузер не передаются. JWT/role из браузера не принимаются.
 
-Существующие GET не включены в allowlist: например preview использует cache/
-warmup, buy-scan запускает scanner, sell-brain — evaluate, positions и другие
-ручки связаны с брокерскими сервисами. Остальные старые ручки также закрыты до
-индивидуального аудита и согласования отображения счетов. POST/PUT/DELETE,
-admin, social-cookies, paper, статические файлы и полный dashboard недоступны.
+Локальная политика запрещает operator SSO account-mode, live-actions,
+cancel-stale-limit-orders, protective-stops-resync и social-cookies. Это
+сохраняет operational ограничения и не даёт обхода через прямой HTTP.
+Прочие обычные настройки проходят CSRF и прежнюю серверную валидацию.
+Неизвестные новые маршруты закрыты до отдельного review.
 
-Источник авторизации: текущая introspection Auth **и** локальное разрешение
-`ROBOT_AUTH_VIEWER_SUBJECTS`. Доверенный actor — пара `(ROBOT_AUTH_ORIGIN, user.id)`.
-Список subjects разрешает только просмотр общей диагностики процесса. Он не
-отображает пользователя на брокерский счёт и не даёт торговых прав. Email,
-displayName, owner_id и role не используются для авторизации. Даже успешная
-membership без локального разрешения получает отказ.
+## Ошибки, Basic, сессии
 
-Старый операционный Basic сохраняется только при явно переданном Basic header
-и полном отсутствии SSO-session cookie. Неверная/истёкшая SSO-cookie, сбой Auth
-или отказ membership никогда не переключают запрос на Basic. При включённом
-SSO Basic-пароль обязателен и должен отличаться от секрета клиента. Смешивать
-viewer и operator лучше в разных профилях браузера: SSO-cookie имеет приоритет.
+Анонимные API — JSON401 без redirect. Неверная/дублированная/истёкшая SSO-cookie
+не переключается на Basic. Отказ membership/local grant — 403; недоступный
+Auth — 503. Автоматического login loop нет. UI закрывается при отзыве доступа.
 
-## Конфигурация и точные адреса
+Explicit Basic работает отдельно только без SSO-session cookie. Его пароль
+должен быть задан и отличаться от client secret. /auth/session после успешного
+Basic возвращает только access=basic. Смешанные SSO+Basic запросы проверяются
+по SSO, без fallback. Прежний legacy Basic scope не расширяется этим изменением.
 
-По умолчанию SSO выключен, если отсутствуют все четыре переменные. Частичная
-невалидная конфигурация отключает HTTP-сервер, а не ослабляет авторизацию.
+Browser cookie — случайный __Host-tinvest-session, Secure/HttpOnly/SameSite=Lax,
+Path=/, без Domain. Upstream token хранится только в памяти сервера. Local
+session ограничена upstream сроком и 8 часами; restart требует нового входа.
+Лимит — 1000 sessions и 1000 login transactions. Introspection не кешируется.
+Logout завершает consumer session, не общий сеанс Auth. При сбое remote revoke
+local session уже удалена, ответ 503 + remoteRevoked=false. Отзыв не отменяет
+уже исполняющийся запрос. Несколько реплик без общего session store не поддержаны.
 
-- `ROBOT_AUTH_ORIGIN`: доверенный точный HTTPS origin Auth, без завершающего `/`.
-  Развёрнутое значение: `https://auth.vpn`.
-- `ROBOT_AUTH_CONSUMER_ORIGIN`: развёрнуто `https://tinvest.robot.vpn`.
-- Callback строится строго как `${ROBOT_AUTH_CONSUMER_ORIGIN}/auth/callback`:
-  **`https://tinvest.robot.vpn/auth/callback`**. Проверка HTTPS/backchannel
-  зафиксирована в отчёте развёртывания; доверие CA на Mac ожидает его включения.
-- Client/service жёстко заданы: **`tinvest.robot`**.
-- `ROBOT_AUTH_SECRET`: отдельный secret минимум 32 символа; должен соответствовать
-  `AUTH_TINVEST_SECRET` на Auth. Provisioning выполнен при разрешённом rollout;
-  значения находятся только в защищённых runtime-файлах.
-- `ROBOT_AUTH_VIEWER_SUBJECTS`: через запятую точные Auth user.id, разрешённые
-  владельцем. Пустой список никого не допускает.
-- На Auth зарегистрирован точный `AUTH_TINVEST_CALLBACK`, указанный выше.
+## Конфигурация и transport
 
-Токен Auth хранится в памяти процесса, браузер получает отдельный случайный
-`__Host-tinvest-session`. Cookie: Secure, HttpOnly, Path=/, SameSite=Lax, без Domain.
-Login cookie имеет те же атрибуты. Сессия ограничена сроком Auth и 8 часами;
-перезапуск завершает локальные сессии. Ограничение 1000 сессий и 1000 ожидающих
-транзакций; истёкшие очищаются при запросах. Это однопроцессный адаптер; общий
-session store для нескольких экземпляров не реализован.
+- Issuer: https://auth.vpn (`ROBOT_AUTH_ORIGIN`).
+- Consumer: https://tinvest.robot.vpn (`ROBOT_AUTH_CONSUMER_ORIGIN`).
+- Callback: https://tinvest.robot.vpn/auth/callback; client/service tinvest.robot.
+- `ROBOT_AUTH_SECRET`: прежний отдельный client secret из protected env.
+- Оба локальных subject списка указаны выше; operator принимает только UUID,
+  пустые списки никого не допускают. Частичный/невалидный Auth config не
+  запускает HTTP-server. Полное отсутствие всех Auth переменных оставляет Basic.
 
-Introspection не кешируется. Backchannel: HTTPS, redirects запрещены, timeout
-3 секунды, точный Auth Origin и отдельный Bearer credential. Ошибки возвращаются
-без upstream-текста. Callback query не логируется приложением; proxy должен
-также исключить query, cookies, headers и тела auth-запросов из журналов.
-Logout удаляет локальную сессию даже при недоступности Auth, возвращая 503 и
-remoteRevoked=false. Он не завершает общую Auth-сессию. Отзыв действует на
-следующий проверенный запрос, не отменяет уже исполняющийся.
+Auth-side registration/membership/client/catalog не менялись. Прежние HTTPS,
+CA bundle, backchannel extra_hosts, loopback backend и nginx ACL сохраняются.
+Backchannel redirects запрещены, timeout 3s, точный Origin и client credential.
+Auth query/headers/cookies не логируются приложением; proxy logging и границы
+исторического аудита см. [handoff](AUTH-CORE-HANDOFF-20260919.md).
 
-## Проверки
+## Проверки и история
 
-`app/http/auth-core.test.ts`: синтетический backchannel, нет сетевых запросов,
-запуска trading server, производственной БД или брокерского API. Проверяются
-PKCE/state/browser binding, неправильные secret/client/callback, expiry/replay,
-локальный grant, cross-client ответ, revocation, timeout/malformed/redirect,
-CSRF/logout, запрет mutation/неаудированных GET, cookie, отсутствие fallback.
-Срок 60 секунд и атомарное потребление кода обеспечивает Auth; потребитель не
-может независимо определить возраст opaque code. Его fake проверяет контракт,
-но не подменяет SQL-тесты Auth.
+Текущий [отчёт 2026-09-20](AUTH-CORE-OPERATOR-20260920.md) содержит offline HTTP
+integration, browser QA на точной сборке, live безопасные probes, backup и
+готовый scoped rollback. Агент не запускал production scan/trades и не менял
+стратегию. Paused startup не запускает trading process/preview warmup.
 
-Полный `npm test` и `npm run lint` выполняются в отдельной копии исходников
-с dummy DB-конфигурацией и выключенными profile integration tests. Дополнительно
-проверяется оригинальный Auth SSO test suite из указанного commit на PGlite,
-без внешней БД. Итоговые числа см. в записи приёмки ниже.
-
-## Развёртывание, откат и остаточная приёмка
-
-Развёртывание выполнено 2026-09-19; [отчёт](AUTH-CORE-DEPLOYMENT-20260919.md)
-содержит точные версии, backups и отдельный consumer rollback. Откат не выполнялся.
-Старый Auth образ нельзя восстанавливать без проверки остальных consumers.
-
-Дополнение по evidence принято владельцем Auth (`AUTH-COORD-20260919`).
-Осталось: полная инвентаризация внешних health
-probes, проверка будущего продления TLS; доверие CA, GUI-вход с паролем и частный
-инвентарь ожидают включения Mac. Docker healthcheck у робота отсутствует;
-`/api/health` требует Basic без SSO-cookie. Исключение auth query подтверждено
-настройками nginx и ограниченными доступными выборками; полный аудит
-исторических/root-only/внешних логов не выполнен (см. дополнение).
-Доступ к счетам требует отдельной модели прав и не входит в текущую фазу.
-
-## Локальная приёмка, 2026-09-18
-
-- `npm test`: **411/411**, включая **27** новых проверок адаптера; TypeScript
-  и production UI build успешны. Реальные profile API integration tests
-  намеренно выключены, как в обычном offline unit suite.
-- `npm run lint`: успешно, без предупреждений.
-- Auth `9003f5f`: `node --test test/sso.test.mjs test/sso-clients.test.mjs`:
-  **10/10**, оригинальные SQL/registration проверки на in-memory PGlite.
-  На 2026-09-18 это были отдельные component suites. Последующий HTTPS E2E
-  от 2026-09-19 описан в отчёте развёртывания; повторять его для handoff не нужно.
-- Артефакты текущей локальной проверки: `/tmp/robot-auth-tests.log`,
-  `/tmp/robot-auth-lint.log`, `/tmp/robot-auth-contract.log` (временные файлы).
-- Commit реализации указан в сообщении о завершении; этот документ и исходный
-  запрос сохранены вместе с кодом. Состояние межзадачной передачи приёмки
-  отмечается отдельно маркером `AUTH-COORD-20260919`.
-
-Актуальный authenticated UI: [viewer deploy и QA](AUTH-CORE-VIEWER-20260919.md).
+Исторические этапы: [активация SSO](AUTH-CORE-DEPLOYMENT-20260919.md),
+[анонимный redirect](AUTH-CORE-UX-20260919.md),
+[прежний viewer](AUTH-CORE-VIEWER-20260919.md).
