@@ -58,7 +58,7 @@ function fixture(overrides: Partial<AuthCoreConfig> = {}) {
             end(value = '') { data = value; }
         } as unknown as ServerResponse;
         const handled = await adapter.handle(req, res, () => { reads++; return { circuitBreakerOpen: true }; });
-        return { status, data, headers: responseHeaders, handled };
+        return { status, data, headers: responseHeaders, handled, operator: adapter.isOperatorRequest(req) };
     }
     async function begin() {
         const response = await request('/auth/login');
@@ -275,4 +275,81 @@ test('viewer page is protected, responsive, and uses per-response CSP nonces wit
     assert.ok(String(a.headers['content-security-policy']).includes(`style-src 'nonce-${nonce}'`));
     assert.ok(!String(a.headers['content-security-policy']).includes('unsafe-inline'));
     assert.notEqual(a.headers['content-security-policy'], b.headers['content-security-policy']);
+});
+
+
+const operatorSubject = '11111111-1111-4111-8111-111111111111';
+function operatorFixture() {
+    const f = fixture({ viewerSubjects: [], operatorSubjects: [operatorSubject] });
+    f.subject(operatorSubject);
+    return f;
+}
+
+test('operator config accepts only immutable UUID, never login or role', () => {
+    const env = { ROBOT_AUTH_ORIGIN: config.issuer, ROBOT_AUTH_CONSUMER_ORIGIN: config.origin, ROBOT_AUTH_SECRET: config.secret };
+    for (const value of ['admin', 'operator', '*', 'subject-1']) assert.throws(() => authCoreConfig({ ...env, ROBOT_AUTH_OPERATOR_SUBJECTS: value }));
+    assert.deepEqual(authCoreConfig({ ...env, ROBOT_AUTH_OPERATOR_SUBJECTS: operatorSubject })?.operatorSubjects, [operatorSubject]);
+    assert.throws(() => authCoreConfig({ ROBOT_AUTH_OPERATOR_SUBJECTS: operatorSubject }));
+});
+
+test('exact operator gets ordinary application and assets, session metadata contains no credentials', async () => {
+    const f = operatorFixture();
+    const { cookie, response } = await f.login();
+    assert.equal(response.headers.location, '/');
+    const session = await f.request('/auth/session', { cookie });
+    const data = JSON.parse(session.data);
+    assert.equal(data.access, 'operator');
+    assert.equal(typeof data.csrfToken, 'string');
+    assert.ok(!session.data.includes(config.secret) && !session.data.includes(operatorSubject) && !session.data.includes(token));
+    for (const path of ['/', '/index.html', '/assets/index-abc.js', '/assets/index-abc.css']) {
+        const r = await f.request(path, { cookie });
+        assert.equal(r.handled, false); assert.equal(r.operator, true);
+    }
+    assert.equal((await f.request('/viewer', { cookie })).headers.location, '/');
+    assert.equal((await f.request('/api/positions?accountId=existing', { cookie, 'x-csrf-token': data.csrfToken })).operator, true);
+    assert.equal(f.reads(), 0);
+});
+
+test('operator API including compute GET requires session CSRF; mutation requires exact Origin', async () => {
+    const f = operatorFixture(); const { cookie } = await f.login();
+    const csrf = JSON.parse((await f.request('/auth/session', { cookie })).data).csrfToken;
+    for (const [path, method] of [['/api/accounts', 'GET'], ['/api/buy-scan', 'GET'], ['/api/admin/risk-settings', 'POST'], ['/api/social-profiles/profile', 'PUT'], ['/api/social-profiles/profile', 'DELETE']]) {
+        for (const headers of [{}, { 'x-csrf-token': 'wrong' }, { 'x-csrf-token': csrf, origin: 'https://evil.example' }] as Record<string, string>[]) {
+            const r = await f.request(path, { cookie, ...headers }, method); assert.equal(r.status, 403); assert.equal(r.operator, false);
+        }
+        if (method !== 'GET') assert.equal((await f.request(path, { cookie, 'x-csrf-token': csrf }, method)).status, 403);
+        const r = await f.request(path, { cookie, 'x-csrf-token': csrf, origin: config.origin }, method);
+        assert.equal(r.handled, false); assert.equal(r.operator, true);
+    }
+});
+
+test('operator cannot lift live restrictions, change credentials or reach unreviewed routes', async () => {
+    const f = operatorFixture(); const { cookie } = await f.login();
+    const csrf = JSON.parse((await f.request('/auth/session', { cookie })).data).csrfToken;
+    for (const path of ['/api/admin/live-actions', '/api/admin/account-mode', '/api/admin/cancel-stale-limit-orders', '/api/admin/protective-stops-resync', '/api/social-cookies', '/api/admin/unpause', '/api/new-route', '/private.env', '/assets/../private.env']) {
+        for (const method of ['GET', 'POST', 'PUT', 'DELETE']) {
+            const r = await f.request(path, { cookie, origin: config.origin, 'x-csrf-token': csrf, authorization: 'Basic synthetic' }, method);
+            assert.equal(r.status, 403); assert.equal(r.operator, false);
+        }
+    }
+});
+
+for (const reason of ['membership', 'subject', 'outage']) {
+    test(`operator authority fails closed on ${reason} without Basic fallback`, async () => {
+        const f = operatorFixture(); const { cookie } = await f.login();
+        const csrf = JSON.parse((await f.request('/auth/session', { cookie })).data).csrfToken;
+        if (reason === 'membership') f.active(false);
+        else if (reason === 'subject') f.subject('22222222-2222-4222-8222-222222222222');
+        else f.failure('timeout');
+        const r = await f.request('/api/accounts', { cookie, 'x-csrf-token': csrf, authorization: 'Basic synthetic' });
+        assert.equal(r.status, reason === 'outage' ? 503 : 403); assert.equal(r.operator, false); assert.equal(r.headers.location, undefined);
+    });
+}
+
+test('viewer membership and role headers never grant application access', async () => {
+    const f = fixture({ operatorSubjects: [operatorSubject] }); const { cookie } = await f.login();
+    const r = await f.request('/api/accounts', { cookie, role: 'admin', owner_id: operatorSubject });
+    assert.equal(r.status, 403); assert.equal(r.operator, false);
+    assert.equal((await f.request('/auth/session', { authorization: 'Basic synthetic' })).handled, false);
+    assert.equal((await f.request('/auth/session')).status, 401);
 });

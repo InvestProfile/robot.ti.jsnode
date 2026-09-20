@@ -17,6 +17,8 @@ import {
 } from 'lucide-react';
 import { formatPaperKopecks } from './paper-money.cjs';
 import './styles.css';
+import { sessionFetch } from './auth-session.js';
+import { AuthSessionBoundary } from './auth-session.jsx';
 
 const endpoints = {
   health: '/api/health',
@@ -859,7 +861,7 @@ const useDashboardData = (activeTab) => {
 
     const results = await Promise.allSettled(uniqueKeys.map(async (key) => {
         const url = endpoints[key];
-        const response = await fetch(url, { cache: 'no-store' });
+        const response = await sessionFetch(url, { cache: 'no-store' });
         if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
         const payload = await response.json();
 
@@ -2206,7 +2208,7 @@ function AddProfileForm({ onSaved }) {
 
     setBusy(true);
     setError('');
-    const response = await fetch('/api/social-profiles', {
+    const response = await sessionFetch('/api/social-profiles', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(profilePayloadFromForm(form))
@@ -2264,7 +2266,7 @@ function SocialProfiles({ data, loadingKeys, reload }) {
       ? `/api/social-profiles/${encodeURIComponent(profile.profileKey)}/toggle`
       : `/api/social-profiles/${encodeURIComponent(profile.profileKey)}`;
     const method = action === 'delete' ? 'DELETE' : 'POST';
-    const response = await fetch(url, { method });
+    const response = await sessionFetch(url, { method });
     const payload = await response.json().catch(() => ({}));
 
     if (!response.ok) {
@@ -3967,7 +3969,7 @@ function PaperLab() {
     setState('loading');
     setError('');
     try {
-      const response = await fetch('/api/paper-lab?limit=50', { cache: 'no-store' });
+      const response = await sessionFetch('/api/paper-lab?limit=50', { cache: 'no-store' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const next = await response.json();
       const rows = next.accounts || [];
@@ -3979,7 +3981,7 @@ function PaperLab() {
         setState('empty');
         return;
       }
-      const detailResponse = await fetch(`/api/paper-lab?limit=50&virtualAccountId=${encodeURIComponent(nextId)}`, { cache: 'no-store' });
+      const detailResponse = await sessionFetch(`/api/paper-lab?limit=50&virtualAccountId=${encodeURIComponent(nextId)}`, { cache: 'no-store' });
       if (!detailResponse.ok) throw new Error(`HTTP ${detailResponse.status}`);
       setPayload(await detailResponse.json());
       setState('ready');
@@ -4120,7 +4122,7 @@ function App() {
       }
     }
 
-    const response = await fetch('/api/admin/account-mode', {
+    const response = await sessionFetch('/api/admin/account-mode', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -4159,7 +4161,7 @@ function App() {
       }
     }
 
-    const response = await fetch('/api/admin/live-actions', {
+    const response = await sessionFetch('/api/admin/live-actions', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -4191,7 +4193,7 @@ function App() {
       }
     }
 
-    const response = await fetch('/api/admin/order-type', {
+    const response = await sessionFetch('/api/admin/order-type', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -4213,7 +4215,7 @@ function App() {
   };
   const updateMarketRegime = async (minHealthPercent, minAvgTrendPercent) => {
     setActionError('');
-    const response = await fetch('/api/admin/market-regime', {
+    const response = await sessionFetch('/api/admin/market-regime', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -4235,7 +4237,7 @@ function App() {
   };
   const updateRiskSettings = async (settings) => {
     setActionError('');
-    const response = await fetch('/api/admin/risk-settings', {
+    const response = await sessionFetch('/api/admin/risk-settings', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -4254,7 +4256,7 @@ function App() {
   };
   const updateSellSettings = async (settings) => {
     setActionError('');
-    const response = await fetch('/api/admin/sell-settings', {
+    const response = await sessionFetch('/api/admin/sell-settings', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -4279,7 +4281,7 @@ function App() {
       return;
     }
 
-    const response = await fetch('/api/admin/cancel-stale-limit-orders', {
+    const response = await sessionFetch('/api/admin/cancel-stale-limit-orders', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -4309,7 +4311,7 @@ function App() {
       return;
     }
 
-    const response = await fetch('/api/admin/protective-stops-resync', {
+    const response = await sessionFetch('/api/admin/protective-stops-resync', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -4385,4 +4387,4 @@ function App() {
   );
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+createRoot(document.getElementById('root')).render(<AuthSessionBoundary><App /></AuthSessionBoundary>);

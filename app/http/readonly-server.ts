@@ -232,7 +232,7 @@ const serveStatic = async (res: ServerResponse, pathname: string) => {
         const body = await readFile(filePath);
         res.writeHead(200, {
             'content-type': mimeTypes[path.extname(filePath)] ?? 'application/octet-stream',
-            'cache-control': filePath.endsWith('index.html') ? 'no-store' : 'public, max-age=31536000, immutable'
+            'cache-control': 'no-store'
         });
         res.end(body);
         return true;
@@ -696,8 +696,8 @@ const isAuthorized = (req: IncomingMessage) => {
     return requestUsername === username && requestPassword === password;
 };
 
-const requireAuth = (req: IncomingMessage, res: ServerResponse) => {
-    if (isAuthorized(req)) return true;
+const requireAuth = (req: IncomingMessage, res: ServerResponse, authCore?: AuthCoreAdapter) => {
+    if (authCore?.isOperatorRequest(req) || isAuthorized(req)) return true;
 
     res.writeHead(401, {
         'www-authenticate': 'Basic realm="T-Invest Robot"',
@@ -1702,6 +1702,7 @@ const getPreviewPayload = async (config: RobotConfig, url?: URL) => {
 };
 
 const warmPreviewCache = async () => {
+    if (getRobotConfig().tradingPaused) return;
     try {
         await loadPreviewCacheFromDisk();
         const config = await RuntimeConfigService.getEffectiveConfig(getRobotConfig());
@@ -1929,7 +1930,7 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
             circuitBreakerOpen: runtime.circuitBreakerOpen
         };
     })) return;
-    if (authCore && !requireAuth(req, res)) return;
+    if (authCore && !requireAuth(req, res, authCore)) return;
     const url = new URL(req.url ?? '/', 'http://localhost');
 
     if (url.pathname === '/api/health') {
@@ -1989,7 +1990,12 @@ const handleRequest = async (req: IncomingMessage, res: ServerResponse, startedA
         return;
     }
 
-    if (!requireAuth(req, res)) return;
+    if (!requireAuth(req, res, authCore)) return;
+
+    if (req.method === 'GET' && url.pathname === '/auth/session') {
+        json(res, 200, { access: 'basic' });
+        return;
+    }
 
     if (req.method === 'POST' && url.pathname === '/api/social-cookies') {
         await handleSocialCookieUpdate(req, res);

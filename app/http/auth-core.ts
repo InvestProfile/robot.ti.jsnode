@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { renderViewerPage } from './viewer-page';
+import { operatorRestrictions, operatorRouteAllowed } from './operator-access';
 
 const CLIENT = 'tinvest.robot';
 const SESSION = '__Host-tinvest-session';
@@ -14,11 +15,12 @@ export interface AuthCoreConfig {
     origin: string;
     secret: string;
     viewerSubjects: readonly string[];
+    operatorSubjects?: readonly string[];
 }
 
 // A local grant permits only process-level diagnostics. It grants no account ownership.
 export const authCoreConfig = (env: NodeJS.ProcessEnv): AuthCoreConfig | undefined => {
-    const keys = ['ROBOT_AUTH_ORIGIN', 'ROBOT_AUTH_CONSUMER_ORIGIN', 'ROBOT_AUTH_SECRET', 'ROBOT_AUTH_VIEWER_SUBJECTS'];
+    const keys = ['ROBOT_AUTH_ORIGIN', 'ROBOT_AUTH_CONSUMER_ORIGIN', 'ROBOT_AUTH_SECRET', 'ROBOT_AUTH_VIEWER_SUBJECTS', 'ROBOT_AUTH_OPERATOR_SUBJECTS'];
     if (!keys.some(key => env[key] !== undefined)) return undefined;
     const issuer = env.ROBOT_AUTH_ORIGIN ?? '';
     const origin = env.ROBOT_AUTH_CONSUMER_ORIGIN ?? '';
@@ -31,7 +33,9 @@ export const authCoreConfig = (env: NodeJS.ProcessEnv): AuthCoreConfig | undefin
     if (secret.length < 32 || /[\s\r\n]/.test(secret)) throw new Error('Invalid Auth Core configuration');
     const viewerSubjects = (env.ROBOT_AUTH_VIEWER_SUBJECTS ?? '').split(',').map(value => value.trim()).filter(Boolean);
     if (viewerSubjects.some(value => !/^[A-Za-z0-9_-]{1,128}$/.test(value))) throw new Error('Invalid Auth Core configuration');
-    return { issuer, origin, secret, viewerSubjects };
+    const operatorSubjects = (env.ROBOT_AUTH_OPERATOR_SUBJECTS ?? '').split(',').map(value => value.trim()).filter(Boolean);
+    if (operatorSubjects.some(value => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value))) throw new Error('Invalid Auth Core configuration');
+    return { issuer, origin, secret, viewerSubjects, operatorSubjects };
 };
 
 type Session = { token: string; expires: number; csrf: string; subject: string };
@@ -39,6 +43,9 @@ type Transaction = { state: string; verifier: string; expires: number };
 type Dependencies = { fetch?: typeof fetch; now?: () => number; timeoutMs?: number };
 
 export class AuthCoreAdapter {
+    private readonly operatorRequests = new WeakSet<IncomingMessage>();
+    isOperatorRequest(req: IncomingMessage): boolean { return this.operatorRequests.has(req); }
+    private isOperator(subject: string): boolean { return this.config.operatorSubjects?.includes(subject) === true; }
     private readonly sessions = new Map<string, Session>();
     private readonly transactions = new Map<string, Transaction>();
     private readonly fetch: typeof fetch;
@@ -72,12 +79,13 @@ export class AuthCoreAdapter {
         const expires = typeof value.expiresAt === 'string' ? Date.parse(value.expiresAt) : NaN;
         if (value.active !== true || value.service !== CLIENT || !user || typeof user.id !== 'string'
             || !/^[A-Za-z0-9_-]{1,128}$/.test(user.id) || !Number.isFinite(expires)) throw new Error('Auth unavailable');
-        if (expires <= this.now() || !this.config.viewerSubjects.includes(user.id)) return undefined;
+        if (expires <= this.now() || (!this.config.viewerSubjects.includes(user.id) && !this.isOperator(user.id))) return undefined;
         return { subject: user.id, expires };
     }
 
-    /** true means fully handled; false is ONLY explicit legacy Basic without an SSO cookie. */
+    /** false delegates only explicit Basic or a request marked by successful operator authorization. */
     async handle(req: IncomingMessage, res: ServerResponse, readStatus: () => unknown): Promise<boolean> {
+        this.operatorRequests.delete(req);
         let url: URL;
         try { url = new URL(req.url ?? '/', this.config.origin); } catch {
             // URL errors can embed the original callback query in their message.
@@ -91,7 +99,7 @@ export class AuthCoreAdapter {
         const sessionId = sessionValues.length === 1 ? sessionValues[0] : '';
         const authRoute = url.pathname.startsWith('/auth/');
         const viewerRoute = url.pathname === '/viewer' || url.pathname === '/api/viewer/status';
-        if (!authRoute && !viewerRoute && sessionValues.length === 0 && /^Basic /i.test(req.headers.authorization ?? '')) return false;
+        if ((!authRoute || (url.pathname === '/auth/session' && req.method === 'GET')) && !viewerRoute && sessionValues.length === 0 && /^Basic /i.test(req.headers.authorization ?? '')) return false;
 
         res.setHeader('cache-control', 'no-store');
         res.setHeader('referrer-policy', 'no-referrer');
@@ -146,7 +154,7 @@ export class AuthCoreAdapter {
                 this.sessions.delete(sessionId);
                 this.sessions.set(id, { token: exchanged.token, expires: expiry, csrf: opaque(), subject: actor.subject });
                 res.setHeader('set-cookie', [cookie(TRANSACTION, '', 0), cookie(SESSION, id, Math.floor((expiry - this.now()) / 1000))]);
-                return redirect('/viewer');
+                return redirect(this.isOperator(actor.subject) ? '/' : '/viewer');
             }
             const session = this.sessions.get(sessionId);
             if (!session) {
@@ -180,6 +188,23 @@ export class AuthCoreAdapter {
                 this.sessions.delete(sessionId);
                 res.setHeader('set-cookie', cookie(SESSION, '', 0));
                 return reply(403, { error: 'Viewer access denied' });
+            }
+            if (url.pathname === '/auth/session' && req.method === 'GET' && !url.search) {
+                return reply(200, { access: this.isOperator(actor.subject) ? 'operator' : 'viewer', csrfToken: session.csrf,
+                    restrictions: this.isOperator(actor.subject) ? operatorRestrictions : [] });
+            }
+            if (this.isOperator(actor.subject)) {
+                if (url.pathname === '/viewer' && req.method === 'GET') return redirect('/');
+                if (!operatorRouteAllowed(req.method ?? '', url.pathname)) return reply(403, { error: 'Operation blocked by access or operational restrictions' });
+                // Even GET API handlers can trigger scans/cache writes. Require the session token for all API calls.
+                if (url.pathname.startsWith('/api/') || req.method !== 'GET') {
+                    if (req.headers['x-csrf-token'] !== session.csrf
+                        || (req.headers.origin !== undefined && req.headers.origin !== this.config.origin)
+                        || (req.method !== 'GET' && req.headers.origin !== this.config.origin)) return reply(403, { error: 'CSRF rejected' });
+                }
+                res.setHeader('content-security-policy', "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
+                this.operatorRequests.add(req);
+                return false;
             }
             if (req.method === 'GET' && url.pathname === '/' && !url.search) return redirect('/viewer');
             if (req.method !== 'GET' || !viewerRoute || url.search) return reply(403, { error: 'Operation not permitted for SSO viewer' });

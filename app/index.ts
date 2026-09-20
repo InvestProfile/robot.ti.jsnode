@@ -35,7 +35,8 @@ const main = async () => {
 
     await DatabaseService.init();
     httpServer = startReadOnlyHttpServer();
-    tradingProcess = startTradingProcess(config);
+    if (!config.tradingPaused) tradingProcess = startTradingProcess(config);
+    else console.log('Trading process remains stopped while ROBOT_TRADING_PAUSED is active.');
 };
 
 void main().catch(error => {
